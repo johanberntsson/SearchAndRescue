@@ -1,7 +1,16 @@
 OPEN:
 
-As a first step I want a simple voxel engine that you can fly around in using ASWD keyboard controls
+- port the per-column ray march in src/voxel.c to 45GS02 assembly. The C
+  version manages about 14 fps; the inner loop is the whole cost.
+- the far edge of each z band pops as you fly. Either blend the bands or
+  shorten the step growth.
+- no pitch control yet, and the horizon is fixed.
 
 DONE:
 
 - install calypsi C (rpm) from https://github.com/hth313/Calypsi-tool-chains/releases, and "make run" to run a simple hello world in src/main.c
+- build to a d81 with the game as autoboot.c65 and the maps as separate files
+  on the same disk, run with xemu-xmega65 -8
+- minimal voxel engine you can fly around in: 160x192 full-colour display
+  hardware-stretched to 320 wide, double buffered, 256x256 height and colour
+  maps loaded off the disk. ASWD to fly, R/F for altitude.
