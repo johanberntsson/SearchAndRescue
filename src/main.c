@@ -1,7 +1,9 @@
 #include <stdio.h>
 
+#include "hud.h"
 #include "input.h"
 #include "loader.h"
+#include "profile.h"
 #include "vic4.h"
 #include "voxel.h"
 
@@ -46,6 +48,7 @@ int main(void)
 {
   camera cam;
   uint8_t back = 1;
+  uint16_t fps10 = 0;
 
   if (load_resources()) {
     printf("RESOURCE LOAD FAILED\n");
@@ -62,10 +65,26 @@ int main(void)
   cam.horizon = FB_HEIGHT * 2 / 5;
   cam.height = voxel_ground(cam.x, cam.y) + 60;
 
+  profile_init();
+  profile_calibrate();
+  profile_bench();
+
   for (;;) {
+    uint32_t frame_start = profile_now32();
+    uint16_t t0 = PROF_NOW();
+
     fly(&cam, input_read());
+    PROF_ADD(P_OTHER, t0);
+
     voxel_render(vic4_base(back), &cam);
+
+    t0 = PROF_NOW();
+    hud_fps(vic4_base(back), fps10);
     vic4_show(back);
     back ^= 1;
+    PROF_ADD(P_OTHER, t0);
+
+    profile_count(C_FRAMES, 1);  // always: the FPS readout needs it
+    fps10 = profile_fps10(frame_start - profile_now32());
   }
 }

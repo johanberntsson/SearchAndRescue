@@ -1,13 +1,16 @@
 #include "voxel.h"
 
+#include <mega65.h>
+
 #include "loader.h"
+#include "profile.h"
 #include "vic4.h"
 
 // The ray march walks in bands, doubling the step each band, so near ground is
 // sampled finely and the far distance cheaply. All three bands are the same
 // length, which keeps the step a shift rather than a multiply.
-#define BAND_STEPS 32
-#define BANDS      3
+#define BAND_STEPS 16
+#define BANDS      4
 #define NSTEPS     (BAND_STEPS * BANDS)
 #define Z_NEAR     256 // 8.8 cells
 #define Z_STEP0    128 // 8.8 cells, doubled at each band boundary
@@ -34,11 +37,28 @@ static const int16_t sin_quarter[65] = {
 };
 
 static int16_t tan_tab[FB_WIDTH]; // 8.8 offset from the view axis per column
-static uint16_t inv_z[NSTEPS];    // SCALE_H / z, in 8.8
-static uint8_t sky[FB_HEIGHT];
+
+// Shared with src/voxel_asm.s, which indexes both with an 8-bit register, so
+// neither may grow past 256 bytes.
+uint16_t vx_inv_z[NSTEPS];  // SCALE_H / z, in 8.8
+uint8_t vx_sky[FB_HEIGHT];
+
+// The assembly column routine's parameter block. Zero page because every one
+// of these is touched in the inner loop.
+uint8_t __far *__attribute__((zpage)) vx_hptr;    // heightmap cell
+uint8_t __far *__attribute__((zpage)) vx_cptr;    // colourmap cell
+uint8_t __far *__attribute__((zpage)) vx_fb;      // walking write pointer
+uint8_t __far *__attribute__((zpage)) vx_fbbase;  // top of the column
+__zpage uint16_t vx_px, vx_py;
+__zpage int16_t vx_stepx, vx_stepy;
+__zpage int16_t vx_camh, vx_horizon;
+__zpage int16_t vx_ys;
+__zpage uint8_t vx_ybuf, vx_tmp;
+__zpage uint8_t vx_bands, vx_bandsteps, vx_band, vx_step;
+
+void voxel_column_asm(void);
 
 static const uint8_t __far *height_map;
-static const uint8_t __far *colour_map;
 
 int16_t voxel_sin(uint8_t angle)
 {
@@ -54,9 +74,24 @@ static int16_t voxel_cos(uint8_t angle)
 }
 
 // Signed index of map cell (x >> 8, y >> 8), biased to match the map pointers.
-static int16_t map_index(uint16_t x, uint16_t y)
+static inline int16_t map_index(uint16_t x, uint16_t y)
 {
   return (int16_t)(((y & 0xFF00) | (x >> 8)) ^ MAP_BIAS);
+}
+
+// (a * b) >> 8 on the 45GS02's multiplier. The C compiler's own 32-bit
+// multiply measures 2203 cycles against 85 for this, and the inner loop runs
+// one per heightmap sample, so it is most of the frame.
+//
+// The multiplier is unsigned, but sign-extending both operands into 32 bits
+// leaves the low 32 bits of the product equal to the signed product, which is
+// all this needs. Bytes 1 and 2 of the result are the >> 8, so there is no
+// shift to do either.
+static inline int16_t mul_shift8(int16_t a, int16_t b)
+{
+  MATH.multina32 = (uint32_t)(int32_t)a;
+  MATH.multinb32 = (uint32_t)(int32_t)b;
+  return (int16_t)((uint16_t)MATH.multout[1] | (uint16_t)MATH.multout[2] << 8);
 }
 
 void voxel_init(void)
@@ -65,7 +100,13 @@ void voxel_init(void)
   uint8_t x, y, band, i;
 
   height_map = (const uint8_t __far *)(HEIGHTMAP + MAP_BIAS);
-  colour_map = (const uint8_t __far *)(COLOURMAP + MAP_BIAS);
+
+  // The assembly rewrites only the low two bytes of these, so the bank and
+  // megabyte set here stand for the whole run.
+  vx_hptr = (uint8_t __far *)HEIGHTMAP;
+  vx_cptr = (uint8_t __far *)COLOURMAP;
+  vx_bands = BANDS;
+  vx_bandsteps = BAND_STEPS;
 
   for (x = 0; x < FB_WIDTH; x++)
     tan_tab[x] = (int16_t)(((int16_t)x - FB_WIDTH / 2) * TAN_HALF_FOV) / (FB_WIDTH / 2);
@@ -73,14 +114,14 @@ void voxel_init(void)
   k = 0;
   for (band = 0; band < BANDS; band++) {
     for (i = 0; i < BAND_STEPS; i++) {
-      inv_z[k++] = (uint16_t)(((uint32_t)SCALE_H << 16) / z);
+      vx_inv_z[k++] = (uint16_t)(((uint32_t)SCALE_H << 16) / z);
       z += step;
     }
     step <<= 1;
   }
 
   for (y = 0; y < FB_HEIGHT; y++)
-    sky[y] = SKY_BASE + (uint8_t)(((uint16_t)y * SKY_SHADES) / FB_HEIGHT);
+    vx_sky[y] = SKY_BASE + (uint8_t)(((uint16_t)y * SKY_SHADES) / FB_HEIGHT);
 }
 
 uint8_t voxel_ground(uint16_t x, uint16_t y)
@@ -88,55 +129,25 @@ uint8_t voxel_ground(uint16_t x, uint16_t y)
   return height_map[map_index(x, y)];
 }
 
-static void column(uint8_t __far *fb, const camera *cam, int16_t dirx, int16_t diry)
+static void column(uint32_t fbcol, const camera *cam, int16_t dirx, int16_t diry)
 {
-  uint16_t px = cam->x, py = cam->y;
-  int16_t stepx = dirx >> 1, stepy = diry >> 1;
-  uint8_t ybuf = FB_HEIGHT;
-  uint8_t band, i, y;
-  uint16_t k = 0;
+  vx_fbbase = (uint8_t __far *)fbcol;
+  vx_px = cam->x;
+  vx_py = cam->y;
+  vx_stepx = dirx >> 1;
+  vx_stepy = diry >> 1;
+  vx_camh = cam->height;
+  vx_horizon = cam->horizon;
+  vx_ybuf = FB_HEIGHT;
 
-  for (band = 0; band < BANDS; band++) {
-    for (i = 0; i < BAND_STEPS; i++, k++) {
-      int16_t idx, ys;
-      uint8_t colour;
-      uint8_t __far *p;
+  // The compiler uses the same multiplier for its own inlined multiplies, so
+  // the top half of input B cannot be assumed to have survived the last call.
+  // The assembly only ever writes the low half.
+  MATH.multinb32 = 0;
 
-      px += stepx;
-      py += stepy;
-      idx = map_index(px, py);
+  voxel_column_asm();
 
-      ys = cam->horizon +
-           (int16_t)(((int32_t)(cam->height - height_map[idx]) * inv_z[k]) >> 8);
-      if (ys >= (int16_t)ybuf)
-        continue; // hidden behind something nearer
-      if (ys < 0)
-        ys = 0;
-
-      colour = colour_map[idx];
-      p = fb + (int16_t)ys * 8;
-      for (y = (uint8_t)ys; y < ybuf; y++) {
-        *p = colour;
-        p += 8;
-      }
-      ybuf = (uint8_t)ys;
-      if (ybuf == 0)
-        return; // column is full, nothing further can show
-    }
-    stepx <<= 1;
-    stepy <<= 1;
-  }
-
-  // Whatever the terrain did not reach is sky. Between the spans above and
-  // this, every pixel of the column is written exactly once, so the frame
-  // needs no clearing pass.
-  {
-    uint8_t __far *p = fb;
-    for (y = 0; y < ybuf; y++) {
-      *p = sky[y];
-      p += 8;
-    }
-  }
+  PROF_COUNT(C_SKYPIX, vx_ybuf);
 }
 
 void voxel_render(uint32_t base, const camera *cam)
@@ -146,12 +157,14 @@ void voxel_render(uint32_t base, const camera *cam)
   uint8_t x;
 
   for (x = 0; x < FB_WIDTH; x++) {
+    uint16_t t0 = PROF_NOW();
     int16_t t = tan_tab[x];
     // Not normalised on purpose: the ray lengthening towards the edges is
     // exactly what projects onto a flat screen without fisheye distortion.
-    int16_t dirx = cs - (int16_t)(((int32_t)sn * t) >> 8);
-    int16_t diry = sn + (int16_t)(((int32_t)cs * t) >> 8);
+    int16_t dirx = cs - mul_shift8(sn, t);
+    int16_t diry = sn + mul_shift8(cs, t);
 
-    column((uint8_t __far *)FB_COLUMN(base, x), cam, dirx, diry);
+    column(FB_COLUMN(base, x), cam, dirx, diry);
+    PROF_ADD(P_COLUMN, t0);
   }
 }

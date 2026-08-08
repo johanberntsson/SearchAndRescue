@@ -31,6 +31,10 @@ SKY_SHADES = 16
 SKY_TOP = (40, 70, 140)
 SKY_HORIZON = (170, 200, 230)
 
+# Overlay ink and paper. Keep in sync with HUD_INK/HUD_PAPER in src/hud.h.
+HUD_INK = 240
+HUD_PAPER = 241
+
 
 def nybswap(v):
     """VIC-IV palette registers hold each channel with its nybbles reversed."""
@@ -92,6 +96,12 @@ def main():
     # wherever a pixel is 0. The source palette has an unused bright green
     # there, which makes a startling border.
     rgb[0] = (0, 0, 0)
+
+    used = set(np.unique(indices).tolist())
+    for entry, colour in ((HUD_INK, (255, 255, 255)), (HUD_PAPER, (0, 0, 0))):
+        if entry in used:
+            sys.exit(f"colourmap uses HUD palette index {entry}")
+        rgb[entry] = colour
 
     # Three 256-byte planes matching the $D100/$D200/$D300 register banks, so
     # uploading is three straight copies.

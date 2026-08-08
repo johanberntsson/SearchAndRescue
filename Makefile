@@ -1,11 +1,17 @@
 TARGET   = --target=mega65
-CFLAGS   = $(TARGET) -O2 --speed
+# --no-cross-call and --strong-inline were both tried here and both measured
+# slower (615ms a frame against 533ms), so the defaults stay.
+# PROFILE=0 compiles out the per-column instrumentation; the FPS counter stays.
+PROFILE ?= 1
+CFLAGS   = $(TARGET) -O2 --speed -DPROFILE_DETAIL=$(PROFILE)
 LDFLAGS  = $(TARGET) --output-format=prg
 LINKFILE = mega65-plain.scm
 
 BUILD    = build
 SRCS     = $(wildcard src/*.c)
-OBJS     = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS))
+ASRCS    = $(wildcard src/*.s)
+OBJS     = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS)) \
+           $(patsubst src/%.s,$(BUILD)/%.o,$(ASRCS))
 
 ELF      = $(BUILD)/sar.elf
 PRG      = $(BUILD)/autoboot.c65
@@ -29,6 +35,9 @@ $(BUILD):
 # like hardware bugs.
 $(BUILD)/%.o: src/%.c $(wildcard src/*.h) | $(BUILD)
 	cc6502 $(CFLAGS) -c -o $@ $<
+
+$(BUILD)/%.o: src/%.s | $(BUILD)
+	as6502 $(TARGET) -o $@ $<
 
 $(ELF): $(OBJS)
 	ln6502 $(LDFLAGS) -o $@ $(LINKFILE) $(OBJS)

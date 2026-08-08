@@ -77,6 +77,44 @@ Height units are a quarter of a map cell — the maps were downsampled 4x and th
 
 `diskutil.rb` (from Fredrik Ramsberg) builds the D81 and refuses to overwrite a file that already exists on the image, so the Makefile deletes and rebuilds the image every time. The name on disk comes from the host file's basename.
 
+## Performance
+
+Roughly 10 fps, from 0.74 when the renderer was all C. `src/profile.c` measures
+it; `tools/profread.py` formats the results out of a `-dumpmem` image. The FPS
+readout in the corner is always on. `make PROFILE=0` compiles out the
+per-column instrumentation (about 0.6% of a frame); the counter stays.
+
+**Never time this with `xemu -sleepless`.** It runs the emulator around 19x
+faster than a real MEGA65, so wall-clock frame counts measure the host, not the
+machine — that mistake put an early reading out by the same factor. The
+profiler's clock is calibrated against the raster inside the emulator, so it is
+right either way, and a plain `-headless` run agrees with it.
+
+What the measurements found, in the order they mattered:
+
+| | cycles | note |
+|---|---|---|
+| C 32-bit multiply | 2203 | one per heightmap sample, 64% of the frame |
+| the same on the hardware multiplier | 85 | `$D770`, see `mul_shift8` history |
+| C 16-bit multiply | 657 | still a library call |
+| one `__far` byte write | ~53 | |
+
+Two things that sound like optimisations and measured slower: `--no-cross-call`
+and `--strong-inline` (615ms a frame against 533ms).
+
+The inner loop is `src/voxel_asm.s`. The C version of the same loop cost 1392
+cycles per sample, because the compiler builds it out of `jsr` fragments and
+keeps locals on the software stack. The assembly keeps everything in zero page
+(the `vx_*` block declared in `voxel.c`), samples the maps with one `lda
+[ptr],z` — the maps sit on 64K boundaries so the cell address is just the two
+high coordinate bytes dropped into the pointer — and drives the multiplier
+directly. Both maps share one address computation because only their bank byte
+differs.
+
+Draw distance and cost are traded in the band schedule at the top of
+`voxel.c`: `BANDS` x `BAND_STEPS` samples per column, with the step doubling
+each band. 4x16 reaches 120 map cells for 64 samples.
+
 ## Gotchas
 
 The Makefile deliberately makes every object depend on every header. Without it, changing a layout constant in `vic4.h` leaves stale objects built against the old memory map, and the result looks like a hardware fault rather than a build problem.

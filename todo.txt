@@ -1,10 +1,14 @@
 OPEN:
 
-- port the per-column ray march in src/voxel.c to 45GS02 assembly. The C
-  version manages about 14 fps; the inner loop is the whole cost.
 - the far edge of each z band pops as you fly. Either blend the bands or
   shorten the step growth.
 - no pitch control yet, and the horizon is fixed.
+- more speed is available if wanted: the sky fill is ~12000 pixels a frame at
+  around 25 cycles each and could be unrolled, and biasing the height
+  difference so it is never negative would drop the sign-extension branch and
+  two register writes from every sample.
+- the HUD is only an FPS readout so far. vision.md wants an artificial horizon,
+  battery, GPS and signal strength.
 
 DONE:
 
@@ -14,3 +18,8 @@ DONE:
 - minimal voxel engine you can fly around in: 160x192 full-colour display
   hardware-stretched to 320 wide, double buffered, 256x256 height and colour
   maps loaded off the disk. ASWD to fly, R/F for altitude.
+- profiler (src/profile.c, tools/profread.py) with a clock calibrated against
+  the raster, plus an always-on FPS counter in the corner
+- performance: 0.74 fps -> 10.3 fps. The 32-bit multiply the compiler emitted
+  was 64% of the frame; the hardware multiplier and then an assembly inner
+  loop (src/voxel_asm.s) did most of the rest.
