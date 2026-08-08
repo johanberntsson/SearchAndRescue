@@ -4,15 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-A MEGA65 heightfield voxel flight simulator / drone search-and-rescue game, written in C (Calypsi) with the rendering inner loop destined for 45GS02 assembly. `vision.md` holds the full technical and gameplay design; `todo.txt` is the authoritative "what's next" and should be updated as work lands.
+A MEGA65 heightfield voxel flight simulator / drone search-and-rescue game, written in C (Calypsi) with the rendering inner loop in 45GS02 assembly. `vision.md` holds the full technical and gameplay design; `todo.txt` is the authoritative "what's next" and should be updated as work lands.
 
-Currently: a flyable voxel engine at roughly 14 fps, entirely in C.
+Currently: a flyable voxel engine at about 10 fps, with an FPS readout as the first piece of the HUD. No game yet.
 
 ## Build and run
 
 ```sh
-make run     # build build/sar.d81 and boot it in xemu
-make prg     # skip the disk, run the PRG directly (no resources available)
+make run          # build build/sar.d81 and boot it in xemu
+make prg          # skip the disk, run the PRG directly (no resources available)
+make PROFILE=0    # without the per-column instrumentation
 make clean
 ```
 
@@ -21,9 +22,12 @@ make clean
 ```sh
 timeout -s INT 100 xemu-xmega65 -besure -headless -sleepless \
     -8 build/sar.d81 -screenshot out.png -dumpmem mem.bin
+python3 tools/profread.py mem.bin
 ```
 
-`-dumpmem` writes 384 KB of chip RAM, so `mem.bin[0x10000]` onwards is the framebuffer and `mem.bin[0x40000]` the heightmap — invaluable for telling "the renderer is wrong" apart from "the display is wrong". The emulator runs at real-time speed even with `-sleepless`, so wall-clock timing is meaningful. There are no tests and no linter.
+`-sleepless` is fine here — see Performance for why it must never be used to time anything from the outside.
+
+`-dumpmem` writes 384 KB of chip RAM, so `mem.bin[0x10000]` onwards is the framebuffer and `mem.bin[0x40000]` the heightmap. Reading a framebuffer back and de-swizzling it with the column-strip formula below is the fastest way to tell "the renderer is wrong" apart from "the display is wrong"; both have happened. There are no tests and no linter.
 
 ## Toolchain
 
@@ -66,6 +70,8 @@ address(x, y) = base + (x >> 3) * FB_STRIDE + (x & 7) + y * 8
 The renderer relies on this everywhere. Double-buffer flips are just a rewrite of `SCRNPTR` between two prepared screen tables — no pixels move. Terrain spans plus the sky fill write every pixel exactly once per frame, so there is no clear pass.
 
 Two register notes: `CHRXSCL` (`$D05A`) is source pixels per output pixel in 120ths, so **60 doubles the width** and 240 halves it; and the hot registers (`$D05D` bit 7) must be turned off first or any write to a legacy VIC-II register makes the VIC-IV recompute the layout and undo the setup.
+
+`src/hud.c` draws over the finished frame with the same addressing, using two palette entries (240 ink, 241 paper) that `tools/convmap.py` reserves.
 
 ## Resources
 

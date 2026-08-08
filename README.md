@@ -1,7 +1,8 @@
 # Search and Rescue
 
 A 1990s-style heightfield voxel flight simulator for the [MEGA65](https://mega65.org/),
-written in C for the [Calypsi](https://github.com/hth313/Calypsi-tool-chains) toolchain.
+written in C for the [Calypsi](https://github.com/hth313/Calypsi-tool-chains) toolchain,
+with the renderer's inner loop in 45GS02 assembly.
 
 ![The engine rendering terrain from the VoxelSpace sample maps](screenshot.png)
 
@@ -15,11 +16,14 @@ Early. There is a voxel engine you can fly around in, and not yet a game.
 
 - 160x192 full-colour display, hardware-stretched to 320 pixels wide, double buffered
 - 256x256 height and colour maps loaded from the boot disk
-- Front-to-back ray march with a y-buffer, fixed point throughout
-- About 14 frames per second, all C so far
+- Front-to-back ray march with a y-buffer, fixed point throughout, inner loop in assembly
+- About 10 frames per second, up from 0.74 when the renderer was all C
+- An FPS readout, which is as much HUD as there is so far
 
-The renderer's inner loop is the next job, and it is where essentially all the time
-goes. See `todo.txt`.
+Getting there meant building a profiler first (`src/profile.c`, read with
+`tools/profread.py`) rather than guessing. The compiler's 32-bit multiply turned out
+to be 64% of the frame at 2203 cycles a go, against 85 on the hardware multiplier.
+See `todo.txt` for what is next.
 
 ## Building
 
@@ -48,11 +52,11 @@ boot, and the converted maps alongside it as separate files.
 
 ## Layout
 
-    src/          engine: display, DMA, resource loading, renderer, input
-    tools/        convmap.py, turns the source PNGs into MEGA65 resources
+    src/          engine: display, DMA, resource loading, renderer, input, HUD
+    tools/        convmap.py builds the map resources, profread.py reads profiles
     resources/    source height and colour maps
     vision.md     technical and gameplay design
-    CLAUDE.md     memory map, display conventions and hardware notes
+    CLAUDE.md     memory map, display conventions, hardware notes, measurements
 
 ## Credits
 
