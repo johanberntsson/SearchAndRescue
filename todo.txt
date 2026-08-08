@@ -1,0 +1,7 @@
+OPEN:
+
+As a first step I want a simple voxel engine that you can fly around in using ASWD keyboard controls
+
+DONE:
+
+- install calypsi C (rpm) from https://github.com/hth313/Calypsi-tool-chains/releases, and "make run" to run a simple hello world in src/main.c
