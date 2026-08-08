@@ -4,11 +4,11 @@ A 1990s-style heightfield voxel flight simulator for the [MEGA65](https://mega65
 written in C for the [Calypsi](https://github.com/hth313/Calypsi-tool-chains) toolchain,
 with the renderer's inner loop in 45GS02 assembly.
 
-![The engine rendering terrain from the VoxelSpace sample maps](screenshot.png)
+![The engine rendering terrain from the VoxelSpace sample maps](screenshots/screenshot.png)
 
 The eventual game is a post-earthquake drone search-and-rescue simulator: low-altitude
 flight over broken terrain, thermal and acoustic sensor modes, payload drops, and
-aftershocks that reshape the landscape mid-flight. `vision.md` has the full design.
+aftershocks that reshape the landscape mid-flight. `documentation/vision.md` has the full design.
 
 ## Status
 
@@ -31,7 +31,7 @@ You will need:
 
 - [Calypsi 6502 tools](https://github.com/hth313/Calypsi-tool-chains/releases) 5.18 or later
 - [Xemu](https://github.com/lgblgblgb/xemu) for `xemu-xmega65`
-- Ruby, for the bundled `diskutil.rb`
+- Ruby, for the bundled `tools/diskutil.rb`
 - Python with Pillow and NumPy, for the map converter
 
 ```sh
@@ -52,11 +52,14 @@ boot, and the converted maps alongside it as separate files.
 
 ## Layout
 
-    src/          engine: display, DMA, resource loading, renderer, input, HUD
-    tools/        convmap.py builds the map resources, profread.py reads profiles
-    resources/    source height and colour maps
-    vision.md     technical and gameplay design
-    CLAUDE.md     memory map, display conventions, hardware notes, measurements
+    src/            engine: display, DMA, resource loading, renderer, input, HUD
+    tools/          convmap.py builds the map resources, profread.py reads
+                    profiles, diskutil.rb builds the disk image
+    resources/      source height and colour maps
+    documentation/  vision.md, the technical and gameplay design
+    screenshots/
+    CLAUDE.md       memory map, display conventions, hardware notes, measurements
+    todo.txt        what is next
 
 ## Credits
 
@@ -64,4 +67,4 @@ The sample height and colour maps come from Sebastian Macke's
 [VoxelSpace](https://s-macke.github.io/VoxelSpace/), which is also the clearest
 write-up of the algorithm.
 
-`diskutil.rb` was written by Fredrik Ramsberg.
+`tools/diskutil.rb` was written by Fredrik Ramsberg.

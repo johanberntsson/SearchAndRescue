@@ -51,11 +51,11 @@ $(PRG): $(ELF)
 $(RES) &: resources/D1.png resources/C1W.png tools/convmap.py | $(BUILD)
 	python3 tools/convmap.py resources/D1.png resources/C1W.png $(BUILD)/terrain
 
-# diskutil.rb refuses to overwrite a file that already exists on the image,
+# tools/diskutil.rb refuses to overwrite a file that already exists on the image,
 # so the image is always built from scratch.
 $(D81): $(PRG) $(RES)
 	rm -f $@
-	ruby diskutil.rb $@ -name "search and rescue" -id sr \
+	ruby tools/diskutil.rb $@ -name "search and rescue" -id sr \
 	    -writeprg -copyf1 $(PRG) \
 	    -writeseq -copyf1 $(RES)
 

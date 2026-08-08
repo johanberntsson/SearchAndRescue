@@ -7,8 +7,8 @@ OPEN:
   around 25 cycles each and could be unrolled, and biasing the height
   difference so it is never negative would drop the sign-extension branch and
   two register writes from every sample.
-- the HUD is only an FPS readout so far. vision.md wants an artificial horizon,
-  battery, GPS and signal strength.
+- the HUD is only an FPS readout so far. documentation/vision.md wants an
+  artificial horizon, battery, GPS and signal strength.
 
 DONE:
 
