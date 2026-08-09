@@ -4,7 +4,7 @@ A 1990s-style heightfield voxel flight simulator for the [MEGA65](https://mega65
 written in C for the [Calypsi](https://github.com/hth313/Calypsi-tool-chains) toolchain,
 with the renderer's inner loop in 45GS02 assembly.
 
-![The engine rendering terrain from the VoxelSpace sample maps](screenshots/screenshot.png)
+![The engine rendering terrain from the VoxelSpace sample maps](screenshots/screenshot-h512-c1024.png)
 
 The eventual game is a post-earthquake drone search-and-rescue simulator: low-altitude
 flight over broken terrain, thermal and acoustic sensor modes, payload drops, and
