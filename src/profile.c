@@ -99,7 +99,16 @@ void profile_calibrate(void)
 {
   uint8_t last = VICII.rasterline;
   uint8_t seen = 0;
-  uint16_t t = profile_now();
+  uint16_t t;
+
+  // Start on a line boundary. Timing from wherever the raster happened to be
+  // costs up to a whole line out of the sixteen -- 6% -- and that lands
+  // straight on every figure profread prints: two runs of identical code
+  // came out 67.0 ms and 64.9 ms purely from this.
+  while (VICII.rasterline == last)
+    ;
+  last = VICII.rasterline;
+  t = profile_now();
 
   while (seen < CAL_LINES) {
     uint8_t r = VICII.rasterline;

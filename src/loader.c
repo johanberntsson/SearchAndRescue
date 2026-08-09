@@ -3,6 +3,7 @@
 #include <stdio.h>
 
 #include "dma.h"
+#include "exo.h"
 #include "loader.h"
 
 #define CHUNK 2048
@@ -31,19 +32,15 @@ static int open_resource(const char *name)
   return fd;
 }
 
-static int load_far(const char *name, uint32_t dest, uint32_t length)
+// Read `length` bytes from an already-open file into `dest`, through the
+// bounce buffer.
+static int read_far(int fd, const char *name, uint32_t dest, uint32_t length)
 {
-  int fd = open_resource(name);
-
-  if (fd < 0)
-    return -1;
-
   while (length) {
     uint16_t want = length > CHUNK ? CHUNK : (uint16_t)length;
     size_t got = _Stub_read(fd, bounce, want);
 
     if (got != want) {
-      _Stub_close(fd);
       printf("%s: SHORT BY %u BYTES\n", name, (unsigned)(want - got));
       return -1;
     }
@@ -51,7 +48,32 @@ static int load_far(const char *name, uint32_t dest, uint32_t length)
     dest += want;
     length -= want;
   }
+  return 0;
+}
+
+// The maps are exomizer-crunched (tools/convmap.py), each prefixed with its
+// own crunched length: read that, stage the stream in attic RAM, unpack it to
+// `dest`. Nothing here looks for EOF, which the Kernal reports early.
+static int load_crunched(const char *name, uint32_t dest)
+{
+  int fd = open_resource(name);
+  uint32_t length;
+
+  if (fd < 0)
+    return -1;
+
+  if (_Stub_read(fd, &length, sizeof length) != sizeof length) {
+    _Stub_close(fd);
+    printf("%s: NO LENGTH\n", name);
+    return -1;
+  }
+  if (read_far(fd, name, ATTIC_STAGE, length)) {
+    _Stub_close(fd);
+    return -1;
+  }
   _Stub_close(fd);
+
+  exo_decrunch(ATTIC_STAGE, dest);
   return 0;
 }
 
@@ -75,9 +97,9 @@ static int load_palette(const char *name)
 int load_resources(void)
 {
   printf("LOADING TERRAIN...\n");
-  if (load_far("TERRAIN.HGT", HEIGHTMAP, MAP_BYTES))
+  if (load_crunched("TERRAIN.HGT", HEIGHTMAP))
     return -1;
-  if (load_far("TERRAIN.COL", COLOURMAP, COL_BYTES))
+  if (load_crunched("TERRAIN.COL", COLOURMAP))
     return -1;
   if (load_palette("TERRAIN.PAL"))
     return -1;

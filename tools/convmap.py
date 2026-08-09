@@ -11,7 +11,12 @@ indices can be used directly as VIC-IV colour indices.  Only the resolution
 and the palette encoding need changing.
 """
 
+import os
+import shutil
+import struct
+import subprocess
 import sys
+import tempfile
 
 import numpy as np
 from PIL import Image
@@ -33,6 +38,48 @@ COL_SUB = 2
 # tail of every resource is unreachable.  Pad past it; src/loader.c reads a
 # known length and never looks for EOF.
 TAIL_PAD = b"\0" * 512
+
+# The maps are exomizer-crunched, which is what lets resolutions above 256 fit
+# a d81 at all.  Flags match the decruncher in src/exo_asm.s, itself a port of
+# the one in mega65/ozmoo-z6: raw stream, no load address, crunched forwards,
+# exomizer-2 (-P0) layout.  -m is the furthest back a match may reach; the
+# decruncher reads back-references straight out of the plaintext it has
+# already written, so there is no window buffer to size and this can be as
+# large as the cruncher will take.
+EXO_FLAGS = ["raw", "-q", "-C", "-P0", "-c", "-m", "65535"]
+
+# Each crunched map carries its own length, so the loader knows how much to
+# read without the build having to tell it -- and without relying on EOF,
+# which the Kernal reports early.
+LENGTH_PREFIX = "<I"
+
+
+def find_exomizer():
+    """$EXOMIZER, then a local copy, then the ozmoo-z6 checkout, then PATH."""
+    for c in (os.environ.get("EXOMIZER"),
+              "tools/exomizer",
+              os.path.expanduser("~/commodore/ozmoo-z6/exomizer/src/exomizer"),
+              shutil.which("exomizer")):
+        if c and os.path.isfile(c) and os.access(c, os.X_OK):
+            return c
+    sys.exit(
+        "exomizer not found. Set $EXOMIZER, put a copy or symlink at "
+        "tools/exomizer, or check out mega65/ozmoo-z6 beside this project."
+    )
+
+
+def crunch(exomizer, data):
+    with tempfile.TemporaryDirectory() as d:
+        raw, out = os.path.join(d, "raw"), os.path.join(d, "exo")
+        with open(raw, "wb") as f:
+            f.write(data)
+        r = subprocess.run([exomizer] + EXO_FLAGS + [raw, "-o", out],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        if r.returncode:
+            sys.exit(f"exomizer failed: {r.stderr.decode()[:400]}")
+        with open(out, "rb") as f:
+            crunched = f.read()
+    return struct.pack(LENGTH_PREFIX, len(crunched)) + crunched
 
 # Sky gradient occupies a contiguous run of indices the colourmap never uses,
 # top of screen first.  Keep in sync with SKY_BASE/SKY_SHADES in src/voxel.h.
@@ -174,23 +221,36 @@ def main():
         for sx in range(COL_SUB)
     )
 
+    exomizer = find_exomizer()
+    raw_sizes = {}
     for suffix, payload in (
         (".hgt", heights.tobytes()),
         (".col", planes),
         (".pal", palette),
     ):
+        raw_sizes[suffix] = len(payload)
+        # The palette is 768 bytes and is read straight into a buffer before
+        # the display is up; crunching it would buy nothing and cost a special
+        # case in the loader.
+        if suffix != ".pal":
+            payload = crunch(exomizer, payload)
         with open(prefix + suffix, "wb") as f:
             f.write(payload)
             f.write(TAIL_PAD)
 
-    print(
-        f"{prefix}.hgt {MAP_SIZE}x{MAP_SIZE}, "
-        f"{prefix}.col {MAP_SIZE * COL_SUB}x{MAP_SIZE * COL_SUB} "
-        f"in {COL_SUB * COL_SUB} planes, "
-        f"{prefix}.pal {len(palette)} bytes, "
-        f"sky at {SKY_BASE}..{SKY_BASE + SKY_SHADES - 1}, "
-        f"panel ink at {PANEL_INK}/{PANEL_LABEL}"
-    )
+    def report(suffix, what):
+        raw = raw_sizes[suffix]
+        packed = os.path.getsize(prefix + suffix) - len(TAIL_PAD)
+        return (f"{what}: {raw} -> {packed} bytes "
+                f"({raw / packed:.2f}x)" if raw != packed else f"{what}: {raw} bytes")
+
+    print(f"heightmap {MAP_SIZE}x{MAP_SIZE}, "
+          f"colourmap {MAP_SIZE * COL_SUB}x{MAP_SIZE * COL_SUB} "
+          f"in {COL_SUB * COL_SUB} planes, "
+          f"sky at {SKY_BASE}..{SKY_BASE + SKY_SHADES - 1}, "
+          f"panel ink at {PANEL_INK}/{PANEL_LABEL}")
+    print("  " + report(".hgt", "hgt"))
+    print("  " + report(".col", "col"))
 
 
 if __name__ == "__main__":

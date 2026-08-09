@@ -118,6 +118,17 @@ be 1 MB and a D81 holds 800 KB.
 
 Height units are a quarter of a map cell — the maps were downsampled 4x and the heights were not rescaled — and `SCALE_H` in `src/voxel.c` folds that in.
 
+The maps are **exomizer-crunched**, which is what lets any resolution above
+256 fit a d81. `src/exo_asm.s` is a port of the decruncher in
+mega65/ozmoo-z6 (`asm/pictures-mega65.asm`) for the `-P0` stream format,
+reading and writing 32-bit addresses so it unpacks straight into attic RAM;
+its state lives in `src/exo.c` the way the renderer's `vx_*` block does.
+Back-references are read out of the plaintext already written, so there is no
+window buffer and `-m` can be as large as the cruncher will take. Each file
+carries its own crunched length up front, because EOF cannot be trusted (see
+below). `convmap.py` finds exomizer via `$EXOMIZER`, `tools/exomizer`, an
+ozmoo-z6 checkout, or `PATH`.
+
 **Reading a SEQ file through the Kernal reports EOF exactly 256 bytes early**, whatever the file's size (verified from 16 K to 64 K, at several chunk sizes). `convmap.py` therefore pads every resource by 512 bytes and `src/loader.c` reads a known length rather than looking for the end of the file. Resources go on the disk as SEQ, not PRG: Calypsi's `_Stub_open` calls Kernal OPEN with the file descriptor as the secondary address, which defaults to SEQ, and SEQ has no load-address header to skip.
 
 `tools/diskutil.rb` (from Fredrik Ramsberg) builds the D81 and refuses to overwrite a file that already exists on the image, so the Makefile deletes and rebuilds the image every time. The name on disk comes from the host file's basename.
@@ -138,6 +149,13 @@ the objects disagree with the flag and the counters silently stay off.
 The counters are totalled per frame rather than per column: `profile_count`
 adds into a 32-bit field, and calling it four times a column instead of four
 times a frame cost 9% of the frame on its own.
+
+**`profile_calibrate` must start on a raster line boundary.** Timing sixteen
+lines from wherever the raster happens to be loses up to a whole line — 6% —
+and that scales every figure `profread` prints. Two runs of identical code
+came out 67.0 ms and 64.9 ms from this alone, which is wide enough to invent
+or hide a small optimisation. It now waits for a line change before taking
+the first timestamp, and repeat runs agree exactly.
 
 **Never time this with `xemu -sleepless`.** It runs the emulator around 19x
 faster than a real MEGA65, so wall-clock frame counts measure the host, not the

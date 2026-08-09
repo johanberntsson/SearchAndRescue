@@ -12,6 +12,13 @@
 // keeps the "drop the two high coordinate bytes into the pointer" addressing.
 #define ATTIC_BASE 0x8000000UL
 
+// Attic layout. The maps are crunched on disk, so each is read into staging
+// first and decrunched down to its home; staging sits clear of every map's
+// largest possible size.
+#define ATTIC_COLOURMAP 0x8000000UL  // up to 1 MB, 16 planes at most
+#define ATTIC_HEIGHTMAP 0x8100000UL  // up to 1 MB, when it is too big for chip
+#define ATTIC_STAGE     0x8200000UL  // the crunched stream being unpacked
+
 // The colourmap lives in attic RAM. It has to: at twice the heightmap's
 // resolution it is 256K, four 64K planes at $8000000, $8010000, $8020000 and
 // $8030000, one per half-cell corner. It can afford to be out there because
