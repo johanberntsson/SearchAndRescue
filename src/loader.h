@@ -12,19 +12,25 @@
 // keeps the "drop the two high coordinate bytes into the pointer" addressing.
 #define ATTIC_BASE 0x8000000UL
 
-// At 320 wide the second framebuffer needs a whole 64K bank, and bank 5 is
-// the only one left -- so the colourmap moves out to attic RAM. It can
-// afford to: the inner loop reads it once per span drawn rather than once
-// per sample, and an attic read costs a flat +16 cycles (measured, see
-// CLAUDE.md), which is under 2% of a frame.
-#if WIDE
+// The colourmap lives in attic RAM. It has to: at twice the heightmap's
+// resolution it is 256K, four 64K planes at $8000000, $8010000, $8020000 and
+// $8030000, one per half-cell corner. It can afford to be out there because
+// the inner loop reads it once per span drawn rather than once per sample,
+// and an attic read costs a flat +16 cycles (measured on hardware, see
+// CLAUDE.md).
+//
+// The plane number is the bank byte, so this must stay 64K aligned with a
+// zero bank byte.
 #define COLOURMAP ATTIC_BASE
-#else
-#define COLOURMAP 0x50000UL
-#endif
 
 #define MAP_SIZE  256
 #define MAP_BYTES ((uint32_t)MAP_SIZE * MAP_SIZE)
+
+// Half-cell subdivision of the colourmap: COL_SUB x COL_SUB planes. Keep in
+// sync with COL_SUB in tools/convmap.py.
+#define COL_SUB     2
+#define COL_PLANES  (COL_SUB * COL_SUB)
+#define COL_BYTES   (MAP_BYTES * COL_PLANES)
 
 // Load the heightmap, colourmap and palette. Returns 0 on success. Call this
 // before switching the display, so failures can still be printed.

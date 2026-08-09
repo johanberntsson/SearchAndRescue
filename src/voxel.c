@@ -152,7 +152,8 @@ void voxel_init(void)
   // megabyte set here stand for the whole run.
   vx_hptr[2] = (uint8_t)(HEIGHTMAP >> 16);
   vx_hptr[3] = (uint8_t)(HEIGHTMAP >> 24);
-  vx_cptr[2] = (uint8_t)(COLOURMAP >> 16);
+  // Byte 2 is the plane, which the assembly picks per span, so only the
+  // megabyte is set here.
   vx_cptr[3] = (uint8_t)(COLOURMAP >> 24);
   vx_bands = BANDS;
   vx_bandsteps = BAND_STEPS;

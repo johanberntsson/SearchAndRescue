@@ -56,7 +56,9 @@ attic RAM at `$8000000` — the only rearrangement that fits, and the reason
 the attic figures were measured. It costs about half the frame rate:
 | `$1F800-$1FFFF` | 2 KB | Colour RAM alias — **do not write** |
 | `$40000-$4FFFF` | 64 KB | Heightmap, 256x256 |
-| `$50000-$5FFFF` | 64 KB | Colourmap, 256x256 |
+| `$8000000-$803FFFF` | 256 KB | Colourmap, 512x512, in attic RAM as four planes |
+
+Bank 5 is free at 160 wide; `make WIDE=1` puts the second framebuffer there.
 
 Writing past `$1F800` does not fault: it fills colour RAM with pixel data, which the VIC-IV reads back as character attributes and which blanks cells all over the display. Bank 1 has room to spare at 160 wide; at 320 it will not, and the colourmap moves to attic RAM (see Performance).
 
@@ -103,6 +105,16 @@ of the 256 entries will do.
 ## Resources
 
 `tools/convmap.py` turns the 1024x1024 VoxelSpace PNGs in `resources/` into raw `terrain.hgt`, `terrain.col` and `terrain.pal`. The sources need no quantisation: the heightmap is 8-bit greyscale and the colourmap is already a palette image. Palette bytes are nybble-swapped for the `$D100`/`$D200`/`$D300` registers, and the sky gradient goes in indices 224-239, which the colourmap never uses.
+
+**The colourmap is kept at twice the heightmap's resolution**, 512x512 against
+256x256, because the blockiness the eye notices is the colour and not the
+silhouette. It ships as four 64K planes, one per half-cell corner, rather
+than one 512x512 array: that keeps every plane on a 64K boundary so a cell is
+still addressed by dropping the two high coordinate bytes into a pointer, and
+the plane is picked with the bank byte from bit 7 of each position fraction.
+A real 512x512 array would need a shift and an OR on every read. Going
+further is a disk problem before it is a memory one — 1024x1024 colour would
+be 1 MB and a D81 holds 800 KB.
 
 Height units are a quarter of a map cell — the maps were downsampled 4x and the heights were not rescaled — and `SCALE_H` in `src/voxel.c` folds that in.
 
@@ -253,21 +265,18 @@ view is the real one):
   is a subtraction folded into a per-step horizon table, and the low eight
   bits it discards are zero.
 
-| | 160 wide | 320 wide |
+| | 256x256 colour | 512x512 colour |
 |---|---|---|
-| frame | 64.7 ms, 15.5 fps | 124.8 ms, 8.0 fps |
-| samples | 10240 | 20480 |
-| colourmap | chip RAM | attic RAM, ~3.1 ms (2.5%) |
-| panel | 20 columns | 40 columns |
+| 160 wide | 64.7 ms, 15.5 fps | **67.0 ms, 14.9 fps** |
+| 320 wide | 124.8 ms, 8.0 fps | 133.1 ms, 7.5 fps |
 
-The counters double exactly, which is the point: the march is per column and
-nothing else about the scene changes. **The picture barely improves**, though,
-because the blockiness is the 256x256 map showing through, not the pixel
-grid — the screen was never the limiting resolution. The source PNGs in
-`resources/` are 1024x1024 and `convmap.py` throws 4x of that away to fit
-64K, so a finer *colourmap* would buy far more than a finer screen, and attic
-RAM has room for it now. A 512x512 map would cost the 64K-boundary pointer
-trick, which is what makes a sample cheap.
+Going 320 wide doubles the sample count exactly and costs half the frame
+rate, and **the picture barely changes** — the blockiness was the map showing
+through, not the pixel grid, so the screen was never the limiting resolution.
+Doubling the *colourmap* instead costs 3.6% and is plainly visible. That is
+the trade this engine responds to: detail per cycle lives in the map, not in
+the raster. The panel going from 20 to 40 columns is the real argument for
+320 wide, not the terrain.
 
 Draw distance and cost are traded in the band schedule at the top of
 `voxel.c`: `BANDS` x `BAND_STEPS` samples per column, with the step doubling

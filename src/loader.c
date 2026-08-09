@@ -77,7 +77,7 @@ int load_resources(void)
   printf("LOADING TERRAIN...\n");
   if (load_far("TERRAIN.HGT", HEIGHTMAP, MAP_BYTES))
     return -1;
-  if (load_far("TERRAIN.COL", COLOURMAP, MAP_BYTES))
+  if (load_far("TERRAIN.COL", COLOURMAP, COL_BYTES))
     return -1;
   if (load_palette("TERRAIN.PAL"))
     return -1;

@@ -110,12 +110,24 @@ step$:
 clamp$:     lda     #0
             sta     zp:vx_ys
 
-draw$:      ; Same cell in the colour map: only the bank byte differs, and the
-            ; C side has already set it up.
+draw$:      ; Same cell in the colour map, which is at twice the resolution:
+            ; four 64K planes, one per half-cell corner. The cell address is
+            ; the same two bytes, and bit 7 of each position fraction picks
+            ; the plane, which is the bank byte. X is free until the span
+            ; length is worked out below.
             lda     zp:vx_hptr
             sta     zp:vx_cptr
             lda     zp:vx_hptr+1
             sta     zp:vx_cptr+1
+            ldx     #0
+            lda     zp:vx_px
+            bpl     xlo$
+            ldx     #1
+xlo$:       lda     zp:vx_py
+            bpl     ylo$
+            inx
+            inx
+ylo$:       stx     zp:vx_cptr+2
             ldz     #0
             lda     [vx_cptr],z
             sta     zp:vx_tmp       ; colour

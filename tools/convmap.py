@@ -18,6 +18,16 @@ from PIL import Image
 
 MAP_SIZE = 256  # engine map is MAP_SIZE x MAP_SIZE, so coords wrap in a byte
 
+# The colourmap is kept at twice the heightmap's resolution, because the
+# blockiness the eye notices is the colour, not the silhouette -- and the
+# source PNGs have the detail to spare. It ships as four MAP_SIZE x MAP_SIZE
+# planes, one per half-cell corner, rather than one 512x512 array: that keeps
+# each plane on a 64K boundary, so the renderer still addresses a cell by
+# dropping the two high coordinate bytes into a pointer, and picks the plane
+# with the bank byte. A real 512x512 array would need a shift and an OR on
+# every read.
+COL_SUB = 2
+
 # Reading a SEQ file through the Kernal comes up exactly 256 bytes short of the
 # end, whatever the file's size (measured across 16K-64K on xemu's ROM), so the
 # tail of every resource is unreachable.  Pad past it; src/loader.c reads a
@@ -78,7 +88,9 @@ def load_colourmap(path):
     # Point sample: averaging palette *indices* is meaningless. Copied
     # because a view of the decoded image is read-only, and reserve() below
     # rewrites indices in place.
-    n = a.shape[0] // MAP_SIZE
+    n = a.shape[0] // (MAP_SIZE * COL_SUB)
+    if n < 1:
+        sys.exit(f"{path}: {a.shape} is too small for {MAP_SIZE * COL_SUB} colour cells")
     indices = a[::n, ::n].copy()
 
     pal = im.getpalette()
@@ -153,9 +165,18 @@ def main():
     # uploading is three straight copies.
     palette = bytes(nybswap(c[channel]) for channel in range(3) for c in rgb)
 
+    # Plane (suby << 1) | subx, matching how the renderer builds the bank
+    # byte. Concatenated, so the loader can pull the whole thing up to attic
+    # RAM as one run of four 64K-aligned planes.
+    planes = b"".join(
+        indices[sy::COL_SUB, sx::COL_SUB].tobytes()
+        for sy in range(COL_SUB)
+        for sx in range(COL_SUB)
+    )
+
     for suffix, payload in (
         (".hgt", heights.tobytes()),
-        (".col", indices.tobytes()),
+        (".col", planes),
         (".pal", palette),
     ):
         with open(prefix + suffix, "wb") as f:
@@ -163,7 +184,9 @@ def main():
             f.write(TAIL_PAD)
 
     print(
-        f"{prefix}.hgt/.col {MAP_SIZE}x{MAP_SIZE}, "
+        f"{prefix}.hgt {MAP_SIZE}x{MAP_SIZE}, "
+        f"{prefix}.col {MAP_SIZE * COL_SUB}x{MAP_SIZE * COL_SUB} "
+        f"in {COL_SUB * COL_SUB} planes, "
         f"{prefix}.pal {len(palette)} bytes, "
         f"sky at {SKY_BASE}..{SKY_BASE + SKY_SHADES - 1}, "
         f"panel ink at {PANEL_INK}/{PANEL_LABEL}"
