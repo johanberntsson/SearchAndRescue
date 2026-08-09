@@ -7,6 +7,12 @@
 #define HEIGHTMAP 0x40000UL
 #define COLOURMAP 0x50000UL
 
+// Attic RAM: 8 MB of HyperRAM at $8000000, off the slow device bus rather
+// than in chip RAM. The VIC-IV cannot see it, so it is only good for things
+// the CPU or the DMA reach. It is 64K aligned, so a 256x256 map moved here
+// keeps the "drop the two high coordinate bytes into the pointer" addressing.
+#define ATTIC_BASE 0x8000000UL
+
 #define MAP_SIZE  256
 #define MAP_BYTES ((uint32_t)MAP_SIZE * MAP_SIZE)
 

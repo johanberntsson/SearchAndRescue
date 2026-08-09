@@ -27,17 +27,30 @@
 #define PROF_COUNT(c, n) ((void)0)
 #endif
 
-// A frame is longer than the 16-bit clock can span, so it is measured as two
-// parts that add up: P_COLUMN + P_OTHER.
+// A frame is longer than the 16-bit clock can span, so it is measured in
+// parts that add up: P_COLUMN + P_SKY + P_OTHER.
 enum {
   P_OTHER,   // input, camera, HUD and the buffer flip
   P_COLUMN,  // all of voxel_render's per-column work, summed over the frame
-  P_BENCH0,  // micro-benchmark slots, see profile_bench()
-  P_BENCH1,
-  P_BENCH2,
-  P_BENCH3,
-  P_BENCH4,
-  P_BENCH5,
+  P_SKY,     // the sky DMA at the top of each frame
+  // Micro-benchmarks, see profile_bench(). Two groups with a baseline each:
+  // the arithmetic ones are C and subtract P_C_EMPTY, the memory ones are
+  // assembly (src/bench_asm.s) and subtract P_ASM_EMPTY. They cannot share a
+  // baseline -- the compiler's loop overhead is not the assembly loop's.
+  P_C_EMPTY,
+  P_MUL32,     // the 32-bit multiply the compiler emits
+  P_MUL16,
+  P_HWMUL,     // the 45GS02 multiplier, driven directly
+  P_ASM_EMPTY,
+  P_READ_CHIP, // map sample, scattered, chip RAM
+  P_READ_ATTIC,
+  P_SEQ_CHIP,  // the same read walking straight up memory
+  P_SEQ_ATTIC,
+  P_WRITE_CHIP, // span pixel, byte write at a stride of 8
+  P_WRITE_ATTIC,
+  P_DMA_CHIP,   // bulk moves, timed per block rather than per iteration
+  P_DMA_ATTIC,
+  P_DMA_FILL,
   P_SLOTS
 };
 
@@ -75,7 +88,12 @@ uint32_t profile_ticks_per_second(void);
 // recalculated every couple of seconds and unchanged in between.
 uint16_t profile_fps10(uint32_t frame_ticks);
 
-// Run the micro-benchmarks and record them in the P_BENCH slots.
+// Run the micro-benchmarks and record them in the bench slots.
 void profile_bench(void);
+
+// Print the memory benchmarks to the text screen and wait for a key, or for
+// `seconds` to pass. For real hardware, which has no -dumpmem: it must be
+// called before vic4_init, while there is still a text screen to print on.
+void profile_report(uint8_t seconds);
 
 #endif

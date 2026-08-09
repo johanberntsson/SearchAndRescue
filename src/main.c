@@ -12,6 +12,11 @@
 #define CLIMB_RATE  2   // height units per frame
 #define GROUND_GAP  12  // never fly closer than this to the terrain
 
+// How long the startup benchmark report stays up if nobody presses a key.
+// Long enough to read or photograph, short enough that an unattended run
+// still spends most of its time rendering.
+#define REPORT_SECONDS 20
+
 static void fly(camera *cam, uint8_t keys)
 {
   int16_t speed = 0;
@@ -55,6 +60,14 @@ int main(void)
     return 1;
   }
 
+  // The benchmarks and their report come first, while the Kernal's text
+  // screen still exists to print on: vic4_init takes it away, and real
+  // hardware has no -dumpmem to read the results out of afterwards.
+  profile_init();
+  profile_calibrate();
+  profile_bench();
+  profile_report(REPORT_SECONDS);
+
   vic4_init();
   vic4_set_palette(loaded_palette());
   voxel_init();
@@ -64,10 +77,6 @@ int main(void)
   cam.angle = 0;
   cam.horizon = FB_HEIGHT * 2 / 5;
   cam.height = voxel_ground(cam.x, cam.y) + 60;
-
-  profile_init();
-  profile_calibrate();
-  profile_bench();
 
   for (;;) {
     uint32_t frame_start = profile_now32();

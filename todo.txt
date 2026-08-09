@@ -1,12 +1,96 @@
+PLAN
+
+Where the frame goes, now that the counters are back (PROFILE=0 timing,
+PROFILE=1 counts, 160x192):
+
+    88.6 ms a frame, 11.3 fps
+    ray march + per-column setup   ~73 ms   82%   scales with COLUMN COUNT
+    terrain span fills            ~13 ms   15%   4403 spans, 18329 pixels
+    sky DMA                       2.5 ms    3%   was ~8 ms as a pixel loop
+
+Every column takes all 64 samples -- none terminates early -- so the march
+cost is flat in the view, not scene dependent. The march is per column, not
+per pixel. Shortening the view from 192 to 152 rows is nearly free; doubling
+the width from 160 to 320 doubles the 82%.
+
+Chip RAM is 190K free (62K in bank 1, capped by the colour RAM alias at
+$1F800, plus banks 4 and 5). A 320x152 view needs 48640 bytes a buffer, so
+two buffers plus both maps plus a panel is ~240K. One 64K map has to leave
+chip RAM before a second 320-wide buffer can exist at all; there is no
+packing that avoids it. Each buffer must also sit inside one 64K bank,
+because the fill loop's pointer step never carries into byte 2.
+
+Of the two maps the colourmap is the one to move: voxel_asm.s only reads it
+under draw$, once per visible span rather than once per sample, and attic RAM
+is 64K aligned so the "drop the two high coordinate bytes into the pointer"
+addressing survives the move. Shrinking it to 128x128 instead would break
+that addressing and put a shift back in the inner loop.
+
+SETTLED ON REAL HARDWARE (see the table in CLAUDE.md):
+
+- colourmap to attic RAM is CHEAP. An attic read costs a flat +16 cycles and
+  there are only 4403 of them a frame, one per span drawn: 1.7 ms on a 90 ms
+  frame, under 2%. This is how the 64K gets freed. Do it when the memory is
+  actually needed, not before.
+- rendering into attic RAM and DMAing back is DEAD, but not for the reason
+  expected. The writes are fine -- posted, +3 cycles, 2 ms a frame. It is the
+  DMA back that kills it: attic to chip runs at 17.8 cycles a byte against
+  2.45 chip to chip, so one 320x152 buffer is 21 ms a frame.
+- a pre-rendered sky in attic RAM is dead for the same reason: 13.5 ms to DMA
+  in against the 2.5 ms the chip RAM strip template costs now.
+- so the attic RAM question is answered and it was never the blocker. The
+  blocker is that the march is per column and 320 wide has twice as many.
+
+1. DONE - instrumentation, so the 320-wide decision is made on numbers.
+   Memory benchmarks are in src/bench_asm.s (in C the chip and attic loops
+   compile to different code and the comparison is worthless), and
+   profile_report prints them on screen at startup for real hardware, which
+   has no -dumpmem.
+2. DONE - sky by DMA. 97.0 ms -> 88.6 ms a frame, 10.3 -> 11.3 fps
+   (both PROFILE=0). The whole sky is 2.5 ms of DMA against about 8 ms of
+   pixel loop, and it is the frame's clear pass as well
+3. NEXT - split screen at the current 160 wide: 19 rows of 3D over a 6 row
+   panel, FPS out of hud.c and into the panel. FCLRHI is set and FCLRLO is
+   not, so characters below $100 already render as ordinary 8x8 text from
+   CHARPTR -- the panel costs screen RAM and no pixel writes, and can be
+   shared between both screen tables rather than double buffered. Fits bank 1
+   with room to spare: no map moves, no attic RAM.
+   Expect roughly 11.7 fps, not the 13 first guessed: a shorter screen only
+   saves span and sky pixels, NOT march time, because no column terminates
+   early and every one takes all 64 samples whatever the height.
+4. the inner loop, BEFORE deciding on 320 wide. At ~257 cycles a sample the
+   march is 82% of the frame, and every cycle saved is worth double at 320
+   columns. Biasing the height difference so it is never negative drops the
+   sign-extension branch and two register writes from every sample; the
+   per-column C setup in column() is worth a look too.
+5. then decide 320 wide. At today's march cost it is ~5.7 fps at 4x16 and
+   ~7.2 fps at 4x12 with a shorter draw distance, against ~11.7 staying 160
+   wide and stretched. Memory layout if it goes ahead, all of it derisked:
+   bank 1 = FB_A 48640 + sky template, bank 4 = heightmap, bank 5 = FB_B,
+   attic = colourmap.
+6. controls: joystick and keyboard, long push -> big speed change, short push
+   -> small, accelerating towards a target speed rather than jumping to it.
+   Joystick forward/back and left/right, cursor keys to rotate the drone.
+   Scale the acceleration by the measured frame time -- at anything from 6 to
+   13 fps a per-frame constant will not feel the same twice
+
+IDEAS
+
+- an overview map in the panel, a small version of the colour map
+- pre-render the sky to attic RAM instead of a strip template, if the sky
+  ever needs to move with the horizon: a template one strip taller than the
+  screen, copied from a source offset of dy*8, shifts it uniformly
+
 OPEN:
 
+- profread's per-frame counters and the benchmark table need a PROFILE=1
+  build; frame times need PROFILE=0. Two runs, not one.
 - the far edge of each z band pops as you fly. Either blend the bands or
   shorten the step growth.
 - no pitch control yet, and the horizon is fixed.
-- more speed is available if wanted: the sky fill is ~12000 pixels a frame at
-  around 25 cycles each and could be unrolled, and biasing the height
-  difference so it is never negative would drop the sign-extension branch and
-  two register writes from every sample.
+- more speed is available if wanted: biasing the height difference so it is
+  never negative would drop the sign-extension branch and two register writes
+  from every sample.
 - the HUD is only an FPS readout so far. documentation/vision.md wants an
   artificial horizon, battery, GPS and signal strength.
 

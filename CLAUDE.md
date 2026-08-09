@@ -49,6 +49,7 @@ Only banks 1, 4 and 5 are free: `$20000-$3FFFF` holds the C65 ROM, and **colour 
 | `$10000-$177FF` | 30720 | Framebuffer A (160x192) |
 | `$17800-$1EFFF` | 30720 | Framebuffer B |
 | `$1F000` | 64 | Blank character for the screen row below the framebuffer |
+| `$1F100` | 1536 | One column strip of sky, DMAd across the buffer each frame |
 | `$1F800-$1FFFF` | 2 KB | Colour RAM alias — **do not write** |
 | `$40000-$4FFFF` | 64 KB | Heightmap, 256x256 |
 | `$50000-$5FFFF` | 64 KB | Colourmap, 256x256 |
@@ -67,7 +68,9 @@ Characters are laid out in **column strips** rather than rows (`screen[row][col]
 address(x, y) = base + (x >> 3) * FB_STRIDE + (x & 7) + y * 8
 ```
 
-The renderer relies on this everywhere. Double-buffer flips are just a rewrite of `SCRNPTR` between two prepared screen tables — no pixels move. Terrain spans plus the sky fill write every pixel exactly once per frame, so there is no clear pass.
+The renderer relies on this everywhere. Double-buffer flips are just a rewrite of `SCRNPTR` between two prepared screen tables — no pixels move.
+
+The layout also makes the sky nearly free. Every column strip's sky is the *same* `FB_STRIDE` bytes, so `voxel_init` prepares one strip at `FB_SKY` and `voxel_render` DMAs it across the buffer — `FB_COLS` copy jobs, 2.5 ms for the whole screen against about 8 ms when the inner loop drew it a pixel at a time. That prefill is also the frame's clear pass, so the terrain spans just draw over it.
 
 Two register notes: `CHRXSCL` (`$D05A`) is source pixels per output pixel in 120ths, so **60 doubles the width** and 240 halves it; and the hot registers (`$D05D` bit 7) must be turned off first or any write to a legacy VIC-II register makes the VIC-IV recompute the layout and undo the setup.
 
@@ -85,10 +88,20 @@ Height units are a quarter of a map cell — the maps were downsampled 4x and th
 
 ## Performance
 
-Roughly 10 fps, from 0.74 when the renderer was all C. `src/profile.c` measures
+Roughly 11 fps, from 0.74 when the renderer was all C. `src/profile.c` measures
 it; `tools/profread.py` formats the results out of a `-dumpmem` image. The FPS
 readout in the corner is always on. `make PROFILE=0` compiles out the
-per-column instrumentation (about 0.6% of a frame); the counter stays.
+per-column instrumentation and the counters in `voxel_asm.s`, which the
+Makefile guards with the same flag passed to the assembler; the FPS counter
+stays. **That instrumentation costs about 7% of a frame**, so the readout in
+the corner of a default build reads low — 10.5 against the 11.3 a `PROFILE=0`
+build actually runs at. Quote speed from a `PROFILE=0` run. Switching
+`PROFILE` touches a stamp file that forces a rebuild, because otherwise half
+the objects disagree with the flag and the counters silently stay off.
+
+The counters are totalled per frame rather than per column: `profile_count`
+adds into a 32-bit field, and calling it four times a column instead of four
+times a frame cost 9% of the frame on its own.
 
 **Never time this with `xemu -sleepless`.** It runs the emulator around 19x
 faster than a real MEGA65, so wall-clock frame counts measure the host, not the
@@ -103,7 +116,58 @@ What the measurements found, in the order they mattered:
 | C 32-bit multiply | 2203 | one per heightmap sample, 64% of the frame |
 | the same on the hardware multiplier | 85 | `$D770`, see `mul_shift8` history |
 | C 16-bit multiply | 657 | still a library call |
-| one `__far` byte write | ~53 | |
+| a scattered map sample | 72 | pointer setup and `lda [ptr],z` |
+| one span pixel | 29 | byte write at a stride of 8 |
+| DMA copy | 2.6 /byte | fill is 1.6 |
+
+**The memory benchmarks live in `src/bench_asm.s`, not in C, and must stay
+there.** They exist to compare chip RAM against attic RAM, and the compiler
+cross-calls loop bodies into shared fragments: written in C the two versions
+come out as different instruction sequences, and the attic read measured
+*faster* than the chip read. In assembly the two differ only by the pointer
+the caller sets up, so the ratio means something. Each loop carries the same
+counter tail as `bench_empty` so the baseline subtracts exactly — the two
+groups also need separate baselines, since the compiler's loop overhead is
+not the assembly loop's and mixing them produced negative readings.
+
+**xemu does not model the attic RAM bus**, and reports it at chip RAM speed.
+Measured on a real MEGA65 (chip / attic, cycles per operation):
+
+| | chip | attic | |
+|---|---|---|---|
+| map sample, scattered | 70 | 86 | +16 |
+| map read, sequential | 26 | 41 | +15 |
+| span pixel, one byte write | 30 | 33 | **+3** |
+| DMA copy chip to chip | 2.45 /byte | | |
+| DMA copy attic to chip | | 17.80 /byte | **7.3x** |
+| DMA fill | 1.22 /byte | | |
+
+So a CPU access to attic RAM costs a flat ~15 cycles more than chip RAM,
+whether it is scattered or sequential — the 8-byte cache line buys nothing
+worth planning around. **Writes are posted and nearly free at +3.** And the
+DMA is the opposite of what everyone assumes: attic to chip runs at 2.3 MB/s
+against 16.5 MB/s chip to chip, which rules out any per-frame bulk move out
+of attic RAM. Keeping the sky template in chip RAM rather than attic is worth
+11 ms a frame on its own.
+
+Both `profread` and the on-screen report print an addressing check
+(`$11223344`) alongside these — note that it needs `volatile` far pointers,
+or the compiler reorders the writes and reads past each other and the check
+fails on correct hardware.
+
+The same run had the real machine at 11.0-11.2 fps against xemu's 11.6, so
+xemu's chip RAM timing is about 4% optimistic and can be trusted for
+everything that stays in chip RAM.
+
+Real hardware has no `-dumpmem`, so `profile_report` prints the same memory
+table to the Kernal's text screen at startup and waits for a key (or 20
+seconds, so unattended runs still get on with rendering). It has to run
+*before* `vic4_init`, which takes the text screen away. The figures come out
+identical to `profread`'s, so either route can be trusted.
+
+Calypsi 5.18 emits a call to `_FillZPQ` — a runtime helper that is in none of
+its libraries — when a function call appears inside a 32-bit expression. The
+link fails with an undefined symbol. Hoist the call into a variable.
 
 Two things that sound like optimisations and measured slower: `--no-cross-call`
 and `--strong-inline` (615ms a frame against 533ms).

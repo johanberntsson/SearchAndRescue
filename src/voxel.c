@@ -2,6 +2,7 @@
 
 #include <mega65.h>
 
+#include "dma.h"
 #include "loader.h"
 #include "profile.h"
 #include "vic4.h"
@@ -38,10 +39,9 @@ static const int16_t sin_quarter[65] = {
 
 static int16_t tan_tab[FB_WIDTH]; // 8.8 offset from the view axis per column
 
-// Shared with src/voxel_asm.s, which indexes both with an 8-bit register, so
-// neither may grow past 256 bytes.
+// Shared with src/voxel_asm.s, which indexes it with an 8-bit register, so it
+// may not grow past 256 bytes.
 uint16_t vx_inv_z[NSTEPS];  // SCALE_H / z, in 8.8
-uint8_t vx_sky[FB_HEIGHT];
 
 // The assembly column routine's parameter block. Zero page because every one
 // of these is touched in the inner loop.
@@ -55,6 +55,16 @@ __zpage int16_t vx_camh, vx_horizon;
 __zpage int16_t vx_ys;
 __zpage uint8_t vx_ybuf, vx_tmp;
 __zpage uint8_t vx_bands, vx_bandsteps, vx_band, vx_step;
+#if PROFILE_DETAIL
+// Event counts for one column, reset before the call and added up after it.
+// Counting in the assembly keeps the inner loop down to one `inc` a sample.
+__zpage uint8_t vx_n_sample, vx_n_span, vx_n_spanpix;
+
+// Frame totals. profile_count() adds into a 32-bit field, which is far too
+// expensive to call four times a column: doing that cost 9% of the frame.
+// None of these can overflow 16 bits in one frame.
+static uint16_t n_sample, n_span, n_spanpix, n_skypix;
+#endif
 
 void voxel_column_asm(void);
 
@@ -120,8 +130,19 @@ void voxel_init(void)
     step <<= 1;
   }
 
-  for (y = 0; y < FB_HEIGHT; y++)
-    vx_sky[y] = SKY_BASE + (uint8_t)(((uint16_t)y * SKY_SHADES) / FB_HEIGHT);
+  // One column strip of sky, for voxel_render to DMA across the buffer. The
+  // gradient runs down the screen, and within a strip the eight pixels of a
+  // row are eight consecutive bytes, so a row is eight copies of one shade.
+  {
+    uint8_t __far *tmpl = (uint8_t __far *)FB_SKY;
+    uint8_t i;
+
+    for (y = 0; y < FB_HEIGHT; y++) {
+      uint8_t shade = SKY_BASE + (uint8_t)(((uint16_t)y * SKY_SHADES) / FB_HEIGHT);
+      for (i = 0; i < 8; i++)
+        tmpl[(int16_t)y * 8 + i] = shade;
+    }
+  }
 }
 
 uint8_t voxel_ground(uint16_t x, uint16_t y)
@@ -139,6 +160,11 @@ static void column(uint32_t fbcol, const camera *cam, int16_t dirx, int16_t diry
   vx_camh = cam->height;
   vx_horizon = cam->horizon;
   vx_ybuf = FB_HEIGHT;
+#if PROFILE_DETAIL
+  vx_n_sample = 0;
+  vx_n_span = 0;
+  vx_n_spanpix = 0;
+#endif
 
   // The compiler uses the same multiplier for its own inlined multiplies, so
   // the top half of input B cannot be assumed to have survived the last call.
@@ -147,7 +173,12 @@ static void column(uint32_t fbcol, const camera *cam, int16_t dirx, int16_t diry
 
   voxel_column_asm();
 
-  PROF_COUNT(C_SKYPIX, vx_ybuf);
+#if PROFILE_DETAIL
+  n_skypix += vx_ybuf;
+  n_sample += vx_n_sample;
+  n_span += vx_n_span;
+  n_spanpix += vx_n_spanpix;
+#endif
 }
 
 void voxel_render(uint32_t base, const camera *cam)
@@ -155,6 +186,19 @@ void voxel_render(uint32_t base, const camera *cam)
   int16_t cs = voxel_cos(cam->angle);
   int16_t sn = voxel_sin(cam->angle);
   uint8_t x;
+
+  // Lay the sky down over the whole buffer first and let the terrain draw
+  // over it. That writes more pixels than filling only the gap above each
+  // column did, but the DMA moves a byte in a couple of cycles against the
+  // 25-odd the fill loop took, and it takes the sky out of the inner loop
+  // altogether. It also serves as the frame's clear pass: every pixel is
+  // written before anything reads it.
+  {
+    uint16_t t0 = PROF_NOW();
+    for (x = 0; x < FB_COLS; x++)
+      dma_copy(FB_SKY, base + (uint32_t)x * FB_STRIDE, FB_STRIDE);
+    PROF_ADD(P_SKY, t0);
+  }
 
   for (x = 0; x < FB_WIDTH; x++) {
     uint16_t t0 = PROF_NOW();
@@ -167,4 +211,12 @@ void voxel_render(uint32_t base, const camera *cam)
     column(FB_COLUMN(base, x), cam, dirx, diry);
     PROF_ADD(P_COLUMN, t0);
   }
+
+#if PROFILE_DETAIL
+  profile_count(C_SAMPLE, n_sample);
+  profile_count(C_SPAN, n_span);
+  profile_count(C_SPANPIX, n_spanpix);
+  profile_count(C_SKYPIX, n_skypix);
+  n_sample = n_span = n_spanpix = n_skypix = 0;
+#endif
 }

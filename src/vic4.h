@@ -23,6 +23,13 @@
 // 64 zero bytes, for the screen row past the bottom of the framebuffer.
 #define FB_BLANK 0x1F000UL
 
+// In column-strip layout every strip's sky is the same FB_STRIDE bytes, so
+// one strip is prepared at startup and DMAd across the buffer each frame
+// instead of being drawn a pixel at a time. Lives in what is left of bank 1
+// after both buffers and the blank character: $1F100 + 1536 is still under
+// the colour RAM alias at $1F800.
+#define FB_SKY 0x1F100UL
+
 // The display is 25 character rows tall whatever the framebuffer holds.
 #define SCREEN_ROWS 25
 

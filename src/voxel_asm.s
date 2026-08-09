@@ -12,7 +12,13 @@
             .extern vx_px, vx_py, vx_stepx, vx_stepy
             .extern vx_camh, vx_horizon, vx_ybuf, vx_ys, vx_tmp
             .extern vx_bands, vx_bandsteps, vx_band, vx_step
-            .extern vx_inv_z, vx_sky
+            .extern vx_inv_z
+#if PROFILE_DETAIL
+            ; Per-column event counts, summed into the profiler by column().
+            ; A column cannot take more than 64 samples, draw more than 64
+            ; spans or fill more than FB_HEIGHT pixels, so a byte holds each.
+            .extern vx_n_sample, vx_n_span, vx_n_spanpix
+#endif
 
 MULTINA:    .equlab 0xd770
 MULTINB:    .equlab 0xd774
@@ -23,7 +29,7 @@ MULTOUT:    .equlab 0xd778
 
 voxel_column_asm:
             ; Y indexes inv_z for the whole march. Nothing else in the step or
-            ; span loops touches it, and the sky fill reloads it afterwards.
+            ; span loops touches it.
             ldy     #0
             lda     zp:vx_bands
             sta     zp:vx_band
@@ -31,7 +37,11 @@ voxel_column_asm:
 band$:      lda     zp:vx_bandsteps
             sta     zp:vx_step
 
-step$:      ; px += stepx, py += stepy. Two 16-bit adds rather than one 32-bit
+step$:
+#if PROFILE_DETAIL
+            inc     zp:vx_n_sample
+#endif
+            ; px += stepx, py += stepy. Two 16-bit adds rather than one 32-bit
             ; one, because a carry out of px must not reach py: px and py wrap
             ; independently, which is what wraps the map.
             clc
@@ -142,6 +152,13 @@ draw$:      ; Same cell in the colour map: only the bank byte differs, and the
             lda     zp:vx_ybuf
             sbc     zp:vx_ys
             tax
+#if PROFILE_DETAIL
+            ; A is the span length and is about to be reloaded from vx_tmp.
+            inc     zp:vx_n_span
+            clc
+            adc     zp:vx_n_spanpix
+            sta     zp:vx_n_spanpix
+#endif
             ldz     #0
 fill$:      lda     zp:vx_tmp
             sta     [vx_fb],z
@@ -156,7 +173,7 @@ nowrap$:    dex
 
             lda     zp:vx_ys
             sta     zp:vx_ybuf
-            beq     sky$            ; column is full
+            beq     done$           ; column is full
 
 next$:      dec     zp:vx_step
             lbne    step$
@@ -168,28 +185,6 @@ next$:      dec     zp:vx_step
             dec     zp:vx_band
             lbne    band$
 
-sky$:       ldx     zp:vx_ybuf
-            beq     done$
-            lda     zp:vx_fbbase
-            sta     zp:vx_fb
-            lda     zp:vx_fbbase+1
-            sta     zp:vx_fb+1
-            lda     zp:vx_fbbase+2
-            sta     zp:vx_fb+2
-            lda     zp:vx_fbbase+3
-            sta     zp:vx_fb+3
-            ldy     #0
-            ldz     #0
-skyloop$:   lda     vx_sky,y
-            sta     [vx_fb],z
-            clc
-            lda     zp:vx_fb
-            adc     #8
-            sta     zp:vx_fb
-            bcc     skynowrap$
-            inc     zp:vx_fb+1
-skynowrap$: iny
-            dex
-            bne     skyloop$
-
+            ; Whatever is left above vx_ybuf is sky, and voxel_render has
+            ; already DMAd that in. Nothing to do.
 done$:      rts

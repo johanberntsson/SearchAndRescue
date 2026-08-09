@@ -1,10 +1,18 @@
 #include <mega65.h>
+#include <stdio.h>
 
+#include "dma.h"
 #include "loader.h"
 #include "profile.h"
 #include "vic4.h"
 
 #define BENCH_ITERATIONS 2000
+
+// The DMA benchmarks move real blocks, so they need their own, much smaller
+// count. 16 x 4096 is long enough to time and short enough not to stall
+// startup on a slow bus.
+#define DMA_ITERATIONS 16
+#define DMA_BYTES      4096
 
 // A PAL frame is 312 raster lines at 50 Hz, so a line is 1/15600 s. Calibrating
 // over 16 of them is long enough to measure accurately and short enough that
@@ -26,6 +34,9 @@ struct results {
   uint16_t cal_lines;
   uint32_t hwmul_check;
   uint32_t frame_ticks; // whole-frame total from the 32-bit clock, as a check
+  uint16_t dma_iterations;
+  uint16_t dma_bytes;
+  uint32_t attic_check;  // pattern written across attic RAM and read back
 };
 
 volatile struct results profile_results = {{0xDE, 0xAD, 0xBE, 0xEF}};
@@ -41,6 +52,8 @@ void profile_init(void)
   for (i = 0; i < C_SLOTS; i++)
     profile_results.count[i] = 0;
   profile_results.iterations = BENCH_ITERATIONS;
+  profile_results.dma_iterations = DMA_ITERATIONS;
+  profile_results.dma_bytes = DMA_BYTES;
   profile_results.cal_lines = CAL_LINES;
 
   // Timer A free-runs off phi2; timer B counts timer A's underflows. Together
@@ -147,41 +160,62 @@ uint16_t profile_fps10(uint32_t frame_ticks)
   return fps10;
 }
 
-// Micro-benchmarks for the primitives the inner loop is built from. Each runs
-// the same iteration count, and P_BENCH0 is an empty loop so the loop overhead
-// can be subtracted from the rest.
+// Zero page parameters for the assembly benchmarks in src/bench_asm.s.
+uint8_t __far *__attribute__((zpage)) bn_ptr;
+__zpage uint16_t bn_px, bn_py, bn_n;
+__zpage uint8_t bn_sink;
+
+void bench_empty(void);
+void bench_read_walk(void);
+void bench_read_seq(void);
+void bench_write_span(void);
+
+// Run one of the assembly loops with the pointer parked at base, and record
+// how long it took. They all take the same parameters and carry the same
+// counter tail, so P_ASM_EMPTY subtracts out exactly.
+static void run_asm_bench(uint8_t slot, void (*fn)(void), uint32_t base)
+{
+  uint32_t t;
+
+  bn_ptr = (uint8_t __far *)base;
+  bn_px = 0;
+  bn_py = 0;
+  bn_n = BENCH_ITERATIONS;
+  t = profile_now32();
+  fn();
+  profile_add32(slot, t);
+}
+
+// Micro-benchmarks for the primitives the inner loop is built from.
+//
+// The arithmetic group is C and subtracts P_C_EMPTY. The memory group is
+// assembly, because the compiler cross-calls loop bodies into shared
+// fragments and a chip RAM loop and an attic RAM loop written the same way in
+// C come out as different code -- measured that way the attic read looked
+// faster than the chip read.
 void profile_bench(void)
 {
-  const uint8_t __far *map = (const uint8_t __far *)(HEIGHTMAP + 0x8000);
-  uint8_t __far *fb = (uint8_t __far *)FB_A;
-  volatile uint16_t sink16 = 0;
   volatile int32_t sink32 = 0;
+  volatile uint16_t sink16 = 0;
   uint16_t i;
   uint32_t t;
 
   t = profile_now32();
   for (i = 0; i < BENCH_ITERATIONS; i++)
     sink16 = i;
-  profile_add32(P_BENCH0, t);
-
-  // A heightmap sample the way voxel.c does it: build the biased signed index
-  // and read through a far pointer.
-  t = profile_now32();
-  for (i = 0; i < BENCH_ITERATIONS; i++)
-    sink16 = map[(int16_t)(((i & 0xFF00) | (i >> 8)) ^ 0x8000)];
-  profile_add32(P_BENCH1, t);
+  profile_add32(P_C_EMPTY, t);
 
   // The projection: 16x16 into 32 bits, shifted back down.
   t = profile_now32();
   for (i = 0; i < BENCH_ITERATIONS; i++)
     sink32 = ((int32_t)(int16_t)i * (int16_t)(i + 1)) >> 8;
-  profile_add32(P_BENCH2, t);
+  profile_add32(P_MUL32, t);
 
   // The same thing kept entirely in 16 bits.
   t = profile_now32();
   for (i = 0; i < BENCH_ITERATIONS; i++)
     sink16 = (uint16_t)((i & 0xFF) * (uint8_t)(i >> 8));
-  profile_add32(P_BENCH3, t);
+  profile_add32(P_MUL16, t);
 
   // The 45GS02 hardware multiplier, driven directly.
   t = profile_now32();
@@ -190,23 +224,149 @@ void profile_bench(void)
     MATH.multinb32 = i + 1;
     sink32 = (int32_t)MATH.multout32;
   }
-  profile_add32(P_BENCH4, t);
+  profile_add32(P_HWMUL, t);
   MATH.multina32 = 1234;
   MATH.multinb32 = 5678;
   profile_results.hwmul_check = MATH.multout32;
 
-  // Eight pixels of a terrain span: byte writes at a stride of 8.
-  t = profile_now32();
-  for (i = 0; i < BENCH_ITERATIONS; i++) {
-    uint8_t __far *p = fb;
-    uint8_t n;
-    for (n = 0; n < 8; n++) {
-      *p = (uint8_t)i;
-      p += 8;
-    }
+  // Attic RAM: 8 MB of HyperRAM off the slow device bus. These decide whether
+  // the colourmap or a back buffer can leave chip RAM, which is what the
+  // whole 320-wide question hangs on.
+  //
+  // xemu does not model that bus. In the emulator the attic figures come out
+  // at roughly chip RAM speed and mean nothing at all; only a run on real
+  // hardware answers this.
+  // Distinct bytes at spread-out offsets, read back in a different order.
+  // Anything other than $11223344 means attic RAM is missing, smaller than
+  // it should be, or wrapping -- and a wrap would otherwise show up as a
+  // suspiciously fast benchmark rather than as an error.
+  {
+    volatile uint8_t __far *a0 = (uint8_t __far *)ATTIC_BASE;
+    volatile uint8_t __far *a1 = (uint8_t __far *)(ATTIC_BASE + 0x4000);
+    volatile uint8_t __far *a2 = (uint8_t __far *)(ATTIC_BASE + 0x100000);
+    volatile uint8_t __far *a3 = (uint8_t __far *)(ATTIC_BASE + 0x400000);
+
+    a0[0] = 0x11;
+    a1[0] = 0x22;
+    a2[0] = 0x33;
+    a3[0] = 0x44;
+    profile_results.attic_check = (uint32_t)a0[0] << 24 | (uint32_t)a1[0] << 16
+                                  | (uint32_t)a2[0] << 8 | a3[0];
   }
-  profile_add32(P_BENCH5, t);
+
+  run_asm_bench(P_ASM_EMPTY, bench_empty, HEIGHTMAP);
+  run_asm_bench(P_READ_CHIP, bench_read_walk, HEIGHTMAP);
+  run_asm_bench(P_READ_ATTIC, bench_read_walk, ATTIC_BASE);
+  run_asm_bench(P_SEQ_CHIP, bench_read_seq, HEIGHTMAP);
+  run_asm_bench(P_SEQ_ATTIC, bench_read_seq, ATTIC_BASE);
+  // The span writes walk 8 bytes an iteration, so they need room for
+  // BENCH_ITERATIONS * 8 bytes and must not land on anything that matters.
+  run_asm_bench(P_WRITE_CHIP, bench_write_span, FB_A);
+  run_asm_bench(P_WRITE_ATTIC, bench_write_span, ATTIC_BASE);
+
+  // Bulk moves. FB_A and FB_B are overwritten by the first frame anyway, so
+  // they are free scratch.
+  t = profile_now32();
+  for (i = 0; i < DMA_ITERATIONS; i++)
+    dma_copy(FB_B, FB_A, DMA_BYTES);
+  profile_add32(P_DMA_CHIP, t);
+
+  t = profile_now32();
+  for (i = 0; i < DMA_ITERATIONS; i++)
+    dma_copy(ATTIC_BASE, FB_A, DMA_BYTES);
+  profile_add32(P_DMA_ATTIC, t);
+
+  t = profile_now32();
+  for (i = 0; i < DMA_ITERATIONS; i++)
+    dma_fill(FB_A, 0, DMA_BYTES);
+  profile_add32(P_DMA_FILL, t);
 
   (void)sink16;
   (void)sink32;
+}
+
+// ---------------------------------------------------------------------------
+// On-screen report, for real hardware. xemu has -dumpmem and tools/profread.py;
+// a MEGA65 has neither, and the attic RAM figures are exactly the ones that
+// only mean anything on the real machine.
+
+#define CPU_HZ 40500000UL
+
+// The MEGA65's ASCII key register: nonzero when a key is waiting, cleared by
+// writing to it. Not in the SDK header.
+#define KEY_ASCII (*(volatile uint8_t *)0xD610)
+
+// Cycles per clock tick, times 100, worked out once by profile_report. The
+// tick rate was measured against the raster rather than assumed, so this
+// follows whatever the machine actually runs at.
+//
+// It is a variable and not a function on purpose: calling one inside a 32-bit
+// expression makes Calypsi 5.18 emit a call to `_FillZPQ`, a runtime helper
+// that is not in any of its libraries, and the link fails.
+static uint32_t cyc_per_tick100;
+
+static uint16_t per_iteration(uint8_t slot, uint8_t base)
+{
+  uint32_t net = profile_results.us[slot] - profile_results.us[base];
+
+  return (uint16_t)(net * cyc_per_tick100 / ((uint32_t)BENCH_ITERATIONS * 100));
+}
+
+// Cycles per byte, times 100: these are fractions of a cycle.
+static uint16_t per_byte100(uint8_t slot)
+{
+  uint32_t moved = (uint32_t)DMA_ITERATIONS * DMA_BYTES;
+
+  return (uint16_t)(profile_results.us[slot] * cyc_per_tick100 / moved);
+}
+
+static void row(const char *name, uint8_t chip, uint8_t attic)
+{
+  uint16_t c = per_iteration(chip, P_ASM_EMPTY);
+  uint16_t a = per_iteration(attic, P_ASM_EMPTY);
+
+  // The ratio is the number that decides anything, so work it out here
+  // rather than leaving it to be done by eye.
+  printf(" %-18s%5u%6u  %u.%02uX\n", name, c, a,
+         c ? a / c : 0, c ? (uint16_t)((uint32_t)a * 100 / c) % 100 : 0);
+}
+
+void profile_report(uint8_t seconds)
+{
+  uint32_t deadline;
+
+  cyc_per_tick100 = CPU_HZ / (ticks_per_second / 100);
+
+  printf("\nCPU %luKHZ  CLOCK %luKHZ\n\n",
+         (unsigned long)(CPU_HZ / 1000), (unsigned long)(ticks_per_second / 1000));
+
+  printf("CYCLES PER OP      CHIP ATTIC  RATIO\n");
+  row("MAP SAMPLE", P_READ_CHIP, P_READ_ATTIC);
+  row("SEQUENTIAL READ", P_SEQ_CHIP, P_SEQ_ATTIC);
+  row("SPAN PIXEL WRITE", P_WRITE_CHIP, P_WRITE_ATTIC);
+
+  printf("\nDMA CYCLES PER BYTE\n");
+  printf(" COPY CHIP-CHIP    %u.%02u\n",
+         per_byte100(P_DMA_CHIP) / 100, per_byte100(P_DMA_CHIP) % 100);
+  printf(" COPY ATTIC-CHIP   %u.%02u\n",
+         per_byte100(P_DMA_ATTIC) / 100, per_byte100(P_DMA_ATTIC) % 100);
+  printf(" FILL CHIP         %u.%02u\n",
+         per_byte100(P_DMA_FILL) / 100, per_byte100(P_DMA_FILL) % 100);
+
+  printf("\nATTIC ADDRESSING  %08lX %s\n",
+         (unsigned long)profile_results.attic_check,
+         profile_results.attic_check == 0x11223344UL ? "OK" : "BAD");
+  printf("HW MULTIPLIER     %lu %s\n",
+         (unsigned long)profile_results.hwmul_check,
+         profile_results.hwmul_check == 1234UL * 5678 ? "OK" : "BAD");
+
+  printf("\nANY KEY TO FLY\n");
+
+  // Wait for a key or for the timeout, so that an unattended run (xemu
+  // headless, say) still gets on with rendering.
+  KEY_ASCII = 0;
+  deadline = profile_now32() - (uint32_t)seconds * ticks_per_second;
+  while (KEY_ASCII == 0 && profile_now32() > deadline)
+    ;
+  KEY_ASCII = 0;
 }

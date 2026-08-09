@@ -4,6 +4,7 @@ TARGET   = --target=mega65
 # PROFILE=0 compiles out the per-column instrumentation; the FPS counter stays.
 PROFILE ?= 1
 CFLAGS   = $(TARGET) -O2 --speed -DPROFILE_DETAIL=$(PROFILE)
+ASFLAGS  = $(TARGET) -DPROFILE_DETAIL=$(PROFILE)
 LDFLAGS  = $(TARGET) --output-format=prg
 LINKFILE = mega65-plain.scm
 
@@ -30,14 +31,23 @@ prg: $(PRG)
 $(BUILD):
 	mkdir -p $(BUILD)
 
+# Both compiler and assembler see -DPROFILE_DETAIL, so changing PROFILE has to
+# force a rebuild. Without this, `make PROFILE=0` and then `make` leaves every
+# object built against the wrong flag and the counters silently stay off.
+PROFILE_STAMP = $(BUILD)/profile-$(PROFILE).stamp
+
+$(PROFILE_STAMP): | $(BUILD)
+	rm -f $(BUILD)/profile-*.stamp
+	touch $@
+
 # Every object depends on every header. Crude, but the alternative is stale
 # objects built against a changed memory layout, which fails in ways that look
 # like hardware bugs.
-$(BUILD)/%.o: src/%.c $(wildcard src/*.h) | $(BUILD)
+$(BUILD)/%.o: src/%.c $(wildcard src/*.h) $(PROFILE_STAMP) | $(BUILD)
 	cc6502 $(CFLAGS) -c -o $@ $<
 
-$(BUILD)/%.o: src/%.s | $(BUILD)
-	as6502 $(TARGET) -o $@ $<
+$(BUILD)/%.o: src/%.s $(wildcard src/*.h) $(PROFILE_STAMP) | $(BUILD)
+	as6502 $(ASFLAGS) -o $@ $<
 
 $(ELF): $(OBJS)
 	ln6502 $(LDFLAGS) -o $@ $(LINKFILE) $(OBJS)
