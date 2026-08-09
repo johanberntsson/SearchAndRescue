@@ -188,8 +188,21 @@ Calypsi 5.18 emits a call to `_FillZPQ` — a runtime helper that is in none of
 its libraries — when a function call appears inside a 32-bit expression. The
 link fails with an undefined symbol. Hoist the call into a variable.
 
-Two things that sound like optimisations and measured slower: `--no-cross-call`
-and `--strong-inline` (615ms a frame against 533ms).
+Three things that sound like optimisations and measured slower:
+`--no-cross-call` and `--strong-inline` (615 ms a frame against 533 ms), and
+using the 45GS02's 32-bit `ADCQ` to step the ray position in one instruction
+instead of two 16-bit adds (68.5 ms against 64.7).
+
+**The Q pseudo-register *is* A/X/Y/Z**, which is why: the march keeps its step
+index in Y across the whole column, so any Q operation destroys it. Moving
+the index to zero page costs a reload plus two `inc`s instead of two `iny`s,
+about 9 cycles a sample, and that is more than the Q form saves. The first
+attempt at it did not move the index and appeared to run 30% faster — it was
+reading garbage from `vx_inv_z` and filling columns early, which the sample
+counter showed at once (5612 samples a frame instead of 10240). ADCQ would
+also leak a carry from px into py, which is not the once-a-column rounding it
+first looks like: with a negative step the carry fires on nearly every step,
+drifting y by about a quarter of a cell down the march.
 
 The inner loop is `src/voxel_asm.s`. The C version of the same loop cost 1392
 cycles per sample, because the compiler builds it out of `jsr` fragments and

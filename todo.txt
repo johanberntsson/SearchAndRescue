@@ -82,11 +82,10 @@ IDEAS
 - an overview map in the panel, a small version of the colour map. It cannot
   be text characters; it wants full-colour cells, which can be mixed into the
   panel per cell since the mode is chosen by character number.
-- the last obvious march win is the position update, 40 of the 182 cycles a
-  sample. The 45GS02's 32-bit ADCQ would do both axes at once for about 22,
-  but a carry out of px would reach py -- worth about 4.5 ms a frame if a
-  1/256th-cell error a few times a column is acceptable, which it probably
-  is. Unlike the three changes above, that one is not exact.
+- ADCQ for the position update was TRIED AND IS SLOWER: 68.5 ms against 64.7.
+  The Q pseudo-register is A/X/Y/Z, so it destroys the march's step index in
+  Y; keeping the index in zero page instead costs more than the 32-bit add
+  saves. See CLAUDE.md. Do not try it again.
 - pre-render the sky to attic RAM instead of a strip template, if the sky
   ever needs to move with the horizon: a template one strip taller than the
   screen, copied from a source offset of dy*8, shifts it uniformly
