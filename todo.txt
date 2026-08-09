@@ -3,11 +3,13 @@ PLAN
 Where the frame goes, now that the counters are back (PROFILE=0 timing,
 PROFILE=1 counts, 160x192):
 
-    79.4 ms a frame, 12.6 fps, at 160x152
-    ray march + per-column setup  ~76 ms   96%   scales with COLUMN COUNT
-    terrain span fills          (in the above)   3983 spans, 14489 pixels
-    sky DMA                       2.2 ms    3%   was ~8 ms as a pixel loop
-    panel and everything else     0.8 ms    1%   was 3.3 ms with hud.c
+    64.7 ms a frame, 15.5 fps, at 160x152
+    ray march                    46.0 ms   71%   10240 samples at 182 cycles
+    terrain span fills           10.0 ms   15%   14489 pixels at ~28
+    span prologues                3.4 ms    5%   3983 colour reads
+    per-column C setup            2.4 ms    4%   607 cycles a column
+    sky DMA                       2.1 ms    3%
+    panel and everything else     0.8 ms    1%
 
 Every column takes all 64 samples -- none terminates early -- so the march
 cost is flat in the view, not scene dependent. The march is per column, not
@@ -77,7 +79,14 @@ SETTLED ON REAL HARDWARE (see the table in CLAUDE.md):
 
 IDEAS
 
-- an overview map in the panel, a small version of the colour map
+- an overview map in the panel, a small version of the colour map. It cannot
+  be text characters; it wants full-colour cells, which can be mixed into the
+  panel per cell since the mode is chosen by character number.
+- the last obvious march win is the position update, 40 of the 182 cycles a
+  sample. The 45GS02's 32-bit ADCQ would do both axes at once for about 22,
+  but a carry out of px would reach py -- worth about 4.5 ms a frame if a
+  1/256th-cell error a few times a column is acceptable, which it probably
+  is. Unlike the three changes above, that one is not exact.
 - pre-render the sky to attic RAM instead of a strip template, if the sky
   ever needs to move with the horizon: a template one strip taller than the
   screen, copied from a source offset of dy*8, shifts it uniformly

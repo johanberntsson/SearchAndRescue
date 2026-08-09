@@ -107,7 +107,7 @@ Height units are a quarter of a map cell — the maps were downsampled 4x and th
 
 ## Performance
 
-Roughly 12.6 fps, from 0.74 when the renderer was all C. `src/profile.c` measures
+Roughly 15.5 fps, from 0.74 when the renderer was all C. `src/profile.c` measures
 it; `tools/profread.py` formats the results out of a `-dumpmem` image. The FPS
 readout in the corner is always on. `make PROFILE=0` compiles out the
 per-column instrumentation and the counters in `voxel_asm.s`, which the
@@ -200,9 +200,49 @@ high coordinate bytes dropped into the pointer — and drives the multiplier
 directly. Both maps share one address computation because only their bank byte
 differs.
 
+Where a 64.7 ms frame goes, measured by stubbing pieces out rather than
+guessing (setting `voxel_column_asm` to an immediate `rts` isolates the
+per-column C setup; halving `BANDS` separates per-sample from per-column):
+
+| | ms | |
+|---|---|---|
+| ray march | 46.0 | 10240 samples at **182 cycles** each |
+| span fill | 10.0 | 14489 pixels at ~28 |
+| span prologue | 3.4 | 3983 spans: the colour read and the length |
+| per-column C setup | 2.4 | 607 cycles a column |
+| sky DMA | 2.1 | |
+
+Every column takes all 64 samples — none terminates early, because terrain
+never fills a column to the top of the screen — so the march is flat in the
+scene and scales only with column count. That is the number that governs
+whether 320 wide is affordable.
+
+Three things got the march from 302 cycles a sample to 182, all of them
+verified by the frame coming out **pixel-identical** (`C_SPAN` and
+`C_SPANPIX` unchanged is the cheap check; comparing screenshots of the 3D
+view is the real one):
+
+- the write pointer is carried between spans. It always addresses row
+  `vx_ybuf`, and a span fills *upwards* from there, so it lands on row
+  `vx_ys` — which is the next span's `vx_ybuf`. The whole `fbbase + ys * 8`
+  calculation, about 70 cycles a span, simply disappears.
+- the ray position's whole-cell bytes live *in* the map pointer. The maps are
+  256x256 on a 64K boundary, so those bytes already are the cell address, and
+  adding into them in place saves copying them across every sample.
+- the height difference is biased positive by `CAM_BIAS`, which drops a
+  branch and two register writes per sample. 256 is the one bias that comes
+  back out free and exact: `(256 * inv_z) >> 8` is `inv_z`, so the correction
+  is a subtraction folded into a per-step horizon table, and the low eight
+  bits it discards are zero.
+
 Draw distance and cost are traded in the band schedule at the top of
 `voxel.c`: `BANDS` x `BAND_STEPS` samples per column, with the step doubling
 each band. 4x16 reaches 120 map cells for 64 samples.
+
+Beware `iny` between an `adc` and the branch that tests its result — it
+overwrites the flags, and the counters caught it as 160 full-height spans a
+frame. `next$` is the one place the march advances Y, because every path that
+goes round again passes through it.
 
 ## Gotchas
 

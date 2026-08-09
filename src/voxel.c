@@ -24,6 +24,22 @@
 // tan(30 degrees) * 256: half of a 60 degree horizontal field of view.
 #define TAN_HALF_FOV 148
 
+// The height difference the projection multiplies is camh - height, which goes
+// negative wherever terrain rises above the camera -- and sign-extending it
+// into the multiplier cost a branch and two register writes on every single
+// sample. Biasing the camera height up by CAM_BIAS makes it always positive.
+//
+// The bias has to come back out of the result, and 256 is chosen so that it
+// comes out free and *exact*: (256 * inv_z) >> 8 is inv_z, so the correction
+// is a subtraction from the horizon rather than a multiply, and since the low
+// eight bits of 256 * inv_z are zero the shift loses nothing. vx_horiz holds
+// horizon - inv_z[k] per step, and ys comes out bit for bit what it was.
+//
+// It costs headroom: the intermediate is larger by inv_z, so the camera
+// height at which the 16-bit projection overflows drops from about 1310 to
+// about 1050. Flight sits near 60.
+#define CAM_BIAS 256
+
 // __far pointers index with an int16_t, which cannot reach the top half of a
 // 64K map. Biasing the base by 32K and the offset by the same amount puts the
 // whole map in range of a signed index.
@@ -39,19 +55,39 @@ static const int16_t sin_quarter[65] = {
 
 static int16_t tan_tab[FB_WIDTH]; // 8.8 offset from the view axis per column
 
-// Shared with src/voxel_asm.s, which indexes it with an 8-bit register, so it
-// may not grow past 256 bytes.
+// Byte offset into a framebuffer of the pixel one row *below* the bottom of
+// each column: where the span fill starts counting down from. Precomputed
+// because working it out needs a multiply by FB_STRIDE, and the compiler
+// builds that out of a shift loop made of jsr fragments.
+static uint16_t col_top[FB_WIDTH];
+
+// Shared with src/voxel_asm.s, which indexes both with an 8-bit register, so
+// neither may grow past 256 bytes.
 uint16_t vx_inv_z[NSTEPS];  // SCALE_H / z, in 8.8
+int16_t vx_horiz[NSTEPS];   // the horizon, biased per step: see CAM_BIAS
 
 // The assembly column routine's parameter block. Zero page because every one
 // of these is touched in the inner loop.
-uint8_t __far *__attribute__((zpage)) vx_hptr;    // heightmap cell
-uint8_t __far *__attribute__((zpage)) vx_cptr;    // colourmap cell
-uint8_t __far *__attribute__((zpage)) vx_fb;      // walking write pointer
-uint8_t __far *__attribute__((zpage)) vx_fbbase;  // top of the column
-__zpage uint16_t vx_px, vx_py;
+// Map pointers. Byte arrays rather than far pointers because the assembly
+// keeps the *high* bytes of the ray position in bytes 0 and 1 -- that is the
+// map cell address, since the maps are 256x256 on a 64K boundary -- and the C
+// side only ever sets the bank and megabyte, once, in voxel_init.
+__zpage uint8_t vx_hptr[4];  // heightmap cell
+__zpage uint8_t vx_cptr[4];  // colourmap cell
+
+// Write pointer, and the one piece of state that carries between spans: it
+// always addresses pixel row vx_ybuf of the current column. Each span fills
+// upwards from there, so it ends up addressing row vx_ys -- which is the next
+// span's vx_ybuf. That makes the whole `fbbase + ys * 8` calculation, some 70
+// cycles a span, disappear.
+//
+// A byte array rather than a far pointer so the C side can set the low two
+// bytes per column and leave the bank and megabyte alone.
+__zpage uint8_t vx_fbtop[4];
+// Only the fractional halves: the whole-cell halves live in vx_hptr.
+__zpage uint8_t vx_px, vx_py;
 __zpage int16_t vx_stepx, vx_stepy;
-__zpage int16_t vx_camh, vx_horizon;
+__zpage int16_t vx_camh;  // biased by CAM_BIAS
 __zpage int16_t vx_ys;
 __zpage uint8_t vx_ybuf, vx_tmp;
 __zpage uint8_t vx_bands, vx_bandsteps, vx_band, vx_step;
@@ -69,6 +105,7 @@ static uint16_t n_sample, n_span, n_spanpix, n_skypix;
 void voxel_column_asm(void);
 
 static const uint8_t __far *height_map;
+static int16_t horizon_built = -1;  // the horizon vx_horiz was built for
 
 int16_t voxel_sin(uint8_t angle)
 {
@@ -113,13 +150,18 @@ void voxel_init(void)
 
   // The assembly rewrites only the low two bytes of these, so the bank and
   // megabyte set here stand for the whole run.
-  vx_hptr = (uint8_t __far *)HEIGHTMAP;
-  vx_cptr = (uint8_t __far *)COLOURMAP;
+  vx_hptr[2] = (uint8_t)(HEIGHTMAP >> 16);
+  vx_hptr[3] = (uint8_t)(HEIGHTMAP >> 24);
+  vx_cptr[2] = (uint8_t)(COLOURMAP >> 16);
+  vx_cptr[3] = (uint8_t)(COLOURMAP >> 24);
   vx_bands = BANDS;
   vx_bandsteps = BAND_STEPS;
 
-  for (x = 0; x < FB_WIDTH; x++)
+  for (x = 0; x < FB_WIDTH; x++) {
     tan_tab[x] = (int16_t)(((int16_t)x - FB_WIDTH / 2) * TAN_HALF_FOV) / (FB_WIDTH / 2);
+    // See FB_COLUMN in vic4.h, plus one whole column of rows.
+    col_top[x] = (uint16_t)(x >> 3) * FB_STRIDE + (x & 7) + FB_STRIDE;
+  }
 
   k = 0;
   for (band = 0; band < BANDS; band++) {
@@ -150,15 +192,17 @@ uint8_t voxel_ground(uint16_t x, uint16_t y)
   return height_map[map_index(x, y)];
 }
 
-static void column(uint32_t fbcol, const camera *cam, int16_t dirx, int16_t diry)
+static void column(uint16_t top, const camera *cam, int16_t dirx, int16_t diry)
 {
-  vx_fbbase = (uint8_t __far *)fbcol;
-  vx_px = cam->x;
-  vx_py = cam->y;
+  vx_fbtop[0] = (uint8_t)top;
+  vx_fbtop[1] = (uint8_t)(top >> 8);
+  vx_px = (uint8_t)cam->x;
+  vx_hptr[0] = (uint8_t)(cam->x >> 8);
+  vx_py = (uint8_t)cam->y;
+  vx_hptr[1] = (uint8_t)(cam->y >> 8);
   vx_stepx = dirx >> 1;
   vx_stepy = diry >> 1;
-  vx_camh = cam->height;
-  vx_horizon = cam->horizon;
+  vx_camh = cam->height + CAM_BIAS;
   vx_ybuf = FB_HEIGHT;
 #if PROFILE_DETAIL
   vx_n_sample = 0;
@@ -185,7 +229,21 @@ void voxel_render(uint32_t base, const camera *cam)
 {
   int16_t cs = voxel_cos(cam->angle);
   int16_t sn = voxel_sin(cam->angle);
+  uint16_t base_lo = (uint16_t)base;
   uint8_t x;
+
+  // Rebuilt only when the horizon moves, which today is never -- but pitch
+  // control will move it, and this is where that gets handled.
+  if (cam->horizon != horizon_built) {
+    horizon_built = cam->horizon;
+    for (x = 0; x < NSTEPS; x++)
+      vx_horiz[x] = cam->horizon - (int16_t)vx_inv_z[x];
+  }
+
+  // Both buffers sit inside one 64K bank and no column reaches past its end,
+  // so the top two bytes of the write pointer are fixed for the whole frame.
+  vx_fbtop[2] = (uint8_t)(base >> 16);
+  vx_fbtop[3] = (uint8_t)(base >> 24);
 
   // Lay the sky down over the whole buffer first and let the terrain draw
   // over it. That writes more pixels than filling only the gap above each
@@ -208,7 +266,7 @@ void voxel_render(uint32_t base, const camera *cam)
     int16_t dirx = cs - mul_shift8(sn, t);
     int16_t diry = sn + mul_shift8(cs, t);
 
-    column(FB_COLUMN(base, x), cam, dirx, diry);
+    column(base_lo + col_top[x], cam, dirx, diry);
     PROF_ADD(P_COLUMN, t0);
   }
 
