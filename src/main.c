@@ -1,8 +1,8 @@
 #include <stdio.h>
 
-#include "hud.h"
 #include "input.h"
 #include "loader.h"
+#include "panel.h"
 #include "profile.h"
 #include "vic4.h"
 #include "voxel.h"
@@ -71,6 +71,8 @@ int main(void)
   vic4_init();
   vic4_set_palette(loaded_palette());
   voxel_init();
+  panel_init();
+  panel_message("SAR DRONE READY");
 
   cam.x = 128 << 8;  // middle of the map
   cam.y = 128 << 8;
@@ -88,7 +90,7 @@ int main(void)
     voxel_render(vic4_base(back), &cam);
 
     t0 = PROF_NOW();
-    hud_fps(vic4_base(back), fps10);
+    panel_status(cam.height, cam.angle, fps10);
     vic4_show(back);
     back ^= 1;
     PROF_ADD(P_OTHER, t0);

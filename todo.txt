@@ -3,10 +3,11 @@ PLAN
 Where the frame goes, now that the counters are back (PROFILE=0 timing,
 PROFILE=1 counts, 160x192):
 
-    88.6 ms a frame, 11.3 fps
-    ray march + per-column setup   ~73 ms   82%   scales with COLUMN COUNT
-    terrain span fills            ~13 ms   15%   4403 spans, 18329 pixels
-    sky DMA                       2.5 ms    3%   was ~8 ms as a pixel loop
+    79.4 ms a frame, 12.6 fps, at 160x152
+    ray march + per-column setup  ~76 ms   96%   scales with COLUMN COUNT
+    terrain span fills          (in the above)   3983 spans, 14489 pixels
+    sky DMA                       2.2 ms    3%   was ~8 ms as a pixel loop
+    panel and everything else     0.8 ms    1%   was 3.3 ms with hud.c
 
 Every column takes all 64 samples -- none terminates early -- so the march
 cost is flat in the view, not scene dependent. The march is per column, not
@@ -49,16 +50,16 @@ SETTLED ON REAL HARDWARE (see the table in CLAUDE.md):
 2. DONE - sky by DMA. 97.0 ms -> 88.6 ms a frame, 10.3 -> 11.3 fps
    (both PROFILE=0). The whole sky is 2.5 ms of DMA against about 8 ms of
    pixel loop, and it is the frame's clear pass as well
-3. NEXT - split screen at the current 160 wide: 19 rows of 3D over a 6 row
-   panel, FPS out of hud.c and into the panel. FCLRHI is set and FCLRLO is
-   not, so characters below $100 already render as ordinary 8x8 text from
-   CHARPTR -- the panel costs screen RAM and no pixel writes, and can be
-   shared between both screen tables rather than double buffered. Fits bank 1
-   with room to spare: no map moves, no attic RAM.
-   Expect roughly 11.7 fps, not the 13 first guessed: a shorter screen only
-   saves span and sky pixels, NOT march time, because no column terminates
-   early and every one takes all 64 samples whatever the height.
-4. the inner loop, BEFORE deciding on 320 wide. At ~257 cycles a sample the
+3. DONE - split screen: 19 rows of 3D over a 6 row text panel, hud.c gone.
+   88.6 ms -> 79.4 ms, 11.3 -> 12.6 fps (PROFILE=0), better than the 11.7
+   expected because the pixel-drawn FPS readout went away with it.
+   Two things it needed: CHARPTR had never been set, and a text character's
+   colour is a FOUR BIT field in colour RAM, so panel ink has to live in the
+   first sixteen palette entries -- convmap.py now reserves 1 and 2.
+   The panel is 20 columns, which is what 160 pixels of 8-pixel characters
+   gives. 40 columns needs either the 320-wide move or a raster split that
+   changes CHRXSCL below the 3D view.
+4. NEXT - the inner loop, BEFORE deciding on 320 wide. At ~257 cycles a sample the
    march is 82% of the frame, and every cycle saved is worth double at 320
    columns. Biasing the height difference so it is never negative drops the
    sign-extension branch and two register writes from every sample; the

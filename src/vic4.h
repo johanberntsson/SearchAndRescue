@@ -1,37 +1,36 @@
-// VIC-IV full-colour display: a 160x200 8-bit framebuffer, hardware-stretched
-// to fill the 320-pixel-wide screen, double buffered in bank 1.
+// VIC-IV split display: a 160x152 8-bit framebuffer for the 3D view,
+// hardware-stretched to fill the 320-pixel-wide screen and double buffered in
+// bank 1, over a six-row text panel for flight information.
 #ifndef VIC4_H
 #define VIC4_H
 
 #include <stdint.h>
 
 #define FB_WIDTH  160
-#define FB_HEIGHT 192
+#define FB_HEIGHT 152
 #define FB_COLS   (FB_WIDTH / 8)   // 20 character strips across
-#define FB_ROWS   (FB_HEIGHT / 8)  // 24 characters down each strip
-#define FB_STRIDE (FB_ROWS * 64)   // 1536 bytes per strip
+#define FB_ROWS   (FB_HEIGHT / 8)  // 19 characters down each strip
+#define FB_STRIDE (FB_ROWS * 64)   // 1216 bytes per strip
+
+// The display is 25 character rows tall; whatever the framebuffer does not
+// cover is the panel.
+#define SCREEN_ROWS 25
+#define PANEL_ROWS  (SCREEN_ROWS - FB_ROWS)
+#define PANEL_COLS  FB_COLS
 
 // Colour RAM is aliased into chip RAM at $1F800, so bank 1 only offers
-// $10000-$1F7FF: 63488 bytes, which is 512 short of two full-height 160x200
-// buffers. Hence 192 rows rather than 200 -- 30720 bytes each, and room left
-// over for the blank character below. Writing past $1F800 does not fault, it
-// silently fills colour RAM with pixel data and the VIC-IV reads it back as
-// character attributes, blanking cells across the display.
-#define FB_A 0x10000UL
-#define FB_B 0x17800UL
-
-// 64 zero bytes, for the screen row past the bottom of the framebuffer.
-#define FB_BLANK 0x1F000UL
+// $10000-$1F7FF. Writing past that does not fault, it silently fills colour
+// RAM with pixel data and the VIC-IV reads it back as character attributes,
+// blanking cells across the display. Two 24320-byte buffers and the sky
+// template leave plenty of room now; at 320 wide they will not, and one of
+// the maps moves to attic RAM.
+#define FB_A 0x10000UL  // 24320 bytes, to $15F00
+#define FB_B 0x16000UL  // 24320 bytes, to $1BF00
 
 // In column-strip layout every strip's sky is the same FB_STRIDE bytes, so
 // one strip is prepared at startup and DMAd across the buffer each frame
-// instead of being drawn a pixel at a time. Lives in what is left of bank 1
-// after both buffers and the blank character: $1F100 + 1536 is still under
-// the colour RAM alias at $1F800.
-#define FB_SKY 0x1F100UL
-
-// The display is 25 character rows tall whatever the framebuffer holds.
-#define SCREEN_ROWS 25
+// instead of being drawn a pixel at a time.
+#define FB_SKY 0x1C000UL
 
 // Full-colour mode has no linear bitmap: the screen is a grid of 8x8
 // characters whose 64 bytes of pixel data live at (character number * 64).
@@ -43,6 +42,12 @@
 #define FB_COLUMN(base, x) ((base) + (uint32_t)((x) >> 3) * FB_STRIDE + ((x) & 7))
 
 void vic4_init(void);
+
+// Put one character into the panel. Character numbers below $100 are ordinary
+// 8x8 text -- FCLRHI is set and FCLRLO is not, so only the framebuffer's own
+// character numbers are full colour. Both screen tables get it: the panel is
+// the same in either buffer, so it is not double buffered.
+void vic4_panel_char(uint8_t col, uint8_t row, uint8_t ch, uint8_t colour);
 
 // planes: 768 bytes, 256 red then 256 green then 256 blue, each already
 // nybble-swapped for the palette registers (see tools/convmap.py).

@@ -46,15 +46,14 @@ Only banks 1, 4 and 5 are free: `$20000-$3FFFF` holds the C65 ROM, and **colour 
 | Address | Size | Contents |
 |---|---|---|
 | `$2001-$9FFF` | 32 KB | Program, data, screen tables, load bounce buffer |
-| `$10000-$177FF` | 30720 | Framebuffer A (160x192) |
-| `$17800-$1EFFF` | 30720 | Framebuffer B |
-| `$1F000` | 64 | Blank character for the screen row below the framebuffer |
-| `$1F100` | 1536 | One column strip of sky, DMAd across the buffer each frame |
+| `$10000-$15EFF` | 24320 | Framebuffer A (160x152, the 3D view) |
+| `$16000-$1BEFF` | 24320 | Framebuffer B |
+| `$1C000` | 1216 | One column strip of sky, DMAd across the buffer each frame |
 | `$1F800-$1FFFF` | 2 KB | Colour RAM alias — **do not write** |
 | `$40000-$4FFFF` | 64 KB | Heightmap, 256x256 |
 | `$50000-$5FFFF` | 64 KB | Colourmap, 256x256 |
 
-Writing past `$1F800` does not fault: it fills colour RAM with pixel data, which the VIC-IV reads back as character attributes and which blanks cells all over the display. That is what forced 192 rows rather than 200 — two full-height buffers need 64000 bytes and only 63488 are available.
+Writing past `$1F800` does not fault: it fills colour RAM with pixel data, which the VIC-IV reads back as character attributes and which blanks cells all over the display. Bank 1 has room to spare at 160 wide; at 320 it will not, and the colourmap moves to attic RAM (see Performance).
 
 Map coordinates are 8.8 fixed point in a `uint16_t`, so the high byte is the cell index and movement wraps the 256x256 map for free.
 
@@ -74,7 +73,27 @@ The layout also makes the sky nearly free. Every column strip's sky is the *same
 
 Two register notes: `CHRXSCL` (`$D05A`) is source pixels per output pixel in 120ths, so **60 doubles the width** and 240 halves it; and the hot registers (`$D05D` bit 7) must be turned off first or any write to a legacy VIC-II register makes the VIC-IV recompute the layout and undo the setup.
 
-`src/hud.c` draws over the finished frame with the same addressing, using two palette entries (240 ink, 241 paper) that `tools/convmap.py` reserves.
+## The panel
+
+The display is 25 character rows; the framebuffer covers the top 19 and the
+bottom six are the information panel. That split is free, because full colour
+is per character *number*: `FCLRHI` is set and `FCLRLO` is not, so numbers
+above `$FF` are 64-byte full-colour characters (the framebuffer) and numbers
+below are ordinary 8x8 text from `CHARPTR`. The panel costs 240 bytes of
+screen RAM, no pixel writes, and is not double buffered — `vic4_panel_char`
+writes the same cell in both screen tables.
+
+Two things had to be set up for it. `CHARPTR` had never been touched, and
+whatever the ROM leaves there draws a horizontal line for a space; the C65
+ROM's 8x8 set at `$2D000` is readable where it sits, so the panel needs no
+RAM for a font. And **a text character's colour comes from colour RAM, which
+is only a four-bit field** even in 16-bit character mode — so panel ink has
+to be one of the first sixteen palette entries, which is where the terrain
+colours live. `tools/convmap.py` reserves 1 and 2 by moving the terrain
+colours that were there out to unused slots; palette 0 is the screen colour
+and serves as the paper. Palette entries 240 and 241 stay reserved for a
+future pixel-drawn overlay over the 3D view, where a byte per pixel means any
+of the 256 entries will do.
 
 ## Resources
 
@@ -88,7 +107,7 @@ Height units are a quarter of a map cell — the maps were downsampled 4x and th
 
 ## Performance
 
-Roughly 11 fps, from 0.74 when the renderer was all C. `src/profile.c` measures
+Roughly 12.6 fps, from 0.74 when the renderer was all C. `src/profile.c` measures
 it; `tools/profread.py` formats the results out of a `-dumpmem` image. The FPS
 readout in the corner is always on. `make PROFILE=0` compiles out the
 per-column instrumentation and the counters in `voxel_asm.s`, which the

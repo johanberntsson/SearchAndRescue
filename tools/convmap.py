@@ -31,9 +31,22 @@ SKY_SHADES = 16
 SKY_TOP = (40, 70, 140)
 SKY_HORIZON = (170, 200, 230)
 
-# Overlay ink and paper. Keep in sync with HUD_INK/HUD_PAPER in src/hud.h.
+# Reserved for a pixel-drawn overlay over the 3D view (an artificial horizon
+# and the rest of what documentation/vision.md wants). Full-colour characters
+# take a whole byte per pixel, so these can sit anywhere.
 HUD_INK = 240
 HUD_PAPER = 241
+
+# The information panel is ordinary text characters, and a text character
+# takes its colour from colour RAM -- which in 16-bit character mode is only
+# a four-bit field. So panel ink has to be one of the first sixteen palette
+# entries, which is exactly where the terrain colours live. Index 0 is
+# already reserved as the screen and border colour and serves as the paper;
+# these two are freed by moving whatever terrain colour sits there out to a
+# slot the colourmap does not use. Keep in sync with src/panel.h.
+PANEL_INK = 1
+PANEL_LABEL = 2
+PANEL_COLOURS = ((PANEL_INK, (255, 255, 255)), (PANEL_LABEL, (150, 160, 170)))
 
 
 def nybswap(v):
@@ -62,9 +75,11 @@ def load_colourmap(path):
     a = np.asarray(im)
     if a.shape[0] % MAP_SIZE or a.shape[1] % MAP_SIZE:
         sys.exit(f"{path}: {a.shape} is not a whole multiple of {MAP_SIZE}")
-    # Point sample: averaging palette *indices* is meaningless.
+    # Point sample: averaging palette *indices* is meaningless. Copied
+    # because a view of the decoded image is read-only, and reserve() below
+    # rewrites indices in place.
     n = a.shape[0] // MAP_SIZE
-    indices = a[::n, ::n]
+    indices = a[::n, ::n].copy()
 
     pal = im.getpalette()
     rgb = [tuple(pal[i * 3 : i * 3 + 3]) for i in range(256)]
@@ -81,6 +96,30 @@ def add_sky(rgb, used):
         rgb[SKY_BASE + i] = tuple(
             round(a + (b - a) * t) for a, b in zip(SKY_TOP, SKY_HORIZON)
         )
+
+
+def reserve(indices, rgb, entry, used, reserved):
+    """Move any terrain colour off `entry` so the panel can have it.
+
+    The colourmap uses about 170 of the 224 indices below the sky, so there is
+    always somewhere to put the displaced colour; only the pixels that used
+    `entry` change, and they keep exactly the colour they had.
+
+    `reserved` has to be excluded explicitly: an index this function has just
+    emptied is no longer in `used`, so without it the next call would pick the
+    slot the previous one just claimed and paint terrain in the ink colour.
+    """
+    if entry not in used:
+        return used
+
+    spare = next(
+        (i for i in range(1, SKY_BASE) if i not in used and i not in reserved), None
+    )
+    if spare is None:
+        sys.exit(f"no free palette index to move terrain colour {entry} to")
+    indices[indices == entry] = spare
+    rgb[spare] = rgb[entry]
+    return (used - {entry}) | {spare}
 
 
 def main():
@@ -103,6 +142,13 @@ def main():
             sys.exit(f"colourmap uses HUD palette index {entry}")
         rgb[entry] = colour
 
+    reserved = ({0, HUD_INK, HUD_PAPER}
+                | set(range(SKY_BASE, SKY_BASE + SKY_SHADES))
+                | {entry for entry, _ in PANEL_COLOURS})
+    for entry, colour in PANEL_COLOURS:
+        used = reserve(indices, rgb, entry, used, reserved)
+        rgb[entry] = colour
+
     # Three 256-byte planes matching the $D100/$D200/$D300 register banks, so
     # uploading is three straight copies.
     palette = bytes(nybswap(c[channel]) for channel in range(3) for c in rgb)
@@ -119,7 +165,8 @@ def main():
     print(
         f"{prefix}.hgt/.col {MAP_SIZE}x{MAP_SIZE}, "
         f"{prefix}.pal {len(palette)} bytes, "
-        f"sky at {SKY_BASE}..{SKY_BASE + SKY_SHADES - 1}"
+        f"sky at {SKY_BASE}..{SKY_BASE + SKY_SHADES - 1}, "
+        f"panel ink at {PANEL_INK}/{PANEL_LABEL}"
     )
 
 
