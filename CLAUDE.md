@@ -55,10 +55,22 @@ Only banks 1, 4 and 5 are free: `$20000-$3FFFF` holds the C65 ROM, and **colour 
 attic RAM at `$8000000` — the only rearrangement that fits, and the reason
 the attic figures were measured. It costs about half the frame rate:
 | `$1F800-$1FFFF` | 2 KB | Colour RAM alias — **do not write** |
-| `$40000-$4FFFF` | 64 KB | Heightmap, 256x256 |
-| `$8000000-$803FFFF` | 256 KB | Colourmap, 512x512, in attic RAM as four planes |
+| `$40000-$4FFFF` | 64 KB | Heightmap, only when it is 256x256 |
+| `$8000000-$80FFFFF` | 1 MB | Colourmap planes, attic RAM |
+| `$8100000-$81FFFFF` | 1 MB | Heightmap planes, when larger than 256x256 |
+| `$8200000-` | | Staging for the crunched stream being unpacked |
 
-Bank 5 is free at 160 wide; `make WIDE=1` puts the second framebuffer there.
+Bank 5 is free at 160 wide (`make WIDE=1` puts the second framebuffer there),
+and bank 4 is free too whenever the heightmap is above 256x256.
+
+**Both maps ship as 256x256 planes, one per sub-cell corner** — a map of SIZE
+is `(SIZE/256)^2` of them — rather than as one big array. Every plane is then
+on a 64K boundary, so a cell is still addressed by dropping the two high
+coordinate bytes into a pointer and the sub-cell picks the *bank byte*. One
+big array would need a shift and an OR on every read. `HGT_SIZE` and
+`COL_SIZE` are build knobs (see Performance); the plane number comes from a
+256-byte lookup on each position fraction, so it costs one `lda abs,x`
+whether there are four planes or sixteen.
 
 Writing past `$1F800` does not fault: it fills colour RAM with pixel data, which the VIC-IV reads back as character attributes and which blanks cells all over the display. Bank 1 has room to spare at 160 wide; at 320 it will not, and the colourmap moves to attic RAM (see Performance).
 
@@ -106,15 +118,8 @@ of the 256 entries will do.
 
 `tools/convmap.py` turns the 1024x1024 VoxelSpace PNGs in `resources/` into raw `terrain.hgt`, `terrain.col` and `terrain.pal`. The sources need no quantisation: the heightmap is 8-bit greyscale and the colourmap is already a palette image. Palette bytes are nybble-swapped for the `$D100`/`$D200`/`$D300` registers, and the sky gradient goes in indices 224-239, which the colourmap never uses.
 
-**The colourmap is kept at twice the heightmap's resolution**, 512x512 against
-256x256, because the blockiness the eye notices is the colour and not the
-silhouette. It ships as four 64K planes, one per half-cell corner, rather
-than one 512x512 array: that keeps every plane on a 64K boundary so a cell is
-still addressed by dropping the two high coordinate bytes into a pointer, and
-the plane is picked with the bank byte from bit 7 of each position fraction.
-A real 512x512 array would need a shift and an OR on every read. Going
-further is a disk problem before it is a memory one — 1024x1024 colour would
-be 1 MB and a D81 holds 800 KB.
+`convmap.py` takes the two map sizes as arguments; the Makefile passes
+`HGT_SIZE` and `COL_SIZE`.
 
 Height units are a quarter of a map cell — the maps were downsampled 4x and the heights were not rescaled — and `SCALE_H` in `src/voxel.c` folds that in.
 
@@ -283,9 +288,28 @@ view is the real one):
   is a subtraction folded into a per-step horizon table, and the low eight
   bits it discards are zero.
 
+Map resolution is two build knobs, `HGT_SIZE` and `COL_SIZE`, powers of two
+from 256 up to the source PNGs' 1024. Measured at 160 wide:
+
+| | disk | frame | |
+|---|---|---|---|
+| h256 c512 | 169 KB | 64.9 ms, 15.4 fps | |
+| h256 c1024 | 575 KB | 64.9 ms, 15.4 fps | colour is **free** |
+| **h512 c1024** | **661 KB** | **70.6 ms, 14.2 fps** | the default |
+| h1024 c512 | 608 KB | 70.6 ms, 14.2 fps | |
+| h1024 c1024 | 1013 KB | — | will not fit a d81 |
+
+**Colourmap resolution is free and heightmap resolution is not.** The colour
+is read once per span (~4000 a frame) and the plane lookup is the same work
+at any size, so 1024x1024 costs exactly what 512x512 does. The heightmap is
+read once per *sample* (10240 a frame) and above 256x256 cannot stay in chip
+RAM, so it pays an attic read plus a plane lookup every time: a flat 5.7 ms,
+8.8%, the same whether it is 512 or 1024. Which is worth knowing — **h1024
+costs no more at runtime than h512**, it just does not leave room for c1024
+on one disk.
+
 | | 256x256 colour | 512x512 colour |
 |---|---|---|
-| 160 wide | 64.7 ms, 15.5 fps | **67.0 ms, 14.9 fps** |
 | 320 wide | 124.8 ms, 8.0 fps | 133.1 ms, 7.5 fps |
 
 Going 320 wide doubles the sample count exactly and costs half the frame

@@ -66,6 +66,17 @@ static uint16_t col_top[FB_WIDTH];
 uint16_t vx_inv_z[NSTEPS];  // SCALE_H / z, in 8.8
 int16_t vx_horiz[NSTEPS];   // the horizon, biased per step: see CAM_BIAS
 
+// Sub-cell plane lookup, indexed by a position fraction byte and OR'd
+// together to make the map pointer's bank byte. A table rather than shifts
+// because the shift count depends on the map size and the cost must not:
+// this is one `lda abs,x` either way, for four planes or sixteen.
+#if COL_AXIS > 1
+uint8_t vx_cplane_x[256], vx_cplane_y[256];
+#endif
+#if HGT_AXIS > 1
+uint8_t vx_hplane_x[256], vx_hplane_y[256];
+#endif
+
 // The assembly column routine's parameter block. Zero page because every one
 // of these is touched in the inner loop.
 // Map pointers. Byte arrays rather than far pointers because the assembly
@@ -141,6 +152,26 @@ static inline int16_t mul_shift8(int16_t a, int16_t b)
   return (int16_t)((uint16_t)MATH.multout[1] | (uint16_t)MATH.multout[2] << 8);
 }
 
+#if COL_AXIS > 1 || HGT_AXIS > 1
+// The top log2(axis) bits of each fraction byte say which sub-cell of the
+// map cell the sample landed in. The y table carries the map's own bank byte
+// as well, so the two lookups OR straight into the pointer.
+static void build_planes(uint8_t *xtab, uint8_t *ytab, uint8_t axis, uint8_t bank)
+{
+  uint16_t i;
+  uint8_t shift = 0;
+
+  while ((uint8_t)(1 << shift) < axis)
+    shift++;
+
+  for (i = 0; i < 256; i++) {
+    uint8_t sub = (uint8_t)(i >> (8 - shift));
+    xtab[i] = sub;
+    ytab[i] = (uint8_t)(bank + sub * axis);
+  }
+}
+#endif
+
 void voxel_init(void)
 {
   uint16_t k, x, z = Z_NEAR, step = Z_STEP0;
@@ -152,9 +183,16 @@ void voxel_init(void)
   // megabyte set here stand for the whole run.
   vx_hptr[2] = (uint8_t)(HEIGHTMAP >> 16);
   vx_hptr[3] = (uint8_t)(HEIGHTMAP >> 24);
-  // Byte 2 is the plane, which the assembly picks per span, so only the
-  // megabyte is set here.
   vx_cptr[3] = (uint8_t)(COLOURMAP >> 24);
+#if COL_AXIS > 1
+  // Byte 2 is the plane, picked per span by the assembly.
+  build_planes(vx_cplane_x, vx_cplane_y, COL_AXIS, (uint8_t)(COLOURMAP >> 16));
+#else
+  vx_cptr[2] = (uint8_t)(COLOURMAP >> 16);
+#endif
+#if HGT_AXIS > 1
+  build_planes(vx_hplane_x, vx_hplane_y, HGT_AXIS, (uint8_t)(HEIGHTMAP >> 16));
+#endif
   vx_bands = BANDS;
   vx_bandsteps = BAND_STEPS;
 

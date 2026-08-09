@@ -4,7 +4,16 @@
 
 #include <stdint.h>
 
+// The heightmap stays in chip RAM at 256x256, where a cell address is just
+// the two high coordinate bytes and costs nothing. Above that it is too big
+// and moves to attic RAM, which the inner loop pays for on every sample: an
+// attic read plus a plane lookup. The colourmap is read once per span, so it
+// lives in attic whatever its size.
+#if HGT_SIZE > 256
+#define HEIGHTMAP ATTIC_HEIGHTMAP
+#else
 #define HEIGHTMAP 0x40000UL
+#endif
 
 // Attic RAM: 8 MB of HyperRAM at $8000000, off the slow device bus rather
 // than in chip RAM. The VIC-IV cannot see it, so it is only good for things
@@ -19,25 +28,17 @@
 #define ATTIC_HEIGHTMAP 0x8100000UL  // up to 1 MB, when it is too big for chip
 #define ATTIC_STAGE     0x8200000UL  // the crunched stream being unpacked
 
-// The colourmap lives in attic RAM. It has to: at twice the heightmap's
-// resolution it is 256K, four 64K planes at $8000000, $8010000, $8020000 and
-// $8030000, one per half-cell corner. It can afford to be out there because
-// the inner loop reads it once per span drawn rather than once per sample,
-// and an attic read costs a flat +16 cycles (measured on hardware, see
-// CLAUDE.md).
-//
-// The plane number is the bank byte, so this must stay 64K aligned with a
-// zero bank byte.
-#define COLOURMAP ATTIC_BASE
+#define COLOURMAP ATTIC_COLOURMAP
 
-#define MAP_SIZE  256
-#define MAP_BYTES ((uint32_t)MAP_SIZE * MAP_SIZE)
+// A plane is one CELLS x CELLS map, so a whole 64K bank; a map of SIZE ships
+// as (SIZE / CELLS)^2 of them, one per sub-cell corner, and the plane number
+// is the bank byte. Keep CELLS in sync with tools/convmap.py.
+#define CELLS      256
+#define MAP_SIZE   CELLS
+#define MAP_BYTES  ((uint32_t)CELLS * CELLS)
 
-// Half-cell subdivision of the colourmap: COL_SUB x COL_SUB planes. Keep in
-// sync with COL_SUB in tools/convmap.py.
-#define COL_SUB     2
-#define COL_PLANES  (COL_SUB * COL_SUB)
-#define COL_BYTES   (MAP_BYTES * COL_PLANES)
+#define HGT_AXIS   (HGT_SIZE / CELLS)  // planes per axis
+#define COL_AXIS   (COL_SIZE / CELLS)
 
 // Load the heightmap, colourmap and palette. Returns 0 on success. Call this
 // before switching the display, so failures can still be printed.

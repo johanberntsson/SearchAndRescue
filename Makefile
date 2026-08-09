@@ -5,8 +5,15 @@ TARGET   = --target=mega65
 PROFILE ?= 1
 # WIDE=1 renders all 320 pixels instead of stretching 160. See vic4.h.
 WIDE    ?= 0
-CFLAGS   = $(TARGET) -O2 --speed -DPROFILE_DETAIL=$(PROFILE) -DWIDE=$(WIDE)
-ASFLAGS  = $(TARGET) -DPROFILE_DETAIL=$(PROFILE) -DWIDE=$(WIDE)
+# Map resolutions, powers of two from 256 up to the source PNGs' 1024. Above
+# 256 the heightmap leaves chip RAM and the inner loop pays for it; the
+# colourmap is read once per span and is nearly free at any size. Both maps
+# are exomizer-crunched, which is what makes these fit a d81.
+HGT_SIZE ?= 512
+COL_SIZE ?= 1024
+SIZEFLAGS = -DWIDE=$(WIDE) -DHGT_SIZE=$(HGT_SIZE) -DCOL_SIZE=$(COL_SIZE)
+CFLAGS   = $(TARGET) -O2 --speed -DPROFILE_DETAIL=$(PROFILE) $(SIZEFLAGS)
+ASFLAGS  = $(TARGET) -DPROFILE_DETAIL=$(PROFILE) $(SIZEFLAGS)
 LDFLAGS  = $(TARGET) --output-format=prg
 LINKFILE = mega65-plain.scm
 
@@ -37,7 +44,7 @@ $(BUILD):
 # rebuild. Without it, `make PROFILE=0` and then `make` leaves every object
 # built against the wrong flag and the counters silently stay off -- and a
 # half-rebuilt WIDE change is a memory map that disagrees with itself.
-CONFIG_STAMP = $(BUILD)/config-$(PROFILE)-$(WIDE).stamp
+CONFIG_STAMP = $(BUILD)/config-$(PROFILE)-$(WIDE)-$(HGT_SIZE)-$(COL_SIZE).stamp
 
 $(CONFIG_STAMP): | $(BUILD)
 	rm -f $(BUILD)/config-*.stamp
@@ -61,8 +68,9 @@ $(ELF): $(OBJS)
 $(PRG): $(ELF)
 	cp $(BUILD)/sar.prg $@
 
-$(RES) &: resources/D1.png resources/C1W.png tools/convmap.py | $(BUILD)
-	python3 tools/convmap.py resources/D1.png resources/C1W.png $(BUILD)/terrain
+$(RES) &: resources/D1.png resources/C1W.png tools/convmap.py $(CONFIG_STAMP) | $(BUILD)
+	python3 tools/convmap.py resources/D1.png resources/C1W.png $(BUILD)/terrain \
+	    $(HGT_SIZE) $(COL_SIZE)
 
 # tools/diskutil.rb refuses to overwrite a file that already exists on the image,
 # so the image is always built from scratch.

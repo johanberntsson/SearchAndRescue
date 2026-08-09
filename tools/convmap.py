@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Convert the VoxelSpace PNG maps into raw MEGA65 resources.
+"""Convert the VoxelSpace PNG maps into MEGA65 resources.
 
-    convmap.py <height.png> <colour.png> <out-prefix>
+    convmap.py <height.png> <colour.png> <out-prefix> [hgt-size] [col-size]
 
-writes <out-prefix>.hgt, <out-prefix>.col and <out-prefix>.pal.
+writes <out-prefix>.hgt, <out-prefix>.col and <out-prefix>.pal.  The two
+sizes default to 512 and 1024 and must be powers of two from 256 up to the
+source resolution; they have to match HGT_SIZE and COL_SIZE in the build (the
+Makefile passes both).
 
 The sources are already in the right shape: the heightmap is 8-bit greyscale
 so its pixel values are heights, and the colourmap is a palette image whose
@@ -21,17 +24,22 @@ import tempfile
 import numpy as np
 from PIL import Image
 
-MAP_SIZE = 256  # engine map is MAP_SIZE x MAP_SIZE, so coords wrap in a byte
+# A plane is always CELLS x CELLS, so a whole number of 64K banks.
+CELLS = 256
 
-# The colourmap is kept at twice the heightmap's resolution, because the
-# blockiness the eye notices is the colour, not the silhouette -- and the
-# source PNGs have the detail to spare. It ships as four MAP_SIZE x MAP_SIZE
-# planes, one per half-cell corner, rather than one 512x512 array: that keeps
-# each plane on a 64K boundary, so the renderer still addresses a cell by
-# dropping the two high coordinate bytes into a pointer, and picks the plane
-# with the bank byte. A real 512x512 array would need a shift and an OR on
-# every read.
-COL_SUB = 2
+# Both maps ship as (size / CELLS)^2 planes of CELLS x CELLS, one per sub-cell
+# corner, rather than as one big array. That keeps every plane on a 64K
+# boundary, so the renderer addresses a cell by dropping the two high
+# coordinate bytes into a pointer and picks the plane with the bank byte --
+# the addressing that makes a sample cheap. One big array would need a shift
+# and an OR on every read.
+#
+# The colourmap is worth more resolution than the heightmap: the blockiness
+# the eye notices is the colour, not the silhouette. The heightmap above
+# CELLS also has to leave chip RAM, which costs the inner loop an attic read
+# and a plane lookup on every sample rather than once per span.
+DEFAULT_HGT_SIZE = 512
+DEFAULT_COL_SIZE = 1024
 
 # Reading a SEQ file through the Kernal comes up exactly 256 bytes short of the
 # end, whatever the file's size (measured across 16K-64K on xemu's ROM), so the
@@ -111,38 +119,47 @@ def nybswap(v):
     return ((v & 0x0F) << 4) | (v >> 4)
 
 
-def load_heightmap(path):
+def load_heightmap(path, size):
     im = Image.open(path)
     if im.mode != "L":
         im = im.convert("L")
     a = np.asarray(im)
-    if a.shape[0] % MAP_SIZE or a.shape[1] % MAP_SIZE:
-        sys.exit(f"{path}: {a.shape} is not a whole multiple of {MAP_SIZE}")
+    check_size(path, a.shape, size)
     # Box-average each block: heights want to be smooth, and point sampling a
-    # 4x downscale turns gentle slopes into staircases.
-    n = a.shape[0] // MAP_SIZE
-    a = a.reshape(MAP_SIZE, n, MAP_SIZE, n).mean(axis=(1, 3))
+    # downscale turns gentle slopes into staircases.
+    n = a.shape[0] // size
+    a = a.reshape(size, n, size, n).mean(axis=(1, 3))
     return a.round().astype(np.uint8)
 
 
-def load_colourmap(path):
+def load_colourmap(path, size):
     im = Image.open(path)
     if im.mode != "P":
         sys.exit(f"{path}: expected a palette image, got mode {im.mode}")
     a = np.asarray(im)
-    if a.shape[0] % MAP_SIZE or a.shape[1] % MAP_SIZE:
-        sys.exit(f"{path}: {a.shape} is not a whole multiple of {MAP_SIZE}")
+    check_size(path, a.shape, size)
     # Point sample: averaging palette *indices* is meaningless. Copied
     # because a view of the decoded image is read-only, and reserve() below
     # rewrites indices in place.
-    n = a.shape[0] // (MAP_SIZE * COL_SUB)
-    if n < 1:
-        sys.exit(f"{path}: {a.shape} is too small for {MAP_SIZE * COL_SUB} colour cells")
+    n = a.shape[0] // size
     indices = a[::n, ::n].copy()
 
     pal = im.getpalette()
     rgb = [tuple(pal[i * 3 : i * 3 + 3]) for i in range(256)]
     return indices, rgb
+
+
+def check_size(path, shape, size):
+    if size < CELLS or size & (size - 1):
+        sys.exit(f"{size} is not a power of two of at least {CELLS}")
+    if shape[0] != shape[1] or shape[0] % size:
+        sys.exit(f"{path}: {shape} cannot be sampled down to {size}x{size}")
+
+
+def to_planes(a):
+    """(size/CELLS)^2 planes of CELLS x CELLS, plane (suby * k + subx)."""
+    k = a.shape[0] // CELLS
+    return b"".join(a[sy::k, sx::k].tobytes() for sy in range(k) for sx in range(k))
 
 
 def add_sky(rgb, used):
@@ -182,12 +199,14 @@ def reserve(indices, rgb, entry, used, reserved):
 
 
 def main():
-    if len(sys.argv) != 4:
+    if not 4 <= len(sys.argv) <= 6:
         sys.exit(__doc__)
-    height_png, colour_png, prefix = sys.argv[1:]
+    height_png, colour_png, prefix = sys.argv[1:4]
+    hgt_size = int(sys.argv[4]) if len(sys.argv) > 4 else DEFAULT_HGT_SIZE
+    col_size = int(sys.argv[5]) if len(sys.argv) > 5 else DEFAULT_COL_SIZE
 
-    heights = load_heightmap(height_png)
-    indices, rgb = load_colourmap(colour_png)
+    heights = load_heightmap(height_png, hgt_size)
+    indices, rgb = load_colourmap(colour_png, col_size)
     add_sky(rgb, set(np.unique(indices).tolist()))
 
     # Index 0 is the border and screen colour, and full-colour mode draws it
@@ -212,20 +231,11 @@ def main():
     # uploading is three straight copies.
     palette = bytes(nybswap(c[channel]) for channel in range(3) for c in rgb)
 
-    # Plane (suby << 1) | subx, matching how the renderer builds the bank
-    # byte. Concatenated, so the loader can pull the whole thing up to attic
-    # RAM as one run of four 64K-aligned planes.
-    planes = b"".join(
-        indices[sy::COL_SUB, sx::COL_SUB].tobytes()
-        for sy in range(COL_SUB)
-        for sx in range(COL_SUB)
-    )
-
     exomizer = find_exomizer()
     raw_sizes = {}
     for suffix, payload in (
-        (".hgt", heights.tobytes()),
-        (".col", planes),
+        (".hgt", to_planes(heights)),
+        (".col", to_planes(indices)),
         (".pal", palette),
     ):
         raw_sizes[suffix] = len(payload)
@@ -244,9 +254,8 @@ def main():
         return (f"{what}: {raw} -> {packed} bytes "
                 f"({raw / packed:.2f}x)" if raw != packed else f"{what}: {raw} bytes")
 
-    print(f"heightmap {MAP_SIZE}x{MAP_SIZE}, "
-          f"colourmap {MAP_SIZE * COL_SUB}x{MAP_SIZE * COL_SUB} "
-          f"in {COL_SUB * COL_SUB} planes, "
+    print(f"heightmap {hgt_size}x{hgt_size} in {(hgt_size // CELLS) ** 2} planes, "
+          f"colourmap {col_size}x{col_size} in {(col_size // CELLS) ** 2} planes, "
           f"sky at {SKY_BASE}..{SKY_BASE + SKY_SHADES - 1}, "
           f"panel ink at {PANEL_INK}/{PANEL_LABEL}")
     print("  " + report(".hgt", "hgt"))

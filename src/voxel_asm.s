@@ -13,6 +13,17 @@
             .extern vx_camh, vx_ybuf, vx_ys, vx_tmp
             .extern vx_bands, vx_bandsteps, vx_band, vx_step
             .extern vx_inv_z, vx_horiz
+; NOTE: these test HGT_SIZE/COL_SIZE, not the HGT_AXIS/COL_AXIS the C side
+; uses -- those live in loader.h and the assembler does not see C headers.
+; Testing an undefined name here is silently false, which quietly assembles
+; the plane lookup away and makes every sample read plane 0: a map that looks
+; coarser than the one it replaced.
+#if COL_SIZE > 256
+            .extern vx_cplane_x, vx_cplane_y
+#endif
+#if HGT_SIZE > 256
+            .extern vx_hplane_x, vx_hplane_y
+#endif
 #if PROFILE_DETAIL
             ; Per-column event counts, summed into the profiler by column().
             ; A column cannot take more than 64 samples, draw more than 64
@@ -72,6 +83,15 @@ step$:
             adc     zp:vx_stepy+1
             sta     zp:vx_hptr+1
 
+#if HGT_SIZE > 256
+            ; The heightmap is finer than one sample per cell, so it is in
+            ; attic RAM as planes and the sub-cell picks the bank byte.
+            ldx     zp:vx_px
+            lda     vx_hplane_x,x
+            ldx     zp:vx_py
+            ora     vx_hplane_y,x
+            sta     zp:vx_hptr+2
+#endif
             ldz     #0
             lda     [vx_hptr],z
             sta     zp:vx_tmp
@@ -110,24 +130,21 @@ step$:
 clamp$:     lda     #0
             sta     zp:vx_ys
 
-draw$:      ; Same cell in the colour map, which is at twice the resolution:
-            ; four 64K planes, one per half-cell corner. The cell address is
-            ; the same two bytes, and bit 7 of each position fraction picks
-            ; the plane, which is the bank byte. X is free until the span
-            ; length is worked out below.
+draw$:      ; Same cell in the colour map, which is finer than the heightmap:
+            ; the cell address is the same two bytes, and the top bits of each
+            ; position fraction pick the sub-cell plane, which is the bank
+            ; byte. X is free until the span length is worked out below.
             lda     zp:vx_hptr
             sta     zp:vx_cptr
             lda     zp:vx_hptr+1
             sta     zp:vx_cptr+1
-            ldx     #0
-            lda     zp:vx_px
-            bpl     xlo$
-            ldx     #1
-xlo$:       lda     zp:vx_py
-            bpl     ylo$
-            inx
-            inx
-ylo$:       stx     zp:vx_cptr+2
+#if COL_SIZE > 256
+            ldx     zp:vx_px
+            lda     vx_cplane_x,x
+            ldx     zp:vx_py
+            ora     vx_cplane_y,x
+            sta     zp:vx_cptr+2
+#endif
             ldz     #0
             lda     [vx_cptr],z
             sta     zp:vx_tmp       ; colour
