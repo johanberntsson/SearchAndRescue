@@ -3,8 +3,10 @@ TARGET   = --target=mega65
 # slower (615ms a frame against 533ms), so the defaults stay.
 # PROFILE=0 compiles out the per-column instrumentation; the FPS counter stays.
 PROFILE ?= 1
-CFLAGS   = $(TARGET) -O2 --speed -DPROFILE_DETAIL=$(PROFILE)
-ASFLAGS  = $(TARGET) -DPROFILE_DETAIL=$(PROFILE)
+# WIDE=1 renders all 320 pixels instead of stretching 160. See vic4.h.
+WIDE    ?= 0
+CFLAGS   = $(TARGET) -O2 --speed -DPROFILE_DETAIL=$(PROFILE) -DWIDE=$(WIDE)
+ASFLAGS  = $(TARGET) -DPROFILE_DETAIL=$(PROFILE) -DWIDE=$(WIDE)
 LDFLAGS  = $(TARGET) --output-format=prg
 LINKFILE = mega65-plain.scm
 
@@ -31,22 +33,23 @@ prg: $(PRG)
 $(BUILD):
 	mkdir -p $(BUILD)
 
-# Both compiler and assembler see -DPROFILE_DETAIL, so changing PROFILE has to
-# force a rebuild. Without this, `make PROFILE=0` and then `make` leaves every
-# object built against the wrong flag and the counters silently stay off.
-PROFILE_STAMP = $(BUILD)/profile-$(PROFILE).stamp
+# Both compiler and assembler see these, so changing either has to force a
+# rebuild. Without it, `make PROFILE=0` and then `make` leaves every object
+# built against the wrong flag and the counters silently stay off -- and a
+# half-rebuilt WIDE change is a memory map that disagrees with itself.
+CONFIG_STAMP = $(BUILD)/config-$(PROFILE)-$(WIDE).stamp
 
-$(PROFILE_STAMP): | $(BUILD)
-	rm -f $(BUILD)/profile-*.stamp
+$(CONFIG_STAMP): | $(BUILD)
+	rm -f $(BUILD)/config-*.stamp
 	touch $@
 
 # Every object depends on every header. Crude, but the alternative is stale
 # objects built against a changed memory layout, which fails in ways that look
 # like hardware bugs.
-$(BUILD)/%.o: src/%.c $(wildcard src/*.h) $(PROFILE_STAMP) | $(BUILD)
+$(BUILD)/%.o: src/%.c $(wildcard src/*.h) $(CONFIG_STAMP) | $(BUILD)
 	cc6502 $(CFLAGS) -c -o $@ $<
 
-$(BUILD)/%.o: src/%.s $(wildcard src/*.h) $(PROFILE_STAMP) | $(BUILD)
+$(BUILD)/%.o: src/%.s $(wildcard src/*.h) $(CONFIG_STAMP) | $(BUILD)
 	as6502 $(ASFLAGS) -o $@ $<
 
 $(ELF): $(OBJS)

@@ -6,9 +6,17 @@
 
 #include <stdint.h>
 
+// WIDE=1 drops the hardware stretch and renders all 320 pixels. It doubles
+// the number of ray marches, which is nearly all of the frame, so it roughly
+// halves the frame rate -- `make WIDE=1` to compare.
+#if WIDE
+#define FB_WIDTH  320
+#else
 #define FB_WIDTH  160
+#endif
+
 #define FB_HEIGHT 152
-#define FB_COLS   (FB_WIDTH / 8)   // 20 character strips across
+#define FB_COLS   (FB_WIDTH / 8)   // character strips across
 #define FB_ROWS   (FB_HEIGHT / 8)  // 19 characters down each strip
 #define FB_STRIDE (FB_ROWS * 64)   // 1216 bytes per strip
 
@@ -24,8 +32,17 @@
 // blanking cells across the display. Two 24320-byte buffers and the sky
 // template leave plenty of room now; at 320 wide they will not, and one of
 // the maps moves to attic RAM.
+#if WIDE
+// 48640 bytes each. Bank 1 holds one and the sky template; the other needs a
+// whole bank of its own, which is why the colourmap leaves chip RAM. Each
+// buffer must stay inside one 64K bank: the fill loop's pointer step never
+// carries into byte 2.
+#define FB_A 0x10000UL  // to $1BE00
+#define FB_B 0x50000UL  // to $5BE00
+#else
 #define FB_A 0x10000UL  // 24320 bytes, to $15F00
 #define FB_B 0x16000UL  // 24320 bytes, to $1BF00
+#endif
 
 // In column-strip layout every strip's sky is the same FB_STRIDE bytes, so
 // one strip is prepared at startup and DMAd across the buffer each frame

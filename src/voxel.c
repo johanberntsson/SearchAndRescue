@@ -143,8 +143,8 @@ static inline int16_t mul_shift8(int16_t a, int16_t b)
 
 void voxel_init(void)
 {
-  uint16_t k, z = Z_NEAR, step = Z_STEP0;
-  uint8_t x, y, band, i;
+  uint16_t k, x, z = Z_NEAR, step = Z_STEP0;
+  uint8_t y, band, i;
 
   height_map = (const uint8_t __far *)(HEIGHTMAP + MAP_BIAS);
 
@@ -230,7 +230,7 @@ void voxel_render(uint32_t base, const camera *cam)
   int16_t cs = voxel_cos(cam->angle);
   int16_t sn = voxel_sin(cam->angle);
   uint16_t base_lo = (uint16_t)base;
-  uint8_t x;
+  uint16_t x;  // 320 columns will not fit a byte
 
   // Rebuilt only when the horizon moves, which today is never -- but pitch
   // control will move it, and this is where that gets handled.

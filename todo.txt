@@ -71,7 +71,7 @@ SETTLED ON REAL HARDWARE (see the table in CLAUDE.md):
    wide and stretched. Memory layout if it goes ahead, all of it derisked:
    bank 1 = FB_A 48640 + sky template, bank 4 = heightmap, bank 5 = FB_B,
    attic = colourmap.
-6. controls: joystick and keyboard, long push -> big speed change, short push
+7. controls: joystick and keyboard, long push -> big speed change, short push
    -> small, accelerating towards a target speed rather than jumping to it.
    Joystick forward/back and left/right, cursor keys to rotate the drone.
    Scale the acceleration by the measured frame time -- at anything from 6 to

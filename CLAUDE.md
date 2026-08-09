@@ -49,6 +49,11 @@ Only banks 1, 4 and 5 are free: `$20000-$3FFFF` holds the C65 ROM, and **colour 
 | `$10000-$15EFF` | 24320 | Framebuffer A (160x152, the 3D view) |
 | `$16000-$1BEFF` | 24320 | Framebuffer B |
 | `$1C000` | 1216 | One column strip of sky, DMAd across the buffer each frame |
+
+`make WIDE=1` renders all 320 pixels instead of stretching 160. That needs
+48640 bytes a buffer, so B moves to `$50000` and the colourmap moves out to
+attic RAM at `$8000000` — the only rearrangement that fits, and the reason
+the attic figures were measured. It costs about half the frame rate:
 | `$1F800-$1FFFF` | 2 KB | Colour RAM alias — **do not write** |
 | `$40000-$4FFFF` | 64 KB | Heightmap, 256x256 |
 | `$50000-$5FFFF` | 64 KB | Colourmap, 256x256 |
@@ -247,6 +252,22 @@ view is the real one):
   back out free and exact: `(256 * inv_z) >> 8` is `inv_z`, so the correction
   is a subtraction folded into a per-step horizon table, and the low eight
   bits it discards are zero.
+
+| | 160 wide | 320 wide |
+|---|---|---|
+| frame | 64.7 ms, 15.5 fps | 124.8 ms, 8.0 fps |
+| samples | 10240 | 20480 |
+| colourmap | chip RAM | attic RAM, ~3.1 ms (2.5%) |
+| panel | 20 columns | 40 columns |
+
+The counters double exactly, which is the point: the march is per column and
+nothing else about the scene changes. **The picture barely improves**, though,
+because the blockiness is the 256x256 map showing through, not the pixel
+grid — the screen was never the limiting resolution. The source PNGs in
+`resources/` are 1024x1024 and `convmap.py` throws 4x of that away to fit
+64K, so a finer *colourmap* would buy far more than a finer screen, and attic
+RAM has room for it now. A 512x512 map would cost the 64K-boundary pointer
+trick, which is what makes a sample cheap.
 
 Draw distance and cost are traded in the band schedule at the top of
 `voxel.c`: `BANDS` x `BAND_STEPS` samples per column, with the step doubling

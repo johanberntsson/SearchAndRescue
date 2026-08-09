@@ -74,8 +74,8 @@ void vic4_init(void)
   VICIV.linestep = FB_COLS * 2;  // bytes of screen RAM per row
   VICIV.chrcount = FB_COLS;
   // Source pixels per output pixel, in 120ths. 120 is 1:1, so 60 makes every
-  // pixel two screen pixels wide and stretches the 160 columns across 320.
-  VICIV.chrxscl = 60;
+  // pixel two screen pixels wide and stretches 160 columns across 320.
+  VICIV.chrxscl = WIDE ? 120 : 60;
 
   VICIV.bordercol = 0;
   VICIV.screencol = 0;
