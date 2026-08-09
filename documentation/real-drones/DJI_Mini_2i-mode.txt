@@ -1,0 +1,5 @@
+Mode 3 is best for this game.
+
+In addition to joysticks (or keyboard equivalents) there's:
+- gimbal: pointing the camera up/down
+- speed: low (cinematic), mediumi (normal), high (sport, 16 m/s)
