@@ -6,14 +6,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A MEGA65 heightfield voxel flight simulator / drone search-and-rescue game, written in C (Calypsi) with the rendering inner loop in 45GS02 assembly. `documentation/vision.md` holds the full technical and gameplay design; `todo.txt` is the authoritative "what's next" and should be updated as work lands.
 
-Currently: a flyable voxel engine at about 10 fps, with an FPS readout as the first piece of the HUD. No game yet.
+Currently: a flyable voxel engine at about 14 fps — a 160x152 3D view over a
+six-row text panel, with 512x512 height and 1024x1024 colour maps unpacked
+into attic RAM at boot. No game yet: no controls beyond ASWD/RF, no mission.
 
 ## Build and run
 
 ```sh
 make run          # build build/sar.d81 and boot it in xemu
 make prg          # skip the disk, run the PRG directly (no resources available)
-make PROFILE=0    # without the per-column instrumentation
+make PROFILE=0    # without the per-column instrumentation; use this for timing
+make WIDE=1       # render all 320 pixels instead of stretching 160
+make HGT_SIZE=1024 COL_SIZE=512     # map resolutions, 256..1024
 make clean
 ```
 
@@ -27,7 +31,7 @@ python3 tools/profread.py mem.bin
 
 `-sleepless` is fine here — see Performance for why it must never be used to time anything from the outside.
 
-`-dumpmem` writes 384 KB of chip RAM, so `mem.bin[0x10000]` onwards is the framebuffer and `mem.bin[0x40000]` the heightmap. Reading a framebuffer back and de-swizzling it with the column-strip formula below is the fastest way to tell "the renderer is wrong" apart from "the display is wrong"; both have happened. There are no tests and no linter.
+`-dumpmem` writes 384 KB of **chip RAM only**, so it cannot see attic RAM and cannot see either map at the default sizes; `mem.bin[0x40000]` is the heightmap only when `HGT_SIZE=256` keeps it in chip RAM. `mem.bin[0x10000]` onwards is framebuffer A. Note that a dump catches whichever buffer is mid-render, so it is no good for judging a finished frame — compare screenshots for that. Reading a framebuffer back and de-swizzling it with the column-strip formula below is the fastest way to tell "the renderer is wrong" apart from "the display is wrong"; both have happened. There are no tests and no linter.
 
 ## Toolchain
 
@@ -49,19 +53,15 @@ Only banks 1, 4 and 5 are free: `$20000-$3FFFF` holds the C65 ROM, and **colour 
 | `$10000-$15EFF` | 24320 | Framebuffer A (160x152, the 3D view) |
 | `$16000-$1BEFF` | 24320 | Framebuffer B |
 | `$1C000` | 1216 | One column strip of sky, DMAd across the buffer each frame |
-
-`make WIDE=1` renders all 320 pixels instead of stretching 160. That needs
-48640 bytes a buffer, so B moves to `$50000` and the colourmap moves out to
-attic RAM at `$8000000` — the only rearrangement that fits, and the reason
-the attic figures were measured. It costs about half the frame rate:
 | `$1F800-$1FFFF` | 2 KB | Colour RAM alias — **do not write** |
 | `$40000-$4FFFF` | 64 KB | Heightmap, only when it is 256x256 |
 | `$8000000-$80FFFFF` | 1 MB | Colourmap planes, attic RAM |
 | `$8100000-$81FFFFF` | 1 MB | Heightmap planes, when larger than 256x256 |
 | `$8200000-` | | Staging for the crunched stream being unpacked |
 
-Bank 5 is free at 160 wide (`make WIDE=1` puts the second framebuffer there),
-and bank 4 is free too whenever the heightmap is above 256x256.
+`make WIDE=1` renders all 320 pixels instead of stretching 160. That needs
+48640 bytes a buffer, so B moves to `$50000`. Bank 5 is otherwise free, and
+bank 4 is free too whenever the heightmap is above 256x256.
 
 **Both maps ship as 256x256 planes, one per sub-cell corner** — a map of SIZE
 is `(SIZE/256)^2` of them — rather than as one big array. Every plane is then
@@ -116,12 +116,12 @@ of the 256 entries will do.
 
 ## Resources
 
-`tools/convmap.py` turns the 1024x1024 VoxelSpace PNGs in `resources/` into raw `terrain.hgt`, `terrain.col` and `terrain.pal`. The sources need no quantisation: the heightmap is 8-bit greyscale and the colourmap is already a palette image. Palette bytes are nybble-swapped for the `$D100`/`$D200`/`$D300` registers, and the sky gradient goes in indices 224-239, which the colourmap never uses.
+`tools/convmap.py` turns the 1024x1024 VoxelSpace PNGs in `resources/` into `terrain.hgt`, `terrain.col` and `terrain.pal` — the two maps crunched, the palette raw. The sources need no quantisation: the heightmap is 8-bit greyscale and the colourmap is already a palette image. Palette bytes are nybble-swapped for the `$D100`/`$D200`/`$D300` registers, and the sky gradient goes in indices 224-239, which the colourmap never uses.
 
 `convmap.py` takes the two map sizes as arguments; the Makefile passes
 `HGT_SIZE` and `COL_SIZE`.
 
-Height units are a quarter of a map cell — the maps were downsampled 4x and the heights were not rescaled — and `SCALE_H` in `src/voxel.c` folds that in.
+Height units are a quarter of a map cell — the source is 4x the renderer's 256-cell grid and the heights were not rescaled — and `SCALE_H` in `src/voxel.c` folds that in. `HGT_SIZE` does not change this: a finer heightmap subdivides each cell rather than widening the world, so the world stays 256 cells across whatever the map resolution.
 
 The maps are **exomizer-crunched**, which is what lets any resolution above
 256 fit a d81. `src/exo_asm.s` is a port of the decruncher in
@@ -140,14 +140,16 @@ ozmoo-z6 checkout, or `PATH`.
 
 ## Performance
 
-Roughly 15.5 fps, from 0.74 when the renderer was all C. `src/profile.c` measures
+Roughly 14.2 fps at the default map sizes (15.4 with the heightmap left at
+256x256), from 0.74 when the renderer was all C. `src/profile.c` measures
 it; `tools/profread.py` formats the results out of a `-dumpmem` image. The FPS
 readout in the corner is always on. `make PROFILE=0` compiles out the
 per-column instrumentation and the counters in `voxel_asm.s`, which the
 Makefile guards with the same flag passed to the assembler; the FPS counter
-stays. **That instrumentation costs about 7% of a frame**, so the readout in
-the corner of a default build reads low — 10.5 against the 11.3 a `PROFILE=0`
-build actually runs at. Quote speed from a `PROFILE=0` run. Switching
+stays. **That instrumentation costs about 7% of a frame**, so the FPS readout
+in a default build reads low against what the machine actually does. Quote
+speed from a `PROFILE=0` run — and note `profread`'s per-frame counters need
+the opposite, a `PROFILE=1` build. Two runs, not one. Switching
 `PROFILE` touches a stamp file that forces a rebuild, because otherwise half
 the objects disagree with the flag and the counters silently stay off.
 
@@ -253,8 +255,8 @@ high coordinate bytes dropped into the pointer — and drives the multiplier
 directly. Both maps share one address computation because only their bank byte
 differs.
 
-Where a 64.7 ms frame goes, measured by stubbing pieces out rather than
-guessing (setting `voxel_column_asm` to an immediate `rts` isolates the
+Where a frame goes (160 wide, h256 c512, 64.7 ms), measured by stubbing
+pieces out rather than guessing (setting `voxel_column_asm` to an immediate `rts` isolates the
 per-column C setup; halving `BANDS` separates per-sample from per-column):
 
 | | ms | |
@@ -315,10 +317,14 @@ on one disk.
 Going 320 wide doubles the sample count exactly and costs half the frame
 rate, and **the picture barely changes** — the blockiness was the map showing
 through, not the pixel grid, so the screen was never the limiting resolution.
-Doubling the *colourmap* instead costs 3.6% and is plainly visible. That is
-the trade this engine responds to: detail per cycle lives in the map, not in
-the raster. The panel going from 20 to 40 columns is the real argument for
+Doubling the *colourmap* instead is free and plainly visible. That is the
+trade this engine responds to: **detail per cycle lives in the map, not in
+the raster.** The panel going from 20 to 40 columns is the real argument for
 320 wide, not the terrain.
+
+(An earlier note here priced the finer colourmap at 3.6%. That was the
+raster-calibration jitter above, not a real cost; re-measured with the fix it
+is zero. Small differences measured before that fix are worth re-taking.)
 
 Draw distance and cost are traded in the band schedule at the top of
 `voxel.c`: `BANDS` x `BAND_STEPS` samples per column, with the step doubling
@@ -328,6 +334,14 @@ Beware `iny` between an `adc` and the branch that tests its result — it
 overwrites the flags, and the counters caught it as 160 full-height spans a
 frame. `next$` is the one place the march advances Y, because every path that
 goes round again passes through it.
+
+**The assembler does not see C headers.** It gets `-DPROFILE_DETAIL`,
+`-DWIDE`, `-DHGT_SIZE` and `-DCOL_SIZE` from the Makefile and nothing else,
+so an `#if` on anything derived in a header — `COL_AXIS`, say — is silently
+false and assembles the guarded code away. That happened to the plane lookup:
+every sample read plane 0, which is a coarse point-sample of the finer map,
+so the picture came out *worse* than the map it replaced while the frame time
+and the silhouette check both looked plausible. Only a zoomed A/B caught it.
 
 ## Gotchas
 

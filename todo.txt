@@ -1,118 +1,97 @@
-PLAN
+WHERE IT IS
 
-Where the frame goes, now that the counters are back (PROFILE=0 timing,
-PROFILE=1 counts, 160x192):
+A flyable voxel engine: 160x152 3D view over a six-row text panel, 14.2 fps
+(PROFILE=0, default map sizes). No game yet.
 
-    64.7 ms a frame, 15.5 fps, at 160x152
-    ray march                    46.0 ms   71%   10240 samples at 182 cycles
-    terrain span fills           10.0 ms   15%   14489 pixels at ~28
-    span prologues                3.4 ms    5%   3983 colour reads
-    per-column C setup            2.4 ms    4%   607 cycles a column
-    sky DMA                       2.1 ms    3%
-    panel and everything else     0.8 ms    1%
+Build knobs, all in the Makefile:
+    PROFILE=0            no per-column instrumentation; use it for timing
+    WIDE=1               render all 320 pixels instead of stretching 160
+    HGT_SIZE, COL_SIZE   map resolutions, powers of two from 256 to 1024
 
-Every column takes all 64 samples -- none terminates early -- so the march
-cost is flat in the view, not scene dependent. The march is per column, not
-per pixel. Shortening the view from 192 to 152 rows is nearly free; doubling
-the width from 160 to 320 doubles the 82%.
+Where a frame goes (160 wide, h256 c512, 64.7 ms; the shape is the same at
+other settings):
 
-Chip RAM is 190K free (62K in bank 1, capped by the colour RAM alias at
-$1F800, plus banks 4 and 5). A 320x152 view needs 48640 bytes a buffer, so
-two buffers plus both maps plus a panel is ~240K. One 64K map has to leave
-chip RAM before a second 320-wide buffer can exist at all; there is no
-packing that avoids it. Each buffer must also sit inside one 64K bank,
-because the fill loop's pointer step never carries into byte 2.
+    ray march                  46.0 ms   71%   10240 samples at 182 cycles
+    terrain span fills         10.0 ms   15%   14489 pixels at ~28
+    span prologues              3.4 ms    5%   3983 colour reads
+    per-column C setup          2.4 ms    4%   607 cycles a column
+    sky DMA                     2.1 ms    3%
+    panel and everything else   0.8 ms    1%
 
-Of the two maps the colourmap is the one to move: voxel_asm.s only reads it
-under draw$, once per visible span rather than once per sample, and attic RAM
-is 64K aligned so the "drop the two high coordinate bytes into the pointer"
-addressing survives the move. Shrinking it to 128x128 instead would break
-that addressing and put a shift back in the inner loop.
+Every column takes all 64 samples -- none terminates early -- so the march is
+flat in the scene and scales only with COLUMN COUNT. That one fact governs
+most of the trades below.
 
-SETTLED ON REAL HARDWARE (see the table in CLAUDE.md):
+NEXT
 
-- colourmap to attic RAM is CHEAP. An attic read costs a flat +16 cycles and
-  there are only 4403 of them a frame, one per span drawn: 1.7 ms on a 90 ms
-  frame, under 2%. This is how the 64K gets freed. Do it when the memory is
-  actually needed, not before.
-- rendering into attic RAM and DMAing back is DEAD, but not for the reason
-  expected. The writes are fine -- posted, +3 cycles, 2 ms a frame. It is the
-  DMA back that kills it: attic to chip runs at 17.8 cycles a byte against
-  2.45 chip to chip, so one 320x152 buffer is 21 ms a frame.
-- a pre-rendered sky in attic RAM is dead for the same reason: 13.5 ms to DMA
-  in against the 2.5 ms the chip RAM strip template costs now.
-- so the attic RAM question is answered and it was never the blocker. The
-  blocker is that the march is per column and 320 wide has twice as many.
+- controls: joystick and keyboard. Long push -> big speed change, short push
+  -> small, accelerating towards a target speed rather than jumping to it.
+  Joystick forward/back and left/right, cursor keys to rotate the drone.
+  Scale the acceleration by the measured frame time: between 7 and 15 fps a
+  per-frame constant will not feel the same twice.
+- then the game itself. documentation/vision.md has the design; nothing of it
+  exists yet.
 
-1. DONE - instrumentation, so the 320-wide decision is made on numbers.
-   Memory benchmarks are in src/bench_asm.s (in C the chip and attic loops
-   compile to different code and the comparison is worthless), and
-   profile_report prints them on screen at startup for real hardware, which
-   has no -dumpmem.
-2. DONE - sky by DMA. 97.0 ms -> 88.6 ms a frame, 10.3 -> 11.3 fps
-   (both PROFILE=0). The whole sky is 2.5 ms of DMA against about 8 ms of
-   pixel loop, and it is the frame's clear pass as well
-3. DONE - split screen: 19 rows of 3D over a 6 row text panel, hud.c gone.
-   88.6 ms -> 79.4 ms, 11.3 -> 12.6 fps (PROFILE=0), better than the 11.7
-   expected because the pixel-drawn FPS readout went away with it.
-   Two things it needed: CHARPTR had never been set, and a text character's
-   colour is a FOUR BIT field in colour RAM, so panel ink has to live in the
-   first sixteen palette entries -- convmap.py now reserves 1 and 2.
-   The panel is 20 columns, which is what 160 pixels of 8-pixel characters
-   gives. 40 columns needs either the 320-wide move or a raster split that
-   changes CHRXSCL below the 3D view.
-4. NEXT - the inner loop, BEFORE deciding on 320 wide. At ~257 cycles a sample the
-   march is 82% of the frame, and every cycle saved is worth double at 320
-   columns. Biasing the height difference so it is never negative drops the
-   sign-extension branch and two register writes from every sample; the
-   per-column C setup in column() is worth a look too.
-5. then decide 320 wide. At today's march cost it is ~5.7 fps at 4x16 and
-   ~7.2 fps at 4x12 with a shorter draw distance, against ~11.7 staying 160
-   wide and stretched. Memory layout if it goes ahead, all of it derisked:
-   bank 1 = FB_A 48640 + sky template, bank 4 = heightmap, bank 5 = FB_B,
-   attic = colourmap.
-7. controls: joystick and keyboard, long push -> big speed change, short push
-   -> small, accelerating towards a target speed rather than jumping to it.
-   Joystick forward/back and left/right, cursor keys to rotate the drone.
-   Scale the acceleration by the measured frame time -- at anything from 6 to
-   13 fps a per-frame constant will not feel the same twice
+DECISIONS ALREADY SETTLED (do not re-litigate without new measurements)
 
-IDEAS
+- Detail per cycle lives in the MAP, not in the raster. 320-wide rendering
+  doubles the march and halves the frame rate for a picture that barely
+  changes; a finer colourmap is free and plainly better. WIDE=1 is kept as an
+  option, off by default, and its real argument is the 40-column panel.
+- Colourmap resolution is free at any size: read once per span, and the plane
+  lookup is one `lda abs,x` whether there are 4 planes or 16.
+- Heightmap above 256x256 costs a flat 5.7 ms (8.8%) because it leaves chip
+  RAM -- the SAME at 512 or 1024. So h1024 is no slower than h512; it just
+  cannot share a d81 with c1024 (1013 KB against ~793 KB).
+- Rendering into attic RAM and DMAing the frame back is DEAD: attic-to-chip
+  DMA is 17.8 cycles a byte against 2.45 chip-to-chip, so one 320x152 buffer
+  would be 21 ms a frame. The writes were never the problem (+3 cycles).
+- A pre-rendered sky in attic RAM is dead for the same reason. The chip-RAM
+  strip template costs 2.1 ms; from attic it would be 13.5.
+- ADCQ for the ray position is SLOWER (68.5 ms against 64.7). The Q
+  pseudo-register is A/X/Y/Z, so it destroys the march's step index in Y.
 
+OPEN
+
+- the far edge of each z band pops as you fly. Either blend the bands or
+  shorten the step growth.
+- no pitch control, and the horizon is fixed. vx_horiz is already rebuilt
+  whenever cam->horizon moves, so the renderer is ready for it.
+- the panel is 20 columns, which is what 160 pixels of 8-pixel characters
+  gives. 40 needs WIDE=1, or a raster split that changes CHRXSCL below the
+  3D view -- which would get the wider panel without paying for the march.
+- no HUD over the 3D view. vision.md wants an artificial horizon, battery,
+  GPS and signal strength. Palette 240/241 are reserved for it; hud.c did
+  exactly this kind of pixel drawing and is in git history if wanted back.
 - an overview map in the panel, a small version of the colour map. It cannot
   be text characters; it wants full-colour cells, which can be mixed into the
   panel per cell since the mode is chosen by character number.
-- ADCQ for the position update was TRIED AND IS SLOWER: 68.5 ms against 64.7.
-  The Q pseudo-register is A/X/Y/Z, so it destroys the march's step index in
-  Y; keeping the index in zero page instead costs more than the 32-bit add
-  saves. See CLAUDE.md. Do not try it again.
-- pre-render the sky to attic RAM instead of a strip template, if the sky
-  ever needs to move with the horizon: a template one strip taller than the
-  screen, copied from a source offset of dy*8, shifts it uniformly
+- 1024x1024 for BOTH maps needs a second disk, or a packed format better than
+  exomizer's 1.9-2.2x on this data.
+- remaining march ideas, all small: the per-column C setup is 607 cycles and
+  two mul_shift8 calls; the position update is 40 of the 182 cycles a sample.
 
-OPEN:
+DONE
 
-- profread's per-frame counters and the benchmark table need a PROFILE=1
-  build; frame times need PROFILE=0. Two runs, not one.
-- the far edge of each z band pops as you fly. Either blend the bands or
-  shorten the step growth.
-- no pitch control yet, and the horizon is fixed.
-- more speed is available if wanted: biasing the height difference so it is
-  never negative would drop the sign-extension branch and two register writes
-  from every sample.
-- the HUD is only an FPS readout so far. documentation/vision.md wants an
-  artificial horizon, battery, GPS and signal strength.
-
-DONE:
-
-- install calypsi C (rpm) from https://github.com/hth313/Calypsi-tool-chains/releases, and "make run" to run a simple hello world in src/main.c
-- build to a d81 with the game as autoboot.c65 and the maps as separate files
-  on the same disk, run with xemu-xmega65 -8
-- minimal voxel engine you can fly around in: 160x192 full-colour display
-  hardware-stretched to 320 wide, double buffered, 256x256 height and colour
-  maps loaded off the disk. ASWD to fly, R/F for altitude.
-- profiler (src/profile.c, tools/profread.py) with a clock calibrated against
-  the raster, plus an always-on FPS counter in the corner
-- performance: 0.74 fps -> 10.3 fps. The 32-bit multiply the compiler emitted
-  was 64% of the frame; the hardware multiplier and then an assembly inner
-  loop (src/voxel_asm.s) did most of the rest.
+- calypsi toolchain, d81 build with autoboot.c65, resources as SEQ files
+- minimal voxel engine, 160x192 double buffered, ASWD/RF to fly
+- profiler (src/profile.c, tools/profread.py) with a raster-calibrated clock,
+  plus micro-benchmarks in src/bench_asm.s and an on-screen report for real
+  hardware, which has no -dumpmem
+- 0.74 -> 10.3 fps: the compiler's 32-bit multiply was 64% of the frame; the
+  hardware multiplier and then an assembly inner loop did the rest
+- attic RAM measured on real hardware: a read is a flat +16 cycles, a write
+  +3, attic-to-chip DMA 7.3x slower than chip-to-chip
+- sky by DMA, 10.3 -> 11.3 fps. One strip template, FB_COLS copy jobs, and it
+  doubles as the frame's clear pass
+- split screen, 11.3 -> 12.6 fps. 19 rows of 3D over a 6-row text panel;
+  hud.c gone. Needed CHARPTR set and panel ink moved into the first sixteen
+  palette entries, because a text character's colour is a four-bit field
+- inner loop, 302 -> 182 cycles a sample, 12.6 -> 15.5 fps, output
+  pixel-identical: carried the write pointer between spans, moved the
+  position's whole-cell bytes into the map pointer, biased the height
+  difference positive
+- 320-wide rendering behind WIDE=1
+- exomizer compression (src/exo_asm.s, ported from mega65/ozmoo-z6) unpacking
+  into attic RAM, and both map resolutions as build knobs up to the source
+  1024x1024
