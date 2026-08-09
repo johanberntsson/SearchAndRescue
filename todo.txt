@@ -24,6 +24,12 @@ most of the trades below.
 
 NEXT
 
+**The renderer is good enough for a game.** Called on 9 Aug 2026, comparing a
+fresh screenshot against the first one: clearly more detail, and faster than
+it started. The optimisation ideas left in OPEN below are there so they are
+not rediscovered from scratch, NOT as a queue to work through -- the next
+work is the game, not another few percent.
+
 - controls: joystick and keyboard. Long push -> big speed change, short push
   -> small, accelerating towards a target speed rather than jumping to it.
   Joystick forward/back and left/right, cursor keys to rotate the drone.
