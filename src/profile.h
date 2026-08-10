@@ -28,11 +28,14 @@
 #endif
 
 // A frame is longer than the 16-bit clock can span, so it is measured in
-// parts that add up: P_COLUMN + P_SKY + P_OTHER.
+// parts that add up: P_COLUMN + P_SKY + P_SPRITE + P_OTHER. Adding a slot
+// here moves the micro-benchmarks along, so tools/profread.py's TIMES list
+// and BENCH0 have to move with it.
 enum {
   P_OTHER,   // input, camera, HUD and the buffer flip
   P_COLUMN,  // all of voxel_render's per-column work, summed over the frame
   P_SKY,     // the sky DMA at the top of each frame
+  P_SPRITE,  // the survivor billboard, drawn over the finished terrain
   // Micro-benchmarks, see profile_bench(). Two groups with a baseline each:
   // the arithmetic ones are C and subtract P_C_EMPTY, the memory ones are
   // assembly (src/bench_asm.s) and subtract P_ASM_EMPTY. They cannot share a

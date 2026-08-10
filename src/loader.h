@@ -27,6 +27,7 @@
 #define ATTIC_COLOURMAP 0x8000000UL  // up to 1 MB, 16 planes at most
 #define ATTIC_HEIGHTMAP 0x8100000UL  // up to 1 MB, when it is too big for chip
 #define ATTIC_STAGE     0x8200000UL  // the crunched stream being unpacked
+#define ATTIC_PALETTE   0x8300000UL  // 768 bytes, clear of the largest stream
 
 #define COLOURMAP ATTIC_COLOURMAP
 
@@ -50,12 +51,24 @@
 #define OVERVIEW_PX    (OVERVIEW_CHARS * 8)
 #define OVERVIEW_BYTES (OVERVIEW_CHARS * OVERVIEW_CHARS * 64)
 
-// Load the heightmap, colourmap, palette and overview map. Returns 0 on
-// success. Call this before switching the display, so failures can still be
-// printed.
+// Where the palette waits for vic4_set_palette. It used to be a C array, and
+// the 768 bytes of it went to the survivor sprite when the 32K the program,
+// its data and its stack share ran out. Attic RAM is fine for it: it is read
+// once, at startup, and 768 slow reads are nothing.
+#define PALETTE_BUF   ATTIC_PALETTE
+#define PALETTE_BYTES 768
+
+// Load the heightmap, colourmap, palette, overview map and survivor sprite.
+// Returns 0 on success. Call this before switching the display, so failures
+// can still be printed.
 int load_resources(void);
 
+// Read a small resource into a near buffer, returning how many bytes arrived
+// -- which may be fewer than asked for, since the only way to read a whole
+// file is to ask for more than it holds. See the note in the implementation.
+int load_small(const char *name, void *dest, uint16_t length);
+
 // 768 bytes for vic4_set_palette, valid once load_resources has succeeded.
-const uint8_t *loaded_palette(void);
+const uint8_t __far *loaded_palette(void);
 
 #endif

@@ -5,6 +5,7 @@
 #include "dma.h"
 #include "loader.h"
 #include "profile.h"
+#include "sprite.h"
 #include "vic4.h"
 
 // The ray march walks in bands, doubling the step each band, so near ground is
@@ -20,9 +21,6 @@
 // height maps were downsampled 4x, so a height unit is a quarter of a cell:
 // the 4 is already folded in here.
 #define SCALE_H 25
-
-// tan(30 degrees) * 256: half of a 60 degree horizontal field of view.
-#define TAN_HALF_FOV 148
 
 // The height difference the projection multiplies is camh - height, which goes
 // negative wherever terrain rises above the camera -- and sign-extending it
@@ -102,6 +100,16 @@ __zpage int16_t vx_camh;  // biased by CAM_BIAS
 __zpage int16_t vx_ys;
 __zpage uint8_t vx_ybuf, vx_tmp;
 __zpage uint8_t vx_bands, vx_bandsteps, vx_band, vx_step;
+
+// Billboard depth clip. vx_zclip is the value of the march's step index Y at
+// which the y buffer is to be sampled -- twice the step number, because the
+// tables Y walks are 16-bit -- and the assembly parks it at VOXEL_NO_STEP
+// once it has taken the sample, which is both the "already done" flag and the
+// "never do it" value.
+__zpage uint8_t vx_zclip, vx_yclip;
+
+uint8_t voxel_yclip[VX_COLS];
+static uint8_t clip_y;  // vx_zclip for every column of the current frame
 #if PROFILE_DETAIL
 // Event counts for one column, reset before the call and added up after it.
 // Counting in the assembly keeps the inner loop down to one `inc` a sample.
@@ -232,7 +240,49 @@ void voxel_init(void)
 
 uint8_t voxel_ground(uint16_t x, uint16_t y)
 {
+#if HGT_AXIS > 1
+  // Above 256x256 the map is planes on 64K boundaries and the sub-cell picks
+  // the bank byte, exactly as the inner loop does it -- otherwise this reads
+  // plane 0, a point sample of the finer map, and reports a height the
+  // renderer never draws. On a peak that is several units out, which is
+  // several pixels of a billboard standing on it.
+  uint32_t plane = (uint32_t)(vx_hplane_x[(uint8_t)x] | vx_hplane_y[(uint8_t)y]);
+  const uint8_t __far *m =
+      (const uint8_t __far *)((HEIGHTMAP & 0xFF000000UL) + (plane << 16) + MAP_BIAS);
+
+  return m[map_index(x, y)];
+#else
   return height_map[map_index(x, y)];
+#endif
+}
+
+int16_t voxel_mul_shift8(int16_t a, int16_t b)
+{
+  return mul_shift8(a, b);
+}
+
+uint16_t voxel_inv_z(uint16_t z)
+{
+  return (uint16_t)(((uint32_t)SCALE_H << 16) / z);
+}
+
+uint8_t voxel_depth_step(uint16_t z)
+{
+  uint16_t zk = Z_NEAR, step = Z_STEP0;
+  uint8_t band, i, k = 0;
+
+  // The same schedule voxel_init lays the inv_z table out with; walking it is
+  // 64 comparisons once a frame, against carrying a second copy of it around.
+  for (band = 0; band < BANDS; band++) {
+    for (i = 0; i < BAND_STEPS; i++) {
+      if (zk >= z)
+        return k;
+      zk += step;
+      k++;
+    }
+    step <<= 1;
+  }
+  return VOXEL_NO_STEP;
 }
 
 static void column(uint16_t top, const camera *cam, int16_t dirx, int16_t diry)
@@ -247,6 +297,8 @@ static void column(uint16_t top, const camera *cam, int16_t dirx, int16_t diry)
   vx_stepy = diry >> 1;
   vx_camh = cam->height + CAM_BIAS;
   vx_ybuf = FB_HEIGHT;
+  vx_zclip = clip_y;
+  vx_yclip = FB_HEIGHT;  // nothing in front of the billboard here
 #if PROFILE_DETAIL
   vx_n_sample = 0;
   vx_n_span = 0;
@@ -274,6 +326,11 @@ void voxel_render(uint32_t base, const camera *cam)
   int16_t sn = voxel_sin(cam->angle);
   uint16_t base_lo = (uint16_t)base;
   uint16_t x;  // 320 rays will not fit a byte
+  uint8_t step = sprite_prepare(cam, cs, sn);
+
+  // Y walks the 16-bit step tables, so it counts by two. VOXEL_NO_STEP is
+  // past anything it reaches and turns the snapshot off for the whole frame.
+  clip_y = step == VOXEL_NO_STEP ? VOXEL_NO_STEP : (uint8_t)(step * 2);
 
   // Rebuilt only when the horizon moves, which today is never -- but pitch
   // control will move it, and this is where that gets handled.
@@ -310,7 +367,19 @@ void voxel_render(uint32_t base, const camera *cam)
     int16_t diry = sn + mul_shift8(cs, t);
 
     column(base_lo + col_top[x], cam, dirx, diry);
+    // The assembly takes the snapshot at the first span behind the billboard
+    // and parks vx_zclip past the end of the march to say it has. If it never
+    // got there -- the column filled first, or drew nothing behind the
+    // billboard -- the y buffer never moved again, so the final one is the
+    // answer.
+    voxel_yclip[x] = vx_zclip == VOXEL_NO_STEP ? vx_yclip : vx_ybuf;
     PROF_ADD(P_COLUMN, t0);
+  }
+
+  {
+    uint16_t t0 = PROF_NOW();
+    sprite_draw(base);
+    PROF_ADD(P_SPRITE, t0);
   }
 
 #if PROFILE_DETAIL

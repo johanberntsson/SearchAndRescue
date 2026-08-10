@@ -6,11 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A MEGA65 heightfield voxel flight simulator / drone search-and-rescue game, written in C (Calypsi) with the rendering inner loop in 45GS02 assembly. `documentation/vision.md` holds the full technical and gameplay design; `todo.txt` is the authoritative "what's next" and should be updated as work lands.
 
-Currently: a flyable voxel engine at about 12.7 fps — a 320x152 3D view over a
+Currently: a flyable voxel engine at about 12.5 fps — a 320x152 3D view over a
 six-row 40-column text panel, with 512x512 height and 1024x1024 colour maps
 unpacked into attic RAM at boot. The renderer marches 160 rays and writes each
-one to two neighbouring pixels; see Performance. No game yet: no controls
-beyond ASWD/RF, no mission.
+one to two neighbouring pixels; see Performance. One world object exists: a
+survivor billboard on the pyramid at 46.713N 8.110E, scaled by distance and
+clipped against the terrain in front of it. No game yet: no controls beyond
+ASWD/RF, no mission.
 
 ## Build and run
 
@@ -62,6 +64,19 @@ Only banks 1, 4 and 5 are free: `$20000-$3FFFF` holds the C65 ROM, and **colour 
 | `$8000000-$80FFFFF` | 1 MB | Colourmap planes, attic RAM |
 | `$8100000-$81FFFFF` | 1 MB | Heightmap planes, when larger than 256x256 |
 | `$8200000-` | | Staging for the crunched stream being unpacked |
+| `$8300000` | 768 | The palette, until `vic4_set_palette` uploads it |
+
+**The 32 KB is full.** After the survivor sprite went in, `zdata` leaves about
+360 spare bytes at the default settings and under 100 at `WIDE=1`, where the
+per-ray tables double. Room for it came from moving the palette out to attic
+RAM and taking the loader's bounce buffer from 2048 bytes down to 512; that
+last one costs nothing measurable, because the per-call overhead of a Kernal
+read is small against half a kilobyte of copying (17669 frames in a fixed
+run at 1024, 17514 at 512). The next thing that needs a kilobyte will have to
+move the screen tables — `screen[2][25*40]` of `uint16_t`, 4000 bytes in
+vic4.c — up into banked RAM, which `SCRNPTR` can address perfectly well and
+which only the cold panel-writing paths would have to reach with far
+pointers.
 
 The framebuffer is 320 wide whatever `WIDE` is set to, so a buffer is 48640
 bytes and B lives in bank 5. Bank 4 is free too whenever the heightmap is
@@ -188,9 +203,79 @@ and serves as the paper. Palette entries 240 and 241 stay reserved for a
 future pixel-drawn overlay over the 3D view, where a byte per pixel means any
 of the 256 entries will do.
 
+## The survivor billboard
+
+`src/sprite.c` draws one world-anchored 2D figure into the framebuffer after
+the terrain, scaled by distance and clipped against the heightfield. It is the
+software sprite `documentation/vision.md` asks for, and the mechanism is meant
+to carry the rest of them — campfires, crates, hazards.
+
+**The picture comes off the sprite sheet through `tools/convmap.py`, not a
+tool of its own**, because there is only one palette on screen: the figure's
+colours have to go in slots the colourmap left free, and which those are is
+not knowable without the colourmap. It takes the front pose out of the sheet's
+grid, cuts the figure off its checkerboard (the background is light and grey
+and the pose labels are black, so the *saturated* pixels find the figure and
+neither of those; the black outline needs a few pixels of padding and the grey
+insides come back by filling whatever the outside cannot reach), box-averages
+it down to 32 rows — the sheet is a lossy render, so every flat area of the
+pixel art is a cloud of near-identical colours and point sampling samples the
+noise — and median cuts it to fifteen entries. `terrain.spr` is a four byte
+header and then the pixels **column by column**, which is the order they are
+drawn in. Pixel value 0 is transparent, so the test is `if (v)`.
+
+The projection is the renderer's own, and has to be: `TAN_HALF_FOV` and the
+`inv_z` scale moved into `voxel.h` so that both use one set of numbers.
+Depth along the view axis picks the scale, the lateral offset over that depth
+picks the column, and the feet land on `horizon + (camh - ground) * inv_z >> 8`
+— the same expression `voxel_asm.s` computes for terrain. `SPR_WORLD_H` is
+what decides how big a survivor is, and **nothing about it is to scale**: a
+map cell is a hundred metres, so a life-sized figure would be a fraction of a
+pixel from anywhere worth flying. It is really the "how far away can one be
+spotted" knob, set by eye.
+
+`voxel_ground` had to learn about the map planes for this. It was reading
+plane 0 — a point sample of the finer map — which on a peak is a few height
+units below what the renderer actually draws, and that is several pixels of
+sink or float for something standing on it.
+
+### The depth clip
+
+The march already keeps a y buffer per column: `vx_ybuf`, the topmost row
+drawn so far, walking from near to far. Sampled at the sprite's depth it *is*
+the clip — every row from there down belongs to terrain nearer than the
+sprite. So `voxel_render` converts the sprite's depth to a march step,
+`voxel_column_asm` copies `vx_ybuf` into `vx_yclip` at the first span at or
+past it, and the sprite skips any pixel at or below `voxel_yclip[column]`.
+
+Taking it at the *first span behind* the sprite rather than testing every
+sample is what makes it cheap: spans are ~3000 a frame against 10240 samples,
+and the assembly parks `vx_zclip` at 255 — higher than the step index ever
+gets — as soon as it has the sample, so the columns that never reach it pay
+one `cpy`/`bcc`. **Measured cost of the whole mechanism, always on: 0.8 ms a
+frame, 12.7 fps to 12.5.**
+
+If the snapshot never happens — the column filled first, or drew nothing
+behind the sprite — the y buffer never moved after that depth, so the final
+`vx_ybuf` is the answer, and that is what the C side stores instead.
+
+### What it costs to draw
+
+| | ms/frame | |
+|---|---|---|
+| nobody in view | 0.03 | the projection, and an early return |
+| 20 cells away, ~15 px tall | ~1 | a realistic search distance |
+| 6 cells away, ~45 px tall | 7.65 | 9% of the frame, nose to nose |
+
+The drawing loop is in C at about 170 cycles a pixel, which is the usual
+Calypsi figure and four times what the terrain span fill costs in assembly.
+That is the obvious next optimisation and has not been done: at any distance
+you would actually search from it is a fraction of a millisecond, and only
+flying right up to somebody makes it visible in the frame time.
+
 ## Resources
 
-`tools/convmap.py` turns the 1024x1024 VoxelSpace PNGs in `resources/` into `terrain.hgt`, `terrain.col`, `terrain.pal` and `terrain.ovr` — the two maps crunched, the palette raw. The sources need no quantisation: the heightmap is 8-bit greyscale and the colourmap is already a palette image. Palette bytes are nybble-swapped for the `$D100`/`$D200`/`$D300` registers, and the sky gradient goes in indices 224-239, which the colourmap never uses.
+`tools/convmap.py` turns the 1024x1024 VoxelSpace PNGs in `resources/` into `terrain.hgt`, `terrain.col`, `terrain.pal`, `terrain.ovr` and `terrain.spr` — the two maps crunched, the palette raw, and the survivor cut out of `survivor-sprite.png` (see The survivor billboard). The sources need no quantisation: the heightmap is 8-bit greyscale and the colourmap is already a palette image. Palette bytes are nybble-swapped for the `$D100`/`$D200`/`$D300` registers, and the sky gradient goes in indices 224-239, which the colourmap never uses.
 
 `convmap.py` takes the two map sizes as arguments; the Makefile passes
 `HGT_SIZE` and `COL_SIZE`.
@@ -208,15 +293,30 @@ carries its own crunched length up front, because EOF cannot be trusted (see
 below). `convmap.py` finds exomizer via `$EXOMIZER`, `tools/exomizer`, an
 ozmoo-z6 checkout, or `PATH`.
 
-**Reading a SEQ file through the Kernal reports EOF exactly 256 bytes early**, whatever the file's size (verified from 16 K to 64 K, at several chunk sizes). `convmap.py` therefore pads every resource by 512 bytes and `src/loader.c` reads a known length rather than looking for the end of the file. Resources go on the disk as SEQ, not PRG: Calypsi's `_Stub_open` calls Kernal OPEN with the file descriptor as the secondary address, which defaults to SEQ, and SEQ has no load-address header to skip.
+**Reading a SEQ file through the Kernal reports EOF exactly 256 bytes early**, whatever the file's size (verified from 16 K to 64 K, at several chunk sizes). `convmap.py` therefore pads every resource by 512 bytes and `src/loader.c` reads a known length rather than looking for the end of the file.
+
+**`load_far` hangs on `TERRAIN.PAL` and nothing explains it.** Reading the
+768-byte palette through `load_far` — open, read into the bounce buffer, DMA
+it up, close — never returns from the open or the read that follows it. The
+same 768 bytes of the same file into the same buffer through `load_small` is
+fine, and `load_far` reads `TERRAIN.OVR` two lines later without complaint.
+Ruled out, each with its own run: the DMA destination (bank 1 at `$1C800` and
+`$1E000`, attic RAM at `$8300000` — all hang), the chunk size, short Kernal
+reads (`read_exact` loops now and it still hung), and `--no-cross-call`. The
+argument values reaching `read_far` were printed and are correct. It behaves
+like something layout-sensitive rather than a logic error, so **if the loader
+starts hanging after an unrelated change, suspect this and not the change** —
+the reproducer is one line, swapping the palette back to `load_far`. Resources go on the disk as SEQ, not PRG: Calypsi's `_Stub_open` calls Kernal OPEN with the file descriptor as the secondary address, which defaults to SEQ, and SEQ has no load-address header to skip.
 
 `tools/diskutil.rb` (from Fredrik Ramsberg) builds the D81 and refuses to overwrite a file that already exists on the image, so the Makefile deletes and rebuilds the image every time. The name on disk comes from the host file's basename.
 
 ## Performance
 
-Roughly 12.7 fps at the default map sizes, from 0.74 when the renderer was
+Roughly 12.5 fps at the default map sizes, from 0.74 when the renderer was
 all C. `src/profile.c` measures
-it; `tools/profread.py` formats the results out of a `-dumpmem` image. The FPS
+it; `tools/profread.py` formats the results out of a `-dumpmem` image. Its
+`TIMES` list and `BENCH0` are positional, so **adding a `P_` slot to
+`profile.h` means editing both**. The FPS
 readout in the corner is always on. `make PROFILE=0` compiles out the
 per-column instrumentation and the counters in `voxel_asm.s`, which the
 Makefile guards with the same flag passed to the assembler; the FPS counter
@@ -299,6 +399,12 @@ table to the Kernal's text screen at startup and waits for a key (or 20
 seconds, so unattended runs still get on with rendering). It has to run
 *before* `vic4_init`, which takes the text screen away. The figures come out
 identical to `profread`'s, so either route can be trusted.
+
+**`int` is 16 bits, and a constant expression will overflow it silently.**
+`(uint16_t)heading * 360 / 256` in the panel read 192 degrees as 14, and
+`FB_WIDTH / 2 * 256` in a macro folded to a negative number. Reassociate
+(`* 45 / 32`) or force the width (`256L`); the compiler warns about the second
+kind but not the first.
 
 **Coordinates through `int8_t`, and small `static const` arrays inside a
 function, miscompile.** The crosshair was first written with `int8_t` x and y

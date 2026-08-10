@@ -27,7 +27,7 @@ ELF      = $(BUILD)/sar.elf
 PRG      = $(BUILD)/autoboot.c65
 D81      = $(BUILD)/sar.d81
 RES      = $(BUILD)/terrain.hgt $(BUILD)/terrain.col $(BUILD)/terrain.pal \
-           $(BUILD)/terrain.ovr
+           $(BUILD)/terrain.ovr $(BUILD)/terrain.spr
 
 all: $(D81)
 
@@ -69,9 +69,10 @@ $(ELF): $(OBJS)
 $(PRG): $(ELF)
 	cp $(BUILD)/sar.prg $@
 
-$(RES) &: resources/D1.png resources/C1W.png tools/convmap.py $(CONFIG_STAMP) | $(BUILD)
-	python3 tools/convmap.py resources/D1.png resources/C1W.png $(BUILD)/terrain \
-	    $(HGT_SIZE) $(COL_SIZE)
+$(RES) &: resources/D1.png resources/C1W.png resources/survivor-sprite.png \
+          tools/convmap.py $(CONFIG_STAMP) | $(BUILD)
+	python3 tools/convmap.py resources/D1.png resources/C1W.png \
+	    resources/survivor-sprite.png $(BUILD)/terrain $(HGT_SIZE) $(COL_SIZE)
 
 # tools/diskutil.rb refuses to overwrite a file that already exists on the image,
 # so the image is always built from scratch.

@@ -20,10 +20,14 @@ Early. There is a voxel engine you can fly around in, and not yet a game.
 - Front-to-back ray march with a y-buffer, fixed point throughout, inner loop in
   assembly. It marches 160 rays and each fills the two pixels it owns, which keeps
   the panel's characters a readable 8 pixels wide without paying for twice the march
-- About 12.7 frames per second at the default map sizes, up from 0.74 when the
+- About 12.5 frames per second at the default map sizes, up from 0.74 when the
   renderer was all C; a real MEGA65 runs a few percent slower than the emulator
 - Altitude, heading, GPS coordinates and frame rate in the panel, with an overview
   map of the whole world and a crosshair showing where you are
+- One survivor, waving from the top of the pyramid at 46.713N 8.110E. A software
+  billboard drawn over the finished terrain: scaled by distance, and clipped
+  against the heightfield with the same y-buffer the ray march already keeps, so
+  a ridge in front of them hides their feet
 
 Getting there meant building a profiler first (`src/profile.c`, read with
 `tools/profread.py`) rather than guessing. The compiler's 32-bit multiply turned out

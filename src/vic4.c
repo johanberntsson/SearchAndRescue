@@ -174,7 +174,7 @@ void vic4_init(void)
   vic4_show(0);
 }
 
-void vic4_set_palette(const uint8_t *planes)
+void vic4_set_palette(const uint8_t __far *planes)
 {
   uint16_t i;
 

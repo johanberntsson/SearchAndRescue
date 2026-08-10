@@ -12,6 +12,7 @@
             .extern vx_px, vx_py, vx_stepx, vx_stepy
             .extern vx_camh, vx_ybuf, vx_ys, vx_tmp
             .extern vx_bands, vx_bandsteps, vx_band, vx_step
+            .extern vx_zclip, vx_yclip
             .extern vx_inv_z, vx_horiz
 ; NOTE: these test HGT_SIZE/COL_SIZE, not the HGT_AXIS/COL_AXIS the C side
 ; uses -- those live in loader.h and the assembler does not see C headers.
@@ -188,7 +189,21 @@ nowrap$:    lda     zp:vx_tmp
             dex
             bne     fill$
 
-            lda     zp:vx_ys
+            ; Depth clip for the frame's billboard. Y counts up with the
+            ; march, so the first span at or past vx_zclip is the first thing
+            ; drawn *behind* the sprite: the y buffer as it stands right now is
+            ; everything nearer than the sprite, which is exactly the row a
+            ; sprite pixel has to be above to be visible. Taking it once and
+            ; then parking vx_zclip at 255 -- higher than Y ever gets -- leaves
+            ; six cycles a span in the columns that never reach it.
+            cpy     zp:vx_zclip
+            bcc     nosnap$
+            lda     zp:vx_ybuf
+            sta     zp:vx_yclip
+            lda     #255
+            sta     zp:vx_zclip
+
+nosnap$:    lda     zp:vx_ys
             sta     zp:vx_ybuf
             beq     done$           ; column is full
 

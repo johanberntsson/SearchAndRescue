@@ -97,8 +97,10 @@ void vic4_overview_ready(void);
 void vic4_crosshair(uint8_t px, uint8_t py);
 
 // planes: 768 bytes, 256 red then 256 green then 256 blue, each already
-// nybble-swapped for the palette registers (see tools/convmap.py).
-void vic4_set_palette(const uint8_t *planes);
+// nybble-swapped for the palette registers (see tools/convmap.py). Far,
+// because it is read straight out of the banked buffer it was loaded into --
+// the 32K the program lives in has no room to spare for something used once.
+void vic4_set_palette(const uint8_t __far *planes);
 
 // Point the display at framebuffer 0 (FB_A) or 1 (FB_B).
 void vic4_show(uint8_t buffer);

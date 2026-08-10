@@ -11,13 +11,13 @@ import struct
 import sys
 
 MAGIC = b"\xDE\xAD\xBE\xEF"
-TIMES = ["other", "column", "sky"] + ["bench%d" % i for i in range(14)]
+TIMES = ["other", "column", "sky", "sprite"] + ["bench%d" % i for i in range(14)]
 COUNTS = ["frames", "samples", "spans", "span pixels", "sky pixels", "bad readings"]
 
 # Two groups, each with its own empty-loop baseline: the compiler's loop
 # overhead is not the assembly loop's, and subtracting one from the other
 # produced negative readings. See src/profile.h.
-BENCH0 = 3  # first micro-benchmark slot, see src/profile.h
+BENCH0 = 4  # first micro-benchmark slot, see src/profile.h
 C_BENCH = [("32-bit multiply + shift", 1),
            ("16-bit multiply", 2),
            ("hardware multiplier", 3)]
@@ -67,8 +67,8 @@ def main():
 
     us = [t * 1e6 / tick_hz for t in ticks]
     bench = us[BENCH0:]
-    render, sky, other = us[1], us[2], us[0]
-    frame_us = (render + sky + other) / frames
+    render, sky, sprite, other = us[1], us[2], us[3], us[0]
+    frame_us = (render + sky + sprite + other) / frames
 
     whole_us = frame_ticks * 1e6 / tick_hz / frames
     print("frames rendered      %d" % frames)
@@ -76,7 +76,7 @@ def main():
           % (whole_us / 1000, 1e6 / whole_us))
     # Everything below the whole-frame clock comes from the detailed
     # instrumentation, which `make PROFILE=0` compiles out.
-    total = render + sky + other
+    total = render + sky + sprite + other
     if not total:
         print("\nbuilt with PROFILE=0: no detailed instrumentation in this run")
         return
@@ -86,6 +86,8 @@ def main():
           % (render / frames / 1000, 100 * render / total))
     print("  sky DMA            %.2f ms  (%.0f%%)"
           % (sky / frames / 1000, 100 * sky / total))
+    print("  survivor sprite    %.2f ms  (%.0f%%)"
+          % (sprite / frames / 1000, 100 * sprite / total))
     print("  everything else    %.2f ms" % (other / frames / 1000))
     print()
 

@@ -1,8 +1,10 @@
 WHERE IT IS
 
 A flyable voxel engine: 320x152 3D view over a six-row 40-column text panel
-with an overview map, 12.7 fps (PROFILE=0, default map sizes). The march is 160 rays; each fills the
-two pixels it owns. No game yet.
+with an overview map, 12.5 fps (PROFILE=0, default map sizes). The march is 160 rays; each fills the
+two pixels it owns. One world object: a survivor billboard on the pyramid at
+46.713N 8.110E, which you have to fly north-west from the start to find. No
+game yet.
 
 Build knobs, all in the Makefile:
     PROFILE=0            no per-column instrumentation; use it for timing
@@ -36,8 +38,14 @@ work is the game, not another few percent.
   Joystick forward/back and left/right, cursor keys to rotate the drone.
   Scale the acceleration by the measured frame time: between 7 and 15 fps a
   per-frame constant will not feel the same twice.
-- then the game itself. documentation/vision.md has the design; nothing of it
-  exists yet.
+- then the game itself. documentation/vision.md has the design; the survivor
+  billboard is the first piece of it.
+- the sprite draw is C at ~170 cycles a pixel. Harmless at any distance you
+  would search from, 9% of a frame nose to nose. Assembly when there is a
+  reason, not before.
+- one billboard, one depth. Several at different depths need either a clip
+  step per sprite (another pass of the march) or a real per-column depth
+  buffer. Sort them and snapshot at the nearest is probably enough.
 
 DECISIONS ALREADY SETTLED (do not re-litigate without new measurements)
 
@@ -131,3 +139,12 @@ DONE
 - exomizer compression (src/exo_asm.s, ported from mega65/ozmoo-z6) unpacking
   into attic RAM, and both map resolutions as build knobs up to the source
   1024x1024
+- survivor billboard, 12.7 -> 12.5 fps. convmap.py cuts the front pose off the
+  sprite sheet's checkerboard and gives it fifteen palette entries the
+  colourmap left free; src/sprite.c projects it with the renderer's own
+  numbers and clips it against the march's y buffer, sampled at the first span
+  behind it. The clip is the whole cost, 0.8 ms a frame; drawing is 0.03 ms
+  unless somebody is actually in view. Room for it came out of the 32K: the
+  palette moved to attic RAM and the loader's bounce buffer went from 2048
+  bytes to 512. WATCH OUT: reading the palette with load_far hangs the machine
+  and no run explained why -- see CLAUDE.md before touching src/loader.c.

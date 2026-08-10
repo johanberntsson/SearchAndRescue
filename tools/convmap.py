@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Convert the VoxelSpace PNG maps into MEGA65 resources.
 
-    convmap.py <height.png> <colour.png> <out-prefix> [hgt-size] [col-size]
+    convmap.py <height.png> <colour.png> <sprite.png> <out-prefix>
+               [hgt-size] [col-size]
 
-writes <out-prefix>.hgt, <out-prefix>.col, <out-prefix>.pal and
-<out-prefix>.ovr (the panel's overview map).  The two
+writes <out-prefix>.hgt, <out-prefix>.col, <out-prefix>.pal,
+<out-prefix>.ovr (the panel's overview map) and <out-prefix>.spr (the
+survivor billboard).  The two
 sizes default to 512 and 1024 and must be powers of two from 256 up to the
 source resolution; they have to match HGT_SIZE and COL_SIZE in the build (the
 Makefile passes both).
@@ -13,6 +15,10 @@ The sources are already in the right shape: the heightmap is 8-bit greyscale
 so its pixel values are heights, and the colourmap is a palette image whose
 indices can be used directly as VIC-IV colour indices.  Only the resolution
 and the palette encoding need changing.
+
+The sprite sheet is converted here rather than by a tool of its own because
+there is only one palette on screen: its colours have to go in slots the
+colourmap has left free, which is not knowable without the colourmap.
 """
 
 import os
@@ -21,6 +27,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+from collections import deque
 
 import numpy as np
 from PIL import Image
@@ -136,6 +143,128 @@ def to_overview(indices):
     return tiles.transpose(0, 2, 1, 3).astype(np.uint8).tobytes()
 
 
+# The survivor billboard, out of resources/survivor-sprite.png: a title strip
+# over a grid of poses, drawn on a checkerboard rather than with real alpha, so
+# the figure has to be cut out. The renderer scales one stored pose to whatever
+# the distance calls for; the eight directions are for later, when the survivor
+# faces the drone.
+SPRITE_GRID = (2, 4)   # poses down and across, below the title strip
+SPRITE_POSE = 0        # reading order within the grid: 0 is the front view
+SPRITE_H = 32          # stored height; the width follows the figure's own
+                       # proportions and goes in the file's header
+SPRITE_COLOURS = 15    # palette entries it may claim. Sprite pixel value 0 is
+                       # transparent, so it is not one of them.
+
+
+def sheet_cell(a, pose):
+    """One pose's cell of the sheet, inside its grid lines."""
+    # The title strip is separated by a solid dark rule; the poses below it are
+    # on an even grid. The last few per cent of each cell are dropped so that a
+    # grid line can never be mistaken for part of the figure.
+    rule = [i for i, v in enumerate((a.max(2) < 110).mean(1)) if v > 0.5]
+    top = rule[0] + 1 if rule else 0
+    rows, cols = SPRITE_GRID
+    ch, cw = (a.shape[0] - top) // rows, a.shape[1] // cols
+    r, c = divmod(pose, cols)
+    my, mx = ch // 25, cw // 25
+    return a[top + r * ch + my:top + (r + 1) * ch - my, c * cw + mx:(c + 1) * cw - mx]
+
+
+def cut_figure(cell):
+    """Crop to the figure and return it with a mask of which pixels are it.
+
+    The checkerboard behind the figure is light and grey and the pose label is
+    black, so the figure is found as the saturated pixels: that excludes both.
+    Its outline is black and reaches a pixel or two past them, hence the pad,
+    and its dark and grey insides -- hair, backpack, boots -- are recovered by
+    filling everything the background cannot reach from the edge.
+    """
+    ys, xs = np.nonzero((cell.max(2) - cell.min(2)) > 60)
+    pad = 4
+    sub = cell[max(ys.min() - pad, 0):ys.max() + pad + 1,
+               max(xs.min() - pad, 0):xs.max() + pad + 1]
+
+    mx, mn = sub.max(2), sub.min(2)
+    solid = ((mx - mn) > 40) | (mx < 120)
+
+    h, w = solid.shape
+    outside = np.zeros((h, w), bool)
+    queue = deque((y, x) for y in range(h) for x in (0, w - 1) if not solid[y, x])
+    queue.extend((y, x) for x in range(w) for y in (0, h - 1) if not solid[y, x])
+    for y, x in queue:
+        outside[y, x] = True
+    while queue:
+        y, x = queue.popleft()
+        for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+            if 0 <= ny < h and 0 <= nx < w and not solid[ny, nx] and not outside[ny, nx]:
+                outside[ny, nx] = True
+                queue.append((ny, nx))
+
+    mask = ~outside
+    ys, xs = np.nonzero(mask)
+    box = (slice(ys.min(), ys.max() + 1), slice(xs.min(), xs.max() + 1))
+    return sub[box], mask[box]
+
+
+def shrink_figure(crop, mask, height):
+    """Box-average the figure down to `height` rows, keeping its proportions.
+
+    Averaging rather than point sampling because the sheet is a lossy render:
+    every flat area of the pixel art is a cloud of near-identical colours, and
+    one sample of it is one sample of the noise. A destination pixel belongs to
+    the figure if at least half of the source block did.
+    """
+    sh, sw, _ = crop.shape
+    width = max(1, round(sw * height / sh))
+    rgb = np.zeros((height, width, 3))
+    opaque = np.zeros((height, width), bool)
+
+    for j in range(height):
+        y0, y1 = j * sh // height, max(j * sh // height + 1, (j + 1) * sh // height)
+        for i in range(width):
+            x0, x1 = i * sw // width, max(i * sw // width + 1, (i + 1) * sw // width)
+            block = mask[y0:y1, x0:x1]
+            if block.mean() >= 0.5:
+                opaque[j, i] = True
+                rgb[j, i] = crop[y0:y1, x0:x1][block].mean(0)
+    return rgb, opaque
+
+
+def to_sprite(path, rgb_palette, used, reserved):
+    """Convert the sprite sheet; returns the file's bytes.
+
+    Its colours are median cut down to SPRITE_COLOURS and given palette slots
+    the colourmap left free -- there are around fifty of those below the sky.
+    The file is a four byte header (width, height, and two spare) followed by
+    the pixels *column by column*, which is the order the renderer draws them
+    in: the framebuffer is laid out in column strips, so a vertical run of
+    pixels is one pointer stepping by eight.
+    """
+    sheet = np.asarray(Image.open(path).convert("RGB")).astype(int)
+    crop, mask = cut_figure(sheet_cell(sheet, SPRITE_POSE))
+    rgb, opaque = shrink_figure(crop, mask, SPRITE_H)
+    height, width = opaque.shape
+
+    # Median cut over the figure's pixels alone: quantising the whole grid
+    # would spend entries on the empty space around it.
+    flat = rgb[opaque].astype(np.uint8).reshape(1, -1, 3)
+    q = Image.fromarray(flat).quantize(colors=SPRITE_COLOURS, method=Image.MEDIANCUT)
+    quantised = q.getpalette()[:SPRITE_COLOURS * 3]
+
+    free = [i for i in range(1, SKY_BASE) if i not in used and i not in reserved]
+    if len(free) < SPRITE_COLOURS:
+        sys.exit(f"only {len(free)} free palette entries for {SPRITE_COLOURS} "
+                 "sprite colours")
+    for n in range(SPRITE_COLOURS):
+        rgb_palette[free[n]] = tuple(quantised[n * 3:n * 3 + 3])
+
+    pixels = np.zeros((height, width), np.uint8)  # 0 is transparent
+    pixels[opaque] = [free[i] for i in np.asarray(q).reshape(-1)]
+
+    return (bytes((width, height, 0, 0)) + pixels.T.tobytes(),
+            width, height, free[:SPRITE_COLOURS])
+
+
 def nybswap(v):
     """VIC-IV palette registers hold each channel with its nybbles reversed."""
     return ((v & 0x0F) << 4) | (v >> 4)
@@ -221,11 +350,11 @@ def reserve(indices, rgb, entry, used, reserved):
 
 
 def main():
-    if not 4 <= len(sys.argv) <= 6:
+    if not 5 <= len(sys.argv) <= 7:
         sys.exit(__doc__)
-    height_png, colour_png, prefix = sys.argv[1:4]
-    hgt_size = int(sys.argv[4]) if len(sys.argv) > 4 else DEFAULT_HGT_SIZE
-    col_size = int(sys.argv[5]) if len(sys.argv) > 5 else DEFAULT_COL_SIZE
+    height_png, colour_png, sprite_png, prefix = sys.argv[1:5]
+    hgt_size = int(sys.argv[5]) if len(sys.argv) > 5 else DEFAULT_HGT_SIZE
+    col_size = int(sys.argv[6]) if len(sys.argv) > 6 else DEFAULT_COL_SIZE
 
     heights = load_heightmap(height_png, hgt_size)
     indices, rgb = load_colourmap(colour_png, col_size)
@@ -249,6 +378,11 @@ def main():
         used = reserve(indices, rgb, entry, used, reserved)
         rgb[entry] = colour
 
+    # After the reservations, so the sprite only claims entries that are still
+    # genuinely spare -- and before the palette is packed, since it writes into
+    # it.
+    sprite, spr_w, spr_h, spr_entries = to_sprite(sprite_png, rgb, used, reserved)
+
     # Three 256-byte planes matching the $D100/$D200/$D300 register banks, so
     # uploading is three straight copies.
     palette = bytes(nybswap(c[channel]) for channel in range(3) for c in rgb)
@@ -260,12 +394,13 @@ def main():
         (".col", to_planes(indices)),
         (".pal", palette),
         (".ovr", to_overview(indices)),
+        (".spr", sprite),
     ):
         raw_sizes[suffix] = len(payload)
         # The palette is 768 bytes and is read straight into a buffer before
         # the display is up; crunching it would buy nothing and cost a special
         # case in the loader.
-        if suffix not in (".pal", ".ovr"):
+        if suffix not in (".pal", ".ovr", ".spr"):
             payload = crunch(exomizer, payload)
         with open(prefix + suffix, "wb") as f:
             f.write(payload)
@@ -285,6 +420,8 @@ def main():
     print("  " + report(".col", "col"))
     print(f"  overview: {OVERVIEW_PX}x{OVERVIEW_PX} in "
           f"{OVERVIEW_CHARS ** 2} characters, {raw_sizes['.ovr']} bytes")
+    print(f"  sprite: {spr_w}x{spr_h}, {raw_sizes['.spr']} bytes, palette "
+          f"{spr_entries[0]}..{spr_entries[-1]}")
 
 
 if __name__ == "__main__":

@@ -17,8 +17,10 @@
 #define FPS_COL 4
 
 // Heading in 256ths of a turn, the same units as the camera angle, shown as
-// degrees because that is what a pilot expects to read.
-#define DEGREES(a) ((uint16_t)(a) * 360 / 256)
+// degrees because that is what a pilot expects to read. 45/32 rather than the
+// equal 360/256: a heading of 183 or more overflows the 16-bit product of the
+// latter, and 192 -- due west -- came out as 14 degrees.
+#define DEGREES(a) ((uint16_t)(a) * 45 / 32)
 
 // Screen codes are not ASCII: in the uppercase character set the letters run
 // from 1 rather than from $41, while digits and most punctuation sit where

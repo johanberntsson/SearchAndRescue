@@ -4,6 +4,7 @@
 #include "loader.h"
 #include "panel.h"
 #include "profile.h"
+#include "sprite.h"
 #include "vic4.h"
 #include "voxel.h"
 
@@ -11,6 +12,15 @@
 #define THRUST      96  // 8.8 map cells per frame
 #define CLIMB_RATE  2   // height units per frame
 #define GROUND_GAP  12  // never fly closer than this to the terrain
+
+// The survivor, on top of the pyramid in the north west of the map. One map
+// cell is one millidegree and latitude counts down the map (see panel.h), so
+// a GPS fix is a cell index and nothing else; the low byte puts them in the
+// middle of the cell rather than on its corner.
+#define SURVIVOR_LAT 46713  // millidegrees north
+#define SURVIVOR_LON  8110  // millidegrees east
+#define SURVIVOR_X ((uint16_t)(SURVIVOR_LON - MAP_LON_WEST) << 8 | 0x80)
+#define SURVIVOR_Y ((uint16_t)(255 - (SURVIVOR_LAT - MAP_LAT_SOUTH)) << 8 | 0x80)
 
 // How long the startup benchmark report stays up if nobody presses a key.
 // Long enough to read or photograph, short enough that an unattended run
@@ -72,6 +82,7 @@ int main(void)
   vic4_set_palette(loaded_palette());
   voxel_init();
   panel_init();
+  sprite_place(SURVIVOR_X, SURVIVOR_Y);
   panel_message("SAR DRONE READY");
 
   cam.x = 128 << 8;  // middle of the map
