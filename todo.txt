@@ -12,6 +12,8 @@ each fills the two pixels it owns.
 Build knobs, all in the Makefile:
     PROFILE=0            no per-column instrumentation; use it for timing
     WIDE=1               march 320 rays instead of doubling 160 pixels
+    FLYNOW=1             skip the menus; a headless run needs it to render
+                         anything at all, since it cannot press a key
     HGT_SIZE, COL_SIZE   map resolutions, powers of two from 256 to 1024
 
 Where a frame goes (the older 160-pixel framebuffer, h256 c512, 64.7 ms; the
@@ -94,8 +96,9 @@ OPEN
 
 - the far edge of each z band pops as you fly. Either blend the bands or
   shorten the step growth.
-- no pitch control, and the horizon is fixed. vx_horiz is already rebuilt
-  whenever cam->horizon moves, so the renderer is ready for it.
+- the gimbal shears the picture rather than rotating it, because moving
+  cam->horizon is a shear. Fine at the tilts flying uses; it will look wrong
+  long before straight down.
 - the panel layout is still mostly empty: ALT/HDG, LAT/LON and FPS use the
   left half of three rows out of six.
 - no HUD over the 3D view. vision.md wants an artificial horizon, battery,

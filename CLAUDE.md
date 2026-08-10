@@ -21,6 +21,7 @@ make run          # build build/sar.d81 and boot it in xemu
 make prg          # skip the disk, run the PRG directly (no resources available)
 make PROFILE=0    # without the per-column instrumentation; use this for timing
 make WIDE=1       # march 320 rays instead of doubling 160 pixels
+make FLYNOW=1     # skip the title and menus, launch straight into the flight
 make HGT_SIZE=1024 COL_SIZE=512     # map resolutions, 256..1024
 make clean
 ```
@@ -28,10 +29,23 @@ make clean
 `make run` launches `xemu-xmega65`, a GUI emulator that blocks until closed. For automated checks, run it headless and screenshot on exit:
 
 ```sh
-timeout -s INT 100 xemu-xmega65 -besure -headless -sleepless \
-    -8 build/sar.d81 -screenshot out.png -dumpmem mem.bin
+make FLYNOW=1
+xemu-xmega65 -besure -headless -sleepless \
+    -8 build/sar.d81 -screenshot out.png -dumpmem mem.bin &
+sleep 75; kill -INT $!          # xemu writes both files as it exits
 python3 tools/profread.py mem.bin
 ```
+
+**`FLYNOW=1` is what makes a headless run measure anything.** The game now
+waits for a keypress on the title screen, then two more through the menus, and
+nothing headless can press one; without it the dump has no frames in it and
+`profread` says so. Give the run at least 60 seconds — most of a minute of it
+is loading, before a single frame is drawn.
+
+`timeout -s INT` looks like the way to end the run and mostly is, but xemu can
+take several seconds to act on the signal, so a loop that starts the next run
+immediately ends up with two emulators writing screenshots over each other.
+Backgrounding it and waiting, as above, is what actually serialises.
 
 `-sleepless` is fine here — see Performance for why it must never be used to time anything from the outside.
 
@@ -53,7 +67,7 @@ Only banks 1, 4 and 5 are free: `$20000-$3FFFF` holds the C65 ROM, and **colour 
 
 | Address | Size | Contents |
 |---|---|---|
-| `$2001-$9FFF` | 32 KB | Program, data, screen tables, load bounce buffer |
+| `$2001-$9FFF` | 32 KB | Program, data, stack, load bounce buffer |
 | `$10000-$1BDFF` | 48640 | Framebuffer A (320x152, the 3D view) |
 | `$50000-$5BDFF` | 48640 | Framebuffer B (bank 5) |
 | `$1C000` | 1216 | One column strip of sky, DMAd across the buffer each frame |
@@ -450,9 +464,11 @@ everything that stays in chip RAM.
 
 Real hardware has no `-dumpmem`, so `profile_report` prints the same memory
 table to the Kernal's text screen at startup and waits for a key (or 20
-seconds, so unattended runs still get on with rendering). It has to run
-*before* `vic4_init`, which takes the text screen away. The figures come out
-identical to `profread`'s, so either route can be trusted.
+seconds, so unattended runs still get on with rendering). It is boxed in on
+both sides: after the resources, because `profile_init` takes the timers the
+Kernal reads a disk with, and before `vic4_init`, which takes the text screen
+away. The figures come out identical to `profread`'s, so either route can be
+trusted.
 
 **`int` is 16 bits, and a constant expression will overflow it silently.**
 `(uint16_t)heading * 360 / 256` in the panel read 192 degrees as 14, and
@@ -631,5 +647,12 @@ so the picture came out *worse* than the map it replaced while the frame time
 and the silhouette check both looked plausible. Only a zoomed A/B caught it.
 
 ## Gotchas
+
+**The startup order is not a style choice.** Resources have to be read before
+`profile_init` and before `vic4_init`, either of which leaves the Kernal
+unable to open a file; and nothing may `printf` once the display is up,
+because the ROM's screen editor writes the colour RAM the game is using. Both
+are written up under The game, and both look like a corrupt disk rather than
+an ordering mistake.
 
 The Makefile deliberately makes every object depend on every header. Without it, changing a layout constant in `vic4.h` leaves stale objects built against the old memory map, and the result looks like a hardware fault rather than a build problem.

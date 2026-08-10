@@ -5,13 +5,19 @@ TARGET   = --target=mega65
 PROFILE ?= 1
 # WIDE=1 renders all 320 pixels instead of stretching 160. See vic4.h.
 WIDE    ?= 0
+# FLYNOW=1 skips the title and menu screens and launches straight into the
+# flight. The headless profiling run cannot press a key, so without it a
+# -dumpmem image has no frames in it at all. Never for timing comparisons of
+# anything but itself -- it is the same code, just entered differently.
+FLYNOW  ?= 0
 # Map resolutions, powers of two from 256 up to the source PNGs' 1024. Above
 # 256 the heightmap leaves chip RAM and the inner loop pays for it; the
 # colourmap is read once per span and is nearly free at any size. Both maps
 # are exomizer-crunched, which is what makes these fit a d81.
 HGT_SIZE ?= 512
 COL_SIZE ?= 1024
-SIZEFLAGS = -DWIDE=$(WIDE) -DHGT_SIZE=$(HGT_SIZE) -DCOL_SIZE=$(COL_SIZE)
+SIZEFLAGS = -DWIDE=$(WIDE) -DHGT_SIZE=$(HGT_SIZE) -DCOL_SIZE=$(COL_SIZE) \
+            -DFLYNOW=$(FLYNOW)
 CFLAGS   = $(TARGET) -O2 --speed -DPROFILE_DETAIL=$(PROFILE) $(SIZEFLAGS)
 ASFLAGS  = $(TARGET) -DPROFILE_DETAIL=$(PROFILE) $(SIZEFLAGS)
 LDFLAGS  = $(TARGET) --output-format=prg
@@ -45,7 +51,7 @@ $(BUILD):
 # rebuild. Without it, `make PROFILE=0` and then `make` leaves every object
 # built against the wrong flag and the counters silently stay off -- and a
 # half-rebuilt WIDE change is a memory map that disagrees with itself.
-CONFIG_STAMP = $(BUILD)/config-$(PROFILE)-$(WIDE)-$(HGT_SIZE)-$(COL_SIZE).stamp
+CONFIG_STAMP = $(BUILD)/config-$(PROFILE)-$(WIDE)-$(HGT_SIZE)-$(COL_SIZE)-$(FLYNOW).stamp
 
 $(CONFIG_STAMP): | $(BUILD)
 	rm -f $(BUILD)/config-*.stamp

@@ -215,17 +215,24 @@ int main(void)
   // the copy every later crosshair is lifted with.
   vic4_overview_ready();
 
+  // FLYNOW=1 launches straight into the flight. It exists for the headless
+  // profiling run, which has no way to press a key and would otherwise dump a
+  // memory image with no frames rendered in it.
+#if !FLYNOW
   screens_title();
   wait_for_space();
+#endif
 
   for (;;) {
     uint16_t seconds;
 
+#if !FLYNOW
     screens_missions(mission_no);
     wait_for_space();
 
     screens_briefing(mission_no);
     wait_for_space();
+#endif
 
     flight(mission_no, &seconds);
 
