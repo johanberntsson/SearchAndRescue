@@ -109,8 +109,10 @@ geometry was built and measured against this and cannot work: with the two
 `CHRXSCL` values swapped the *entire* display changed together, both halves.
 Only per-pixel registers such as the border colour answer mid-frame. The
 MEGA65's mechanism for per-row geometry is the Raster Rewrite Buffer, which
-this does not use. Two things learned on the way, for whenever the game does
-want an interrupt:
+this does not use. The experiment is kept at
+`documentation/experiments/raster-split.patch`, with its own notes beside it:
+the interrupt half of it works and is what to start from whenever the game
+wants one. Two things learned on the way:
 
 - the raster **compare** is written to `$D012` in VIC-II line numbers.
   `TEXTYPOS` is 104 *physical* rasters and a VIC-II line is two of them, so

@@ -1,0 +1,286 @@
+diff --git a/src/irq_asm.s b/src/irq_asm.s
+new file mode 100644
+index 0000000..bf8c722
+--- /dev/null
++++ b/src/irq_asm.s
+@@ -0,0 +1,87 @@
++; The raster interrupt that splits the display.
++;
++; The 3D view is 160 pixels stretched to 320 and the panel underneath it is
++; 320 pixels 1:1, which is the whole difference between them: one screen of 40
++; characters a row, shown at CHRXSCL 60 for the 3D rows so that 20 characters
++; fill the width, and at 120 for the panel so that all 40 do. This handler
++; switches that one register twice a frame, above the display and again at the
++; character row where the panel starts.
++;
++; The values come from parallel arrays in vic4.c indexed by mode -- 0 for the
++; 3D view, 1 for the panel -- rather than from constants here, because THE
++; ASSEMBLER DOES NOT SEE C HEADERS: FB_COLS is derived over there, and an #if
++; on it would be silently false.
++;
++; Entered through $0314. The C65 ROM's dispatcher for it is NOT the familiar
++; C64 three-register one at $FF48 -- that is a different path -- but the
++; 45GS02 aware one at $FA23, which does
++;
++;       PHA / PHX / PHY / PHZ / TBA / PHA
++;
++; and so leaves FIVE bytes on the stack: A, X, Y, Z and the base page register
++; B. The exit below unwinds exactly that. Getting it wrong is not a subtle
++; bug: a C64-style three-pull exit RTIs onto a mismatched frame and the
++; machine is dead after the first interrupt.
++;
++; Chaining to the displaced handler instead of returning is not an option
++; either, however tempting it is as a way to avoid knowing any of the above.
++; The ROM's handler reprograms the raster compare to its own line on every
++; interrupt, so both of ours end up firing in the same place and the split
++; never happens.
++
++            .extern vic4_m_xscl, vic4_m_rast
++            .extern vic4_ring, vic4_ri
++
++            .section code,text
++            .public vic4_irq
++
++vic4_irq:   lda     #0x01
++            sta     0xd019          ; ack the raster interrupt
++
++            ; Which of the two fired, deduced from where we are rather than
++            ; from a phase flag. That matters: each mode arms the OTHER one's
++            ; line, so a phase that slips by one locks the pair onto a single
++            ; line and the split stops happening -- which looks exactly like
++            ; the interrupt working and the registers being ignored. Reading
++            ; the raster cannot slip. $D012 counts VIC-II lines, the same
++            ; units the compare is written in, and the two lines are far
++            ; enough apart that the middle of the screen separates them.
++            ldy     vic4_ri
++            lda     0xd012
++            sta     vic4_ring,y
++            iny
++            tya
++            and     #15
++            sta     vic4_ri
++
++            ldx     #0
++            lda     0xd012
++            cmp     #128
++            bcc     apply$
++            inx
++apply$:
++
++            ; The only register that differs between the halves and is
++            ; honoured this far into a frame. SCRNPTR, LINESTEP and CHRCOUNT
++            ; are latched once a frame by the VIC-IV and were tried here
++            ; first; writing them mid-screen does nothing until the next
++            ; frame, so the display came out as one half or the other rather
++            ; than both. See the comment on the screen tables in vic4.c.
++            lda     vic4_m_xscl,x
++            sta     0xd05a
++
++            ; Arm the other one. $D012 reads as the current raster but a
++            ; write still latches the compare; the VIC-IV's $D079/$D07A pair
++            ; was tried first and never produced an interrupt at all.
++            lda     vic4_m_rast,x
++            sta     0xd012
++
++            pla                     ; B, from the dispatcher's TBA / PHA
++            tab
++            plz
++            ply
++            plx
++            pla
++            rti
++
++            .end
+diff --git a/src/vic4.c b/src/vic4.c
+index bedf043..d0ff610 100644
+--- a/src/vic4.c
++++ b/src/vic4.c
+@@ -1,38 +1,81 @@
++#include <calypsi/intrinsics6502.h>
+ #include <mega65.h>
+ 
+ #include "vic4.h"
+ 
+ #define COLOUR_RAM 0xFF80000UL
+ 
+-// Screen RAM: one 16-bit character number per cell, read row by row.
+-static uint16_t screen[2][SCREEN_ROWS * FB_COLS];
++// The VIC-II raster line each interrupt fires on. $D012 reads as the current
++// line but still latches the compare when written, which is what arms these;
++// the VIC-IV's own $D079/$D07A compare was tried first and never fired.
++//
++// TEXTYPOS is 104 PHYSICAL rasters and a VIC-II line is two of them, so the
++// character display starts at line 52 and each character row is 8 lines: the
++// panel's first row is 52 + FB_ROWS * 8. The other interrupt goes just above
++// the display, where the registers are changed while the top border is being
++// drawn. Both are below 256, so the compare's ninth bit in $D011 stays clear
++// and is left alone.
++#define SPLIT_RASTER (52 + FB_ROWS * 8)
++#define TOP_RASTER   48
++
++// One screen table per framebuffer, PANEL_COLS wide for its whole height.
++//
++// The obvious split -- a narrow table for the 3D view, a second one for the
++// panel, and SCRNPTR swapped between them at the raster interrupt -- does not
++// work on this hardware: THE VIC-IV LATCHES SCRNPTR, LINESTEP AND CHRCOUNT
++// ONCE A FRAME. Writing them part way down changes nothing until the next
++// frame starts, so whichever of the two was written last simply wins the
++// whole of the following frame, and the display shows one table or the other
++// rather than both. Only CHRXSCL turns out to be honoured per raster line.
++//
++// So the geometry is uniform -- 40 characters a row, LINESTEP 80, all 25 rows
++// -- and the interrupt changes nothing but the horizontal scale. At the 3D
++// view's CHRXSCL of 60 a character is 16 pixels wide, so the first FB_COLS of
++// each row fill the 320-pixel display and the rest of the row is fetched but
++// falls off the right edge. The panel's rows run at 120, 1:1, and all 40 show.
++static uint16_t screen[2][SCREEN_ROWS * PANEL_COLS];
++
++// What the raster interrupt pokes into the VIC-IV, indexed by mode: 0 is the
++// 3D view, 1 is the panel. Parallel arrays because irq_asm.s indexes them
++// with X, and here rather than as constants over there because the assembler
++// cannot see this header.
++uint8_t vic4_m_xscl[2];
++uint8_t vic4_m_rast[2];
++uint8_t vic4_ring[16], vic4_ri;
++
++void vic4_irq(void);  // irq_asm.s
+ 
+ static void build_screen_tables(void)
+ {
+   uint8_t row, col;
+ 
+   for (row = 0; row < SCREEN_ROWS; row++) {
+-    for (col = 0; col < FB_COLS; col++) {
++    for (col = 0; col < PANEL_COLS; col++) {
+       uint16_t a, b;
+ 
+-      if (row < FB_ROWS) {
++      if (row < FB_ROWS && col < FB_COLS) {
+         uint16_t cell = col * FB_ROWS + row;  // column-major, see vic4.h
++
+         a = (uint16_t)(FB_A / 64) + cell;
+         b = (uint16_t)(FB_B / 64) + cell;
+       } else {
+-        a = b = ' ';  // panel: a text character number, below $100
++        // Either a 3D row's off-screen tail or a panel cell before the panel
++        // has drawn anything: a text character number, below $100.
++        a = b = ' ';
+       }
+-      screen[0][row * FB_COLS + col] = a;
+-      screen[1][row * FB_COLS + col] = b;
++      screen[0][row * PANEL_COLS + col] = a;
++      screen[1][row * PANEL_COLS + col] = b;
+     }
+   }
+ }
+ 
+ void vic4_panel_char(uint8_t col, uint8_t row, uint8_t ch, uint8_t colour)
+ {
+-  uint16_t cell = (uint16_t)(FB_ROWS + row) * FB_COLS + col;
++  uint16_t cell = (uint16_t)(FB_ROWS + row) * PANEL_COLS + col;
+   uint8_t __far *cram = (uint8_t __far *)COLOUR_RAM;
+ 
++  // Both tables: the panel is the same whichever framebuffer is on show, so
++  // it is not double buffered and the flip must not disturb it.
+   screen[0][cell] = ch;
+   screen[1][cell] = ch;
+ 
+@@ -42,6 +85,34 @@ void vic4_panel_char(uint8_t col, uint8_t row, uint8_t ch, uint8_t colour)
+   cram[(int16_t)(cell * 2 + 1)] = colour;
+ }
+ 
++static void irq_install(void)
++{
++  // Mode 0, the 3D view: stretched, unless the renderer is already drawing
++  // all 320 pixels. Mode 1, the panel: 1:1, so its characters are 8 pixels
++  // wide and 40 of them fit where 20 used to.
++  vic4_m_xscl[0] = 120;          /* SWAPPED for the latch test */
++  vic4_m_rast[0] = SPLIT_RASTER;
++  vic4_m_xscl[1] = WIDE ? 120 : 60;
++  vic4_m_rast[1] = TOP_RASTER;
++
++  __disable_interrupts();
++
++  // The Kernal's own interrupt goes with this: nothing after vic4_init calls
++  // into it, flight reads the key matrix directly (see input.c) and the
++  // profiler's clock is the raster, not the jiffy. Silencing the CIA first
++  // matters -- an unacknowledged timer would hold the line low forever.
++  CIA1.icr = 0x7F;
++  (void)CIA1.icr;
++
++  *(uint16_t *)0x0314 = (uint16_t)&vic4_irq;
++
++  VICIV.irr = 0x0F;  // clear anything already pending
++  VICIV.imr = 0x01;  // raster compare only
++  VICIV.rasterline = TOP_RASTER;  // $D012: reads current, writes the compare
++
++  __enable_interrupts();
++}
++
+ void vic4_init(void)
+ {
+   uint16_t i;
+@@ -71,10 +142,12 @@ void vic4_init(void)
+   VICIV.charptr_msb = 0xD0;
+   VICIV.charptr_bnk = 0x02;
+ 
+-  VICIV.linestep = FB_COLS * 2;  // bytes of screen RAM per row
+-  VICIV.chrcount = FB_COLS;
+-  // Source pixels per output pixel, in 120ths. 120 is 1:1, so 60 makes every
+-  // pixel two screen pixels wide and stretches 160 columns across 320.
++  // Uniform for the whole display; only CHRXSCL differs between the halves
++  // and the raster interrupt owns that one.
++  VICIV.linestep = PANEL_COLS * 2;  // bytes of screen RAM per row
++  VICIV.chrcount = PANEL_COLS;
++  // A sane value for the rows above the panel until the first interrupt
++  // lands; from then on irq_asm.s owns this register.
+   VICIV.chrxscl = WIDE ? 120 : 60;
+ 
+   VICIV.bordercol = 0;
+@@ -82,11 +155,16 @@ void vic4_init(void)
+ 
+   // Character attributes are not used, and whatever the ROM left behind would
+   // be interpreted as one.
+-  for (i = 0; i < SCREEN_ROWS * FB_COLS * 2; i++)
++  for (i = 0; i < SCREEN_ROWS * PANEL_COLS * 2; i++)
+     cram[i] = 0;
+ 
+   build_screen_tables();
+   vic4_show(0);
++#if STATIC60
++  VICIV.chrxscl = 60;   /* with CHRCOUNT 40, LINESTEP 80, no interrupt */
++#else
++  irq_install();
++#endif
+ }
+ 
+ void vic4_set_palette(const uint8_t *planes)
+@@ -103,7 +181,8 @@ void vic4_set_palette(const uint8_t *planes)
+ void vic4_show(uint8_t buffer)
+ {
+   // Writing all four bytes also clears the CHRCOUNT high bits and the screen
+-  // pointer megabyte in $D063, which is what we want.
++  // pointer megabyte in $D063, which is what we want. The VIC-IV only reads
++  // this at the top of a frame, so the flip cannot tear.
+   VICIV.scrnptr = (uint32_t)(uint16_t)&screen[buffer & 1][0];
+ }
+ 
+diff --git a/src/vic4.h b/src/vic4.h
+index ceae5a2..62a5411 100644
+--- a/src/vic4.h
++++ b/src/vic4.h
+@@ -24,7 +24,13 @@
+ // cover is the panel.
+ #define SCREEN_ROWS 25
+ #define PANEL_ROWS  (SCREEN_ROWS - FB_ROWS)
+-#define PANEL_COLS  FB_COLS
++
++// The panel is always the full 320 pixels of real characters, whatever the 3D
++// view above it is doing. A raster interrupt (src/irq_asm.s) switches the
++// VIC-IV over at the split: the 3D rows run at CHRXSCL 60 with FB_COLS
++// characters, the panel at 120 with 40, so its text is 8 pixels wide instead
++// of the stretched 16 it used to be.
++#define PANEL_COLS  40
+ 
+ // Colour RAM is aliased into chip RAM at $1F800, so bank 1 only offers
+ // $10000-$1F7FF. Writing past that does not fault, it silently fills colour

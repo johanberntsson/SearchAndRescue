@@ -53,7 +53,8 @@ DECISIONS ALREADY SETTLED (do not re-litigate without new measurements)
   display change together. Only per-pixel registers answer mid-frame. The
   interrupt itself works; two traps are written up in CLAUDE.md (the compare
   is $D012 in VIC-II lines, not $D079, and the C65 ROM's $0314 dispatcher
-  pushes FIVE registers, so a C64-style exit kills the machine).
+  pushes FIVE registers, so a C64-style exit kills the machine). The working
+  handler is kept in documentation/experiments/raster-split.patch.
 - Colourmap resolution is free at any size: read once per span, and the plane
   lookup is one `lda abs,x` whether there are 4 planes or 16.
 - Heightmap above 256x256 costs a flat 5.7 ms (8.8%) because it leaves chip
