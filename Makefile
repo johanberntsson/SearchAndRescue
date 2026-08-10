@@ -26,7 +26,8 @@ OBJS     = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS)) \
 ELF      = $(BUILD)/sar.elf
 PRG      = $(BUILD)/autoboot.c65
 D81      = $(BUILD)/sar.d81
-RES      = $(BUILD)/terrain.hgt $(BUILD)/terrain.col $(BUILD)/terrain.pal
+RES      = $(BUILD)/terrain.hgt $(BUILD)/terrain.col $(BUILD)/terrain.pal \
+           $(BUILD)/terrain.ovr
 
 all: $(D81)
 

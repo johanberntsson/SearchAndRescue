@@ -53,13 +53,13 @@ static const int16_t sin_quarter[65] = {
     245, 247, 248, 250, 251, 252, 253, 254, 255, 255, 256, 256, 256,
 };
 
-static int16_t tan_tab[FB_WIDTH]; // 8.8 offset from the view axis per column
+static int16_t tan_tab[VX_COLS]; // 8.8 offset from the view axis per ray
 
 // Byte offset into a framebuffer of the pixel one row *below* the bottom of
 // each column: where the span fill starts counting down from. Precomputed
 // because working it out needs a multiply by FB_STRIDE, and the compiler
 // builds that out of a shift loop made of jsr fragments.
-static uint16_t col_top[FB_WIDTH];
+static uint16_t col_top[VX_COLS];
 
 // Shared with src/voxel_asm.s, which indexes both with an 8-bit register, so
 // neither may grow past 256 bytes.
@@ -196,10 +196,14 @@ void voxel_init(void)
   vx_bands = BANDS;
   vx_bandsteps = BAND_STEPS;
 
-  for (x = 0; x < FB_WIDTH; x++) {
-    tan_tab[x] = (int16_t)(((int16_t)x - FB_WIDTH / 2) * TAN_HALF_FOV) / (FB_WIDTH / 2);
+  for (x = 0; x < VX_COLS; x++) {
+    // The ray's own index spans the field of view; the pixel it starts at is
+    // VX_STEP times that, because at 160 columns each ray owns two pixels.
+    uint16_t px = x * VX_STEP;
+
+    tan_tab[x] = (int16_t)(((int16_t)x - VX_COLS / 2) * TAN_HALF_FOV) / (VX_COLS / 2);
     // See FB_COLUMN in vic4.h, plus one whole column of rows.
-    col_top[x] = (uint16_t)(x >> 3) * FB_STRIDE + (x & 7) + FB_STRIDE;
+    col_top[x] = (px >> 3) * FB_STRIDE + (px & 7) + FB_STRIDE;
   }
 
   k = 0;
@@ -269,7 +273,7 @@ void voxel_render(uint32_t base, const camera *cam)
   int16_t cs = voxel_cos(cam->angle);
   int16_t sn = voxel_sin(cam->angle);
   uint16_t base_lo = (uint16_t)base;
-  uint16_t x;  // 320 columns will not fit a byte
+  uint16_t x;  // 320 rays will not fit a byte
 
   // Rebuilt only when the horizon moves, which today is never -- but pitch
   // control will move it, and this is where that gets handled.
@@ -297,7 +301,7 @@ void voxel_render(uint32_t base, const camera *cam)
     PROF_ADD(P_SKY, t0);
   }
 
-  for (x = 0; x < FB_WIDTH; x++) {
+  for (x = 0; x < VX_COLS; x++) {
     uint16_t t0 = PROF_NOW();
     int16_t t = tan_tab[x];
     // Not normalised on purpose: the ray lengthening towards the edges is

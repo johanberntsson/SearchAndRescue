@@ -40,8 +40,19 @@
 #define HGT_AXIS   (HGT_SIZE / CELLS)  // planes per axis
 #define COL_AXIS   (COL_SIZE / CELLS)
 
-// Load the heightmap, colourmap and palette. Returns 0 on success. Call this
-// before switching the display, so failures can still be printed.
+// The panel's overview map: 32x32 pixels of colourmap, shipped already laid
+// out as sixteen 8x8 full-colour characters by tools/convmap.py. It has to
+// sit on a 64-byte boundary, because a character's NUMBER is its data address
+// divided by 64. Bank 1 above the sky template is otherwise unused.
+#define OVERVIEW       0x1D000UL
+#define OVERVIEW_CHAR  (OVERVIEW / 64)
+#define OVERVIEW_CHARS 4  // across and down; keep in sync with convmap.py
+#define OVERVIEW_PX    (OVERVIEW_CHARS * 8)
+#define OVERVIEW_BYTES (OVERVIEW_CHARS * OVERVIEW_CHARS * 64)
+
+// Load the heightmap, colourmap, palette and overview map. Returns 0 on
+// success. Call this before switching the display, so failures can still be
+// printed.
 int load_resources(void);
 
 // 768 bytes for vic4_set_palette, valid once load_resources has succeeded.

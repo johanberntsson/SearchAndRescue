@@ -6,9 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A MEGA65 heightfield voxel flight simulator / drone search-and-rescue game, written in C (Calypsi) with the rendering inner loop in 45GS02 assembly. `documentation/vision.md` holds the full technical and gameplay design; `todo.txt` is the authoritative "what's next" and should be updated as work lands.
 
-Currently: a flyable voxel engine at about 14 fps — a 160x152 3D view over a
-six-row text panel, with 512x512 height and 1024x1024 colour maps unpacked
-into attic RAM at boot. No game yet: no controls beyond ASWD/RF, no mission.
+Currently: a flyable voxel engine at about 12.7 fps — a 320x152 3D view over a
+six-row 40-column text panel, with 512x512 height and 1024x1024 colour maps
+unpacked into attic RAM at boot. The renderer marches 160 rays and writes each
+one to two neighbouring pixels; see Performance. No game yet: no controls
+beyond ASWD/RF, no mission.
 
 ## Build and run
 
@@ -16,7 +18,7 @@ into attic RAM at boot. No game yet: no controls beyond ASWD/RF, no mission.
 make run          # build build/sar.d81 and boot it in xemu
 make prg          # skip the disk, run the PRG directly (no resources available)
 make PROFILE=0    # without the per-column instrumentation; use this for timing
-make WIDE=1       # render all 320 pixels instead of stretching 160
+make WIDE=1       # march 320 rays instead of doubling 160 pixels
 make HGT_SIZE=1024 COL_SIZE=512     # map resolutions, 256..1024
 make clean
 ```
@@ -50,18 +52,20 @@ Only banks 1, 4 and 5 are free: `$20000-$3FFFF` holds the C65 ROM, and **colour 
 | Address | Size | Contents |
 |---|---|---|
 | `$2001-$9FFF` | 32 KB | Program, data, screen tables, load bounce buffer |
-| `$10000-$15EFF` | 24320 | Framebuffer A (160x152, the 3D view) |
-| `$16000-$1BEFF` | 24320 | Framebuffer B |
+| `$10000-$1BDFF` | 48640 | Framebuffer A (320x152, the 3D view) |
+| `$50000-$5BDFF` | 48640 | Framebuffer B (bank 5) |
 | `$1C000` | 1216 | One column strip of sky, DMAd across the buffer each frame |
+| `$1D000` | 1024 | Overview map: 16 full-colour characters, 64-byte aligned |
+| `$1D800` | 1024 | Pristine copy of it, for lifting the crosshair |
 | `$1F800-$1FFFF` | 2 KB | Colour RAM alias — **do not write** |
 | `$40000-$4FFFF` | 64 KB | Heightmap, only when it is 256x256 |
 | `$8000000-$80FFFFF` | 1 MB | Colourmap planes, attic RAM |
 | `$8100000-$81FFFFF` | 1 MB | Heightmap planes, when larger than 256x256 |
 | `$8200000-` | | Staging for the crunched stream being unpacked |
 
-`make WIDE=1` renders all 320 pixels instead of stretching 160. That needs
-48640 bytes a buffer, so B moves to `$50000`. Bank 5 is otherwise free, and
-bank 4 is free too whenever the heightmap is above 256x256.
+The framebuffer is 320 wide whatever `WIDE` is set to, so a buffer is 48640
+bytes and B lives in bank 5. Bank 4 is free too whenever the heightmap is
+above 256x256.
 
 **Both maps ship as 256x256 planes, one per sub-cell corner** — a map of SIZE
 is `(SIZE/256)^2` of them — rather than as one big array. Every plane is then
@@ -90,7 +94,35 @@ The renderer relies on this everywhere. Double-buffer flips are just a rewrite o
 
 The layout also makes the sky nearly free. Every column strip's sky is the *same* `FB_STRIDE` bytes, so `voxel_init` prepares one strip at `FB_SKY` and `voxel_render` DMAs it across the buffer — `FB_COLS` copy jobs, 2.5 ms for the whole screen against about 8 ms when the inner loop drew it a pixel at a time. That prefill is also the frame's clear pass, so the terrain spans just draw over it.
 
-Two register notes: `CHRXSCL` (`$D05A`) is source pixels per output pixel in 120ths, so **60 doubles the width** and 240 halves it; and the hot registers (`$D05D` bit 7) must be turned off first or any write to a legacy VIC-II register makes the VIC-IV recompute the layout and undo the setup.
+Two register notes: `CHRXSCL` (`$D05A`) is source pixels per output pixel in
+120ths, so **60 doubles the width** and 240 halves it — it is left at 120 now,
+but the renderer used to draw 160 pixels and let this stretch them; and the
+hot registers (`$D05D` bit 7) must be turned off first or any write to a
+legacy VIC-II register makes the VIC-IV recompute the layout and undo the
+setup.
+
+**The VIC-IV latches `SCRNPTR`, `LINESTEP`, `CHRCOUNT` and `CHRXSCL` once a
+frame.** Writing any of them part way down the screen changes nothing until
+the next frame begins, so whichever value was written last simply wins the
+whole of the following frame. A raster split that gave the panel its own
+geometry was built and measured against this and cannot work: with the two
+`CHRXSCL` values swapped the *entire* display changed together, both halves.
+Only per-pixel registers such as the border colour answer mid-frame. The
+MEGA65's mechanism for per-row geometry is the Raster Rewrite Buffer, which
+this does not use. Two things learned on the way, for whenever the game does
+want an interrupt:
+
+- the raster **compare** is written to `$D012` in VIC-II line numbers.
+  `TEXTYPOS` is 104 *physical* rasters and a VIC-II line is two of them, so
+  the character display starts at line 52 and each row is 8 lines. The
+  VIC-IV's own `$D079`/`$D07A` compare pair never fired at all.
+- the C65 ROM's `$0314` dispatcher is **not** the C64's three-register one at
+  `$FF48`. It is the 45GS02-aware one at `$FA23`, which does `PHA / PHX / PHY
+  / PHZ / TBA / PHA` and so leaves **five** bytes on the stack: A, X, Y, Z and
+  the base page register B. A C64-style three-pull exit RTIs onto a
+  mismatched frame and the machine is dead after the first interrupt.
+  Chaining to the displaced handler instead avoids needing to know that, but
+  the ROM's handler reprograms the raster compare to its own line every time.
 
 ## The panel
 
@@ -98,9 +130,49 @@ The display is 25 character rows; the framebuffer covers the top 19 and the
 bottom six are the information panel. That split is free, because full colour
 is per character *number*: `FCLRHI` is set and `FCLRLO` is not, so numbers
 above `$FF` are 64-byte full-colour characters (the framebuffer) and numbers
-below are ordinary 8x8 text from `CHARPTR`. The panel costs 240 bytes of
+below are ordinary 8x8 text from `CHARPTR`. The panel costs 480 bytes of
 screen RAM, no pixel writes, and is not double buffered — `vic4_panel_char`
 writes the same cell in both screen tables.
+
+### The overview map and the coordinates
+
+The right-hand four by four characters of the panel are the colourmap scaled
+to 32x32, one pixel per eight map cells. It is **not built on the MEGA65**:
+`tools/convmap.py` point-samples it out of the (already remapped) colourmap
+and writes `terrain.ovr` as sixteen 8x8 tiles in reading order, which is
+exactly the layout of sixteen full-colour characters, so `loader.c` reads it
+straight to `$1D000` and `panel_init` does nothing but name the character
+numbers. Mixing it in among the text is free: the mode is chosen per character
+*number*, so a full-colour tile and a letter cost the same screen RAM.
+
+The crosshair is drawn **into the map's own pixels**, in palette 240 — one of
+the two entries `convmap.py` reserves for overlays, and a byte per pixel means
+any of the 256 will do. Lifting it again is a 1024-byte DMA from a pristine
+copy at `$1D800`, about 60 microseconds, rather than remembering what each
+pixel used to be. Restoring from saved pixels was tried and corrupted the
+whole map within a few hundred frames.
+
+**A hardware sprite for the crosshair does not work here.** The VIC-IV's
+`SPRPTRADR` (`$D06C`-`$D06E`) is ignored by xemu with 8-bit pointers and
+*segfaults* it outright with `SPR_PTR16`, so the sprite pointer still comes
+from the legacy screen+`$3F8` — which in this screen layout is row 12 column
+28, in the middle of the 3D view, where the character number is a framebuffer
+tile and cannot be given a useful value. Confirmed by dumping memory: the
+bitmap was where we put it and the VIC was fetching from somewhere else. The
+sprite itself displays fine, so this is worth retrying on real hardware.
+
+Latitude and longitude come out of the position for free, because **one map
+cell is defined as one millidegree**: the world is 256 cells square, so it
+spans 0.256 degrees, about 28 km. The cell index *is* the fractional part of
+the reading and there is no arithmetic beyond an add. `MAP_LAT_SOUTH` and
+`MAP_LON_WEST` in `panel.h` are the whole of the (arbitrary) origin, and
+latitude counts down the map so that the overview is north up.
+
+The panel is **40 columns**, because the framebuffer above it is a real 320 pixels
+and `CHRXSCL` is 1:1 for the whole display. It was 20 stretched ones for as
+long as the renderer drew 160 pixels and let the VIC-IV double them, and the
+geometry cannot be changed per raster row (see above), so the way to a
+readable panel was to widen the framebuffer rather than to split the screen.
 
 Two things had to be set up for it. `CHARPTR` had never been touched, and
 whatever the ROM leaves there draws a horizontal line for a space; the C65
@@ -116,7 +188,7 @@ of the 256 entries will do.
 
 ## Resources
 
-`tools/convmap.py` turns the 1024x1024 VoxelSpace PNGs in `resources/` into `terrain.hgt`, `terrain.col` and `terrain.pal` — the two maps crunched, the palette raw. The sources need no quantisation: the heightmap is 8-bit greyscale and the colourmap is already a palette image. Palette bytes are nybble-swapped for the `$D100`/`$D200`/`$D300` registers, and the sky gradient goes in indices 224-239, which the colourmap never uses.
+`tools/convmap.py` turns the 1024x1024 VoxelSpace PNGs in `resources/` into `terrain.hgt`, `terrain.col`, `terrain.pal` and `terrain.ovr` — the two maps crunched, the palette raw. The sources need no quantisation: the heightmap is 8-bit greyscale and the colourmap is already a palette image. Palette bytes are nybble-swapped for the `$D100`/`$D200`/`$D300` registers, and the sky gradient goes in indices 224-239, which the colourmap never uses.
 
 `convmap.py` takes the two map sizes as arguments; the Makefile passes
 `HGT_SIZE` and `COL_SIZE`.
@@ -140,8 +212,8 @@ ozmoo-z6 checkout, or `PATH`.
 
 ## Performance
 
-Roughly 14.2 fps at the default map sizes (15.4 with the heightmap left at
-256x256), from 0.74 when the renderer was all C. `src/profile.c` measures
+Roughly 12.7 fps at the default map sizes, from 0.74 when the renderer was
+all C. `src/profile.c` measures
 it; `tools/profread.py` formats the results out of a `-dumpmem` image. The FPS
 readout in the corner is always on. `make PROFILE=0` compiles out the
 per-column instrumentation and the counters in `voxel_asm.s`, which the
@@ -226,6 +298,14 @@ seconds, so unattended runs still get on with rendering). It has to run
 *before* `vic4_init`, which takes the text screen away. The figures come out
 identical to `profread`'s, so either route can be trusted.
 
+**Coordinates through `int8_t`, and small `static const` arrays inside a
+function, miscompile.** The crosshair was first written with `int8_t` x and y
+and the four arms in `static const int8_t arm_x[8]`; it stored nothing at all
+— no writes reached memory, while the surrounding code ran and a canary
+proved the function was entered. Rewritten with `int16_t` coordinates and the
+eight calls spelled out, the same logic works. Suspect this shape before
+suspecting the hardware.
+
 Calypsi 5.18 emits a call to `_FillZPQ` — a runtime helper that is in none of
 its libraries — when a function call appears inside a 32-bit expression. The
 link fails with an undefined symbol. Hoist the call into a variable.
@@ -255,7 +335,8 @@ high coordinate bytes dropped into the pointer — and drives the multiplier
 directly. Both maps share one address computation because only their bank byte
 differs.
 
-Where a frame goes (160 wide, h256 c512, 64.7 ms), measured by stubbing
+Where a frame goes (the older 160-pixel framebuffer, h256 c512, 64.7 ms),
+measured by stubbing
 pieces out rather than guessing (setting `voxel_column_asm` to an immediate `rts` isolates the
 per-column C setup; halving `BANDS` separates per-sample from per-column):
 
@@ -310,17 +391,61 @@ RAM, so it pays an attic read plus a plane lookup every time: a flat 5.7 ms,
 costs no more at runtime than h512**, it just does not leave room for c1024
 on one disk.
 
+**h512 is the finest heightmap the march can resolve, so h1024 buys nothing.**
+`Z_STEP0` is 128 in 8.8 — half a cell — and that is the *closest* spacing the
+ray ever samples at: band 0 steps 0.5 cells for 8 cells, then the bands step
+1, 2 and 4 out to 120. h512 matches that rate exactly; h1024 is two times past
+it along the ray and can only alias. Measured by diffing screenshots of the
+same fixed camera at c512, over the 3D view only:
+
+| | cruise (alt 79) | hugging terrain (alt 31) |
+|---|---|---|
+| h256 → h512 | 4.2% of pixels differ | 13.3% |
+| h512 → h1024 | 2.1%, mean 0.30/255 | 8.7%, mean 1.58 |
+
+The h512→h1024 diff is scattered one-pixel slivers at span edges — silhouettes
+moving a row — with no terrain feature appearing anywhere; the two pictures are
+hard to tell apart even nose to the ground. h256→h512 is a real difference in
+kind: at low altitude h256 stair-steps the shoreline into rectangles and goes
+chunky in the foreground. So the default earns its place and the next step up
+does not. The residual h512→h1024 difference is lateral, not along the ray —
+near-field columns are packed closer together than the ray step — which is why
+the low-altitude figure beats the cruise one and why it is still only jitter.
+
+That also says where to spend if the near field ever needs more detail: **the
+lever is `Z_STEP0`, not `HGT_SIZE`.** Prepending a 0.25-cell band (5x16:
+0.25/0.5/1/2/4) reaches 124 cells for 80 samples instead of 64, about 25% more
+march, ~11 ms — and only then would h1024 have something to show. Raising
+`HGT_SIZE` first pays 350 KB of disk and ~15 s of loading for nothing.
+
 | | 256x256 colour | 512x512 colour |
 |---|---|---|
-| 320 wide | 124.8 ms, 8.0 fps | 133.1 ms, 7.5 fps |
+| 320 rays | 124.8 ms, 8.0 fps | 133.1 ms, 7.5 fps |
 
-Going 320 wide doubles the sample count exactly and costs half the frame
+Marching 320 rays doubles the sample count exactly and costs half the frame
 rate, and **the picture barely changes** — the blockiness was the map showing
 through, not the pixel grid, so the screen was never the limiting resolution.
 Doubling the *colourmap* instead is free and plainly visible. That is the
 trade this engine responds to: **detail per cycle lives in the map, not in
-the raster.** The panel going from 20 to 40 columns is the real argument for
-320 wide, not the terrain.
+the raster.** The panel was the real argument for a 320-pixel screen, and it
+did not need the extra rays to get one.
+
+**The framebuffer is 320 wide and the march is still 160 rays.** Each ray
+fills the two neighbouring pixels it owns, which is one `inz` / `sta` / `dez`
+added to the span fill: 2n and 2n+1 always share a character, since 2n is
+even and the pair can never straddle the eight-byte boundary, so the second
+pixel is simply the next byte. Measured at h512 c1024, `PROFILE=0`:
+
+| | frame | |
+|---|---|---|
+| 160-pixel buffer, VIC-IV stretch | 71.9 ms, 13.9 fps | the old arrangement |
+| **320-pixel buffer, 160 rays** | **77.5 ms, 12.9 fps** | the default |
+| 320-pixel buffer, 320 rays | — | `WIDE=1`, halves it again |
+
+7% for a panel that is legible, and **the 3D view is pixel-identical** — the
+doubled pixels are exactly what the hardware stretch was producing. The cost
+is the second byte write per span pixel plus the sky DMA covering twice the
+buffer; the march, two thirds of the frame, does not move.
 
 (An earlier note here priced the finer colourmap at 3.6%. That was the
 raster-calibration jitter above, not a real cost; re-measured with the fix it

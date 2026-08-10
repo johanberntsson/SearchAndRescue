@@ -174,6 +174,17 @@ fill$:      lda     zp:vx_fbtop
             dec     zp:vx_fbtop+1
 nowrap$:    lda     zp:vx_tmp
             sta     [vx_fbtop],z
+#if !WIDE
+            ; 160 rays across a 320 pixel buffer, so each ray owns two
+            ; neighbouring pixels. 2n and 2n+1 always share a character --
+            ; 2n is even, so the pair can never straddle the eight byte
+            ; boundary -- which makes the second pixel the very next byte.
+            ; WIDE comes from the Makefile; the assembler sees no C headers,
+            ; so testing anything derived in one would be silently false.
+            inz
+            sta     [vx_fbtop],z
+            dez
+#endif
             dex
             bne     fill$
 

@@ -94,6 +94,20 @@ static int load_palette(const char *name)
   return 0;
 }
 
+// A resource that is neither crunched nor small enough to want in a C array:
+// straight off the disk into banked RAM at a known length.
+static int load_far(const char *name, uint32_t dest, uint32_t length)
+{
+  int fd = open_resource(name);
+  int r;
+
+  if (fd < 0)
+    return -1;
+  r = read_far(fd, name, dest, length);
+  _Stub_close(fd);
+  return r;
+}
+
 int load_resources(void)
 {
   printf("LOADING TERRAIN...\n");
@@ -102,6 +116,8 @@ int load_resources(void)
   if (load_crunched("TERRAIN.COL", COLOURMAP))
     return -1;
   if (load_palette("TERRAIN.PAL"))
+    return -1;
+  if (load_far("TERRAIN.OVR", OVERVIEW, OVERVIEW_BYTES))
     return -1;
   return 0;
 }

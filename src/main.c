@@ -90,7 +90,7 @@ int main(void)
     voxel_render(vic4_base(back), &cam);
 
     t0 = PROF_NOW();
-    panel_status(cam.height, cam.angle, fps10);
+    panel_status(cam.height, cam.angle, cam.x, cam.y, fps10);
     vic4_show(back);
     back ^= 1;
     PROF_ADD(P_OTHER, t0);

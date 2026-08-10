@@ -3,7 +3,8 @@
 
     convmap.py <height.png> <colour.png> <out-prefix> [hgt-size] [col-size]
 
-writes <out-prefix>.hgt, <out-prefix>.col and <out-prefix>.pal.  The two
+writes <out-prefix>.hgt, <out-prefix>.col, <out-prefix>.pal and
+<out-prefix>.ovr (the panel's overview map).  The two
 sizes default to 512 and 1024 and must be powers of two from 256 up to the
 source resolution; they have to match HGT_SIZE and COL_SIZE in the build (the
 Makefile passes both).
@@ -112,6 +113,27 @@ HUD_PAPER = 241
 PANEL_INK = 1
 PANEL_LABEL = 2
 PANEL_COLOURS = ((PANEL_INK, (255, 255, 255)), (PANEL_LABEL, (150, 160, 170)))
+
+
+# The overview map in the panel: the colourmap scaled right down and laid out
+# as sixteen 8x8 full-colour characters, so the loader reads it straight into
+# character memory and nothing has to rearrange it on the MEGA65. 32x32 covers
+# the whole 256-cell world at one pixel per eight cells.
+OVERVIEW_PX = 32
+OVERVIEW_CHARS = OVERVIEW_PX // 8
+
+
+def to_overview(indices):
+    """32x32 of the colourmap as OVERVIEW_CHARS^2 tiles of 8x8 bytes."""
+    n = indices.shape[0] // OVERVIEW_PX
+    # Point sampled, like the colourmap itself: averaging palette indices is
+    # meaningless. The middle of each block rather than its corner, which
+    # represents the block better at this reduction.
+    small = indices[n // 2 :: n, n // 2 :: n][:OVERVIEW_PX, :OVERVIEW_PX]
+    tiles = small.reshape(OVERVIEW_CHARS, 8, OVERVIEW_CHARS, 8)
+    # (tile row, tile col, pixel row, pixel col): tiles in reading order, each
+    # one eight rows of eight bytes, which is what a full-colour character is.
+    return tiles.transpose(0, 2, 1, 3).astype(np.uint8).tobytes()
 
 
 def nybswap(v):
@@ -237,12 +259,13 @@ def main():
         (".hgt", to_planes(heights)),
         (".col", to_planes(indices)),
         (".pal", palette),
+        (".ovr", to_overview(indices)),
     ):
         raw_sizes[suffix] = len(payload)
         # The palette is 768 bytes and is read straight into a buffer before
         # the display is up; crunching it would buy nothing and cost a special
         # case in the loader.
-        if suffix != ".pal":
+        if suffix not in (".pal", ".ovr"):
             payload = crunch(exomizer, payload)
         with open(prefix + suffix, "wb") as f:
             f.write(payload)
@@ -260,6 +283,8 @@ def main():
           f"panel ink at {PANEL_INK}/{PANEL_LABEL}")
     print("  " + report(".hgt", "hgt"))
     print("  " + report(".col", "col"))
+    print(f"  overview: {OVERVIEW_PX}x{OVERVIEW_PX} in "
+          f"{OVERVIEW_CHARS ** 2} characters, {raw_sizes['.ovr']} bytes")
 
 
 if __name__ == "__main__":

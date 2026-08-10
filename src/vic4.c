@@ -1,5 +1,10 @@
 #include <mega65.h>
 
+#include "dma.h"
+#include "loader.h"
+#include "dma.h"
+#include "loader.h"
+#include "panel.h"
 #include "vic4.h"
 
 #define COLOUR_RAM 0xFF80000UL
@@ -42,6 +47,84 @@ void vic4_panel_char(uint8_t col, uint8_t row, uint8_t ch, uint8_t colour)
   cram[(int16_t)(cell * 2 + 1)] = colour;
 }
 
+void vic4_panel_tile(uint8_t col, uint8_t row, uint16_t charnum)
+{
+  uint16_t cell = (uint16_t)(FB_ROWS + row) * FB_COLS + col;
+  uint8_t __far *cram = (uint8_t __far *)COLOUR_RAM;
+
+  screen[0][cell] = charnum;
+  screen[1][cell] = charnum;
+
+  // A full-colour character carries a palette index per pixel, so colour RAM
+  // holds no ink for it -- only attributes, and none of those are wanted.
+  cram[(int16_t)(cell * 2)] = 0;
+  cram[(int16_t)(cell * 2 + 1)] = 0;
+}
+
+// The crosshair over the overview map.
+//
+// A hardware sprite was the obvious way and does not work here. The VIC-IV's
+// SPRPTRADR is ignored -- 8-bit pointers had no effect and SPR_PTR16
+// segfaults xemu outright -- so the sprite pointer still comes from the
+// legacy screen+$3F8, which in this screen layout falls at row 12 column 28,
+// in the middle of the 3D view, where the character number is a framebuffer
+// tile and cannot be given a useful value. Verified by dumping memory: the
+// bitmap was where we put it and the VIC was reading somewhere else entirely.
+// Worth retrying on real hardware, where SPRPTRADR most likely does work.
+//
+// Drawing into the map's own pixels costs eight byte writes and a restore of
+// the eight before them, and works everywhere. Palette 240 is reserved by
+// tools/convmap.py for exactly this kind of overlay and is white; a
+// full-colour character is a byte per pixel, so any of the 256 entries is
+// available here.
+#define CROSS_INK 240
+
+// A pristine copy of the tiles, so the crosshair can be lifted by putting the
+// map back rather than by remembering what each pixel used to be. Restoring
+// from saved pixels is the obvious way and was tried first: it corrupted the
+// whole map within a few hundred frames, every byte of it eventually. A whole
+// 1024-byte DMA is 60 microseconds of a 77 millisecond frame -- nothing -- and
+// there is no state to get wrong.
+#define OVERVIEW_CLEAN (OVERVIEW + 0x800)
+
+void vic4_overview_ready(void)
+{
+  dma_copy(OVERVIEW, OVERVIEW_CLEAN, OVERVIEW_BYTES);
+}
+
+// One pixel of the crosshair, clipped to the map. int16_t throughout on
+// purpose: the same routine written with int8_t coordinates and the arms in a
+// static const array compiled to something that never stored anything at all,
+// and cost an evening to pin down.
+static void cross_plot(volatile uint8_t __far *tiles, int16_t x, int16_t y)
+{
+  if (x < 0 || x >= OVERVIEW_PX || y < 0 || y >= OVERVIEW_PX)
+    return;
+
+  // Tiles are in reading order and each is eight rows of eight bytes.
+  tiles[(int16_t)(((y >> 3) * OVERVIEW_CHARS + (x >> 3)) * 64
+                  + (y & 7) * 8 + (x & 7))] = CROSS_INK;
+}
+
+void vic4_crosshair(uint8_t px, uint8_t py)
+{
+  volatile uint8_t __far *tiles = (volatile uint8_t __far *)OVERVIEW;
+  int16_t x = px, y = py;
+
+  dma_copy(OVERVIEW_CLEAN, OVERVIEW, OVERVIEW_BYTES);
+
+  // Four arms with a gap at the centre, so the map pixel being pointed at
+  // stays visible.
+  cross_plot(tiles, x - 2, y);
+  cross_plot(tiles, x - 1, y);
+  cross_plot(tiles, x + 1, y);
+  cross_plot(tiles, x + 2, y);
+  cross_plot(tiles, x, y - 2);
+  cross_plot(tiles, x, y - 1);
+  cross_plot(tiles, x, y + 1);
+  cross_plot(tiles, x, y + 2);
+}
+
 void vic4_init(void)
 {
   uint16_t i;
@@ -73,9 +156,11 @@ void vic4_init(void)
 
   VICIV.linestep = FB_COLS * 2;  // bytes of screen RAM per row
   VICIV.chrcount = FB_COLS;
-  // Source pixels per output pixel, in 120ths. 120 is 1:1, so 60 makes every
-  // pixel two screen pixels wide and stretches 160 columns across 320.
-  VICIV.chrxscl = WIDE ? 120 : 60;
+  // Source pixels per output pixel, in 120ths: 1:1. The 160-column renderer
+  // doubles its pixels into the framebuffer itself rather than having the
+  // VIC-IV stretch them, because the stretch would take the panel down to 20
+  // characters with it and the geometry cannot be changed per raster row.
+  VICIV.chrxscl = 120;
 
   VICIV.bordercol = 0;
   VICIV.screencol = 0;

@@ -1,15 +1,19 @@
 #include "panel.h"
 
+#include "loader.h"
 #include "vic4.h"
 
 // Where each readout's digits start. The labels are drawn once by panel_init
 // and never touched again; only the digits are rewritten each frame.
 #define ROW_MESSAGE 0
 #define ROW_FLIGHT  2
-#define ROW_STATUS  3
+#define ROW_POS     3
+#define ROW_STATUS  4
 
 #define ALT_COL 4
 #define HDG_COL 13
+#define LAT_COL 4
+#define LON_COL 17
 #define FPS_COL 4
 
 // Heading in 256ths of a turn, the same units as the camera angle, shown as
@@ -37,6 +41,30 @@ void panel_puts(uint8_t col, uint8_t row, const char *s, uint8_t colour)
     col++;
     s++;
   }
+}
+
+// Zero padded rather than space padded, for the fractional half of a
+// coordinate: .005 of a degree has to read as 005, not as 5.
+static void put_frac(uint8_t col, uint8_t row, uint16_t value, uint8_t width,
+                     uint8_t colour)
+{
+  uint8_t i;
+
+  for (i = width; i-- > 0;) {
+    vic4_panel_char(col + i, row, '0' + (uint8_t)(value % 10), colour);
+    value /= 10;
+  }
+}
+
+// Degrees and three decimals, with the hemisphere letter after them, which is
+// how a drone controller shows a GPS fix.
+static void put_degrees(uint8_t col, uint8_t row, uint16_t mdeg, uint8_t width,
+                        char hemisphere)
+{
+  put_frac(col, row, mdeg / 1000, width, PANEL_INK);
+  vic4_panel_char(col + width, row, '.', PANEL_INK);
+  put_frac(col + width + 1, row, mdeg % 1000, 3, PANEL_INK);
+  vic4_panel_char(col + width + 4, row, screen_code(hemisphere), PANEL_INK);
 }
 
 // Right-aligned unsigned number, `width` digits, space padded. Returns
@@ -70,7 +98,20 @@ void panel_init(void)
 
   panel_puts(0, ROW_FLIGHT, "ALT", PANEL_LABEL);
   panel_puts(9, ROW_FLIGHT, "HDG", PANEL_LABEL);
+  panel_puts(0, ROW_POS, "LAT", PANEL_LABEL);
+  panel_puts(13, ROW_POS, "LON", PANEL_LABEL);
   panel_puts(0, ROW_STATUS, "FPS", PANEL_LABEL);
+
+  // The overview map: full-colour tiles dropped straight into panel cells.
+  // Their pixels came off the disk already in character order, so there is
+  // nothing to do here but name them.
+  for (row = 0; row < OVERVIEW_CHARS; row++)
+    for (col = 0; col < OVERVIEW_CHARS; col++)
+      vic4_panel_tile(PANEL_MAP_COL + col, PANEL_MAP_ROW + row,
+                      (uint16_t)OVERVIEW_CHAR + row * OVERVIEW_CHARS + col);
+
+  vic4_overview_ready();
+
 }
 
 void panel_message(const char *s)
@@ -82,13 +123,25 @@ void panel_message(const char *s)
   panel_puts(0, ROW_MESSAGE, s, PANEL_INK);
 }
 
-void panel_status(int16_t altitude, uint8_t heading, uint16_t fps10)
+void panel_status(int16_t altitude, uint8_t heading, uint16_t x, uint16_t y,
+                  uint16_t fps10)
 {
+  uint8_t cx = (uint8_t)(x >> 8);  // the map cell, and one millidegree
+  uint8_t cy = (uint8_t)(y >> 8);
+
   if (altitude < 0)
     altitude = 0;
 
   put_number(ALT_COL, ROW_FLIGHT, (uint16_t)altitude, 3, PANEL_INK);
   put_number(HDG_COL, ROW_FLIGHT, DEGREES(heading), 3, PANEL_INK);
+
+  put_degrees(LAT_COL, ROW_POS, MAP_LAT_SOUTH + (255 - cy), 2, 'N');
+  put_degrees(LON_COL, ROW_POS, MAP_LON_WEST + cx, 3, 'E');
+
+  // The overview is one pixel per eight cells, so the cell index shifts
+  // straight down into it.
+  vic4_crosshair((uint8_t)(cx * OVERVIEW_PX / 256),
+                 (uint8_t)(cy * OVERVIEW_PX / 256));
 
   if (fps10 > 999)
     fps10 = 999;

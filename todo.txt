@@ -1,15 +1,16 @@
 WHERE IT IS
 
-A flyable voxel engine: 160x152 3D view over a six-row text panel, 14.2 fps
-(PROFILE=0, default map sizes). No game yet.
+A flyable voxel engine: 320x152 3D view over a six-row 40-column text panel
+with an overview map, 12.7 fps (PROFILE=0, default map sizes). The march is 160 rays; each fills the
+two pixels it owns. No game yet.
 
 Build knobs, all in the Makefile:
     PROFILE=0            no per-column instrumentation; use it for timing
-    WIDE=1               render all 320 pixels instead of stretching 160
+    WIDE=1               march 320 rays instead of doubling 160 pixels
     HGT_SIZE, COL_SIZE   map resolutions, powers of two from 256 to 1024
 
-Where a frame goes (160 wide, h256 c512, 64.7 ms; the shape is the same at
-other settings):
+Where a frame goes (the older 160-pixel framebuffer, h256 c512, 64.7 ms; the
+shape is the same at other settings):
 
     ray march                  46.0 ms   71%   10240 samples at 182 cycles
     terrain span fills         10.0 ms   15%   14489 pixels at ~28
@@ -40,15 +41,31 @@ work is the game, not another few percent.
 
 DECISIONS ALREADY SETTLED (do not re-litigate without new measurements)
 
-- Detail per cycle lives in the MAP, not in the raster. 320-wide rendering
+- Detail per cycle lives in the MAP, not in the raster. Marching 320 rays
   doubles the march and halves the frame rate for a picture that barely
   changes; a finer colourmap is free and plainly better. WIDE=1 is kept as an
-  option, off by default, and its real argument is the 40-column panel.
+  option, off by default. The 40-column panel used to be its argument and is
+  no longer: the framebuffer is 320 wide with a 160-ray march.
+- A RASTER SPLIT CANNOT GIVE THE PANEL ITS OWN GEOMETRY. The VIC-IV latches
+  SCRNPTR, LINESTEP, CHRCOUNT and CHRXSCL once a frame, so a mid-screen write
+  does nothing until the next frame and the last value written wins all of
+  it -- proved by swapping the two CHRXSCL values and watching the whole
+  display change together. Only per-pixel registers answer mid-frame. The
+  interrupt itself works; two traps are written up in CLAUDE.md (the compare
+  is $D012 in VIC-II lines, not $D079, and the C65 ROM's $0314 dispatcher
+  pushes FIVE registers, so a C64-style exit kills the machine).
 - Colourmap resolution is free at any size: read once per span, and the plane
   lookup is one `lda abs,x` whether there are 4 planes or 16.
 - Heightmap above 256x256 costs a flat 5.7 ms (8.8%) because it leaves chip
   RAM -- the SAME at 512 or 1024. So h1024 is no slower than h512; it just
   cannot share a d81 with c1024 (1013 KB against ~793 KB).
+- h512 IS THE RIGHT HEIGHTMAP and h1024 is wasted. Z_STEP0 is half a cell,
+  the closest the ray ever samples, so h512 matches the march exactly and
+  h1024 is 2x past it. Diffed at a fixed camera: h512->h1024 moves 2.1% of
+  view pixels cruising and 8.7% nose to the ground, all of it one-pixel span
+  edges with no new feature anywhere. h256->h512 is 4.2%/13.3% and a
+  difference in kind -- h256 stair-steps the near shoreline into rectangles.
+  Spending on h1024 first is 350 KB and ~15 s of loading for jitter.
 - Rendering into attic RAM and DMAing the frame back is DEAD: attic-to-chip
   DMA is 17.8 cycles a byte against 2.45 chip-to-chip, so one 320x152 buffer
   would be 21 ms a frame. The writes were never the problem (+3 cycles).
@@ -63,17 +80,18 @@ OPEN
   shorten the step growth.
 - no pitch control, and the horizon is fixed. vx_horiz is already rebuilt
   whenever cam->horizon moves, so the renderer is ready for it.
-- the panel is 20 columns, which is what 160 pixels of 8-pixel characters
-  gives. 40 needs WIDE=1, or a raster split that changes CHRXSCL below the
-  3D view -- which would get the wider panel without paying for the march.
+- the panel layout is still mostly empty: ALT/HDG, LAT/LON and FPS use the
+  left half of three rows out of six.
 - no HUD over the 3D view. vision.md wants an artificial horizon, battery,
   GPS and signal strength. Palette 240/241 are reserved for it; hud.c did
   exactly this kind of pixel drawing and is in git history if wanted back.
-- an overview map in the panel, a small version of the colour map. It cannot
-  be text characters; it wants full-colour cells, which can be mixed into the
-  panel per cell since the mode is chosen by character number.
+- Z_STEP0, not HGT_SIZE, is the lever for near-field detail. A 0.25-cell band
+  in front (5x16: 0.25/0.5/1/2/4) reaches 124 cells for 80 samples instead of
+  64 -- about 25% more march, ~11 ms -- and it is the only thing that would
+  give h1024 something to show. Worth keeping in mind, not queued.
 - 1024x1024 for BOTH maps needs a second disk, or a packed format better than
-  exomizer's 1.9-2.2x on this data.
+  exomizer's 1.9-2.2x on this data. Settled above that it is not worth it
+  even if it fit.
 - remaining march ideas, all small: the per-column C setup is 607 cycles and
   two mul_shift8 calls; the position update is 40 of the 182 cycles a sample.
 
@@ -98,6 +116,17 @@ DONE
   position's whole-cell bytes into the map pointer, biased the height
   difference positive
 - 320-wide rendering behind WIDE=1
+- overview map and GPS readout, 12.9 -> 12.7 fps. convmap.py ships the
+  colourmap scaled to 32x32 as sixteen full-colour character tiles, so the
+  MEGA65 only has to name them; the crosshair is drawn into the map and
+  lifted with a 1024-byte DMA from a pristine copy. A hardware sprite for it
+  does NOT work -- SPRPTRADR is ignored by xemu and SPR_PTR16 segfaults it,
+  so the pointer comes from screen+$3F8, which lands inside the 3D view.
+  Retry on real hardware if it matters.
+- 40-column panel, 13.9 -> 12.9 fps. The framebuffer went to 320 pixels and
+  the span fill writes each of the 160 rays to two neighbouring bytes; the 3D
+  view came out pixel-identical, because that is exactly what the VIC-IV
+  stretch had been doing
 - exomizer compression (src/exo_asm.s, ported from mega65/ozmoo-z6) unpacking
   into attic RAM, and both map resolutions as build knobs up to the source
   1024x1024

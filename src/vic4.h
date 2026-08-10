@@ -6,14 +6,28 @@
 
 #include <stdint.h>
 
-// WIDE=1 drops the hardware stretch and renders all 320 pixels. It doubles
-// the number of ray marches, which is nearly all of the frame, so it roughly
-// halves the frame rate -- `make WIDE=1` to compare.
-#if WIDE
+// The framebuffer is always 320 pixels wide, and CHRXSCL always 1:1, so the
+// panel below it is 40 real characters rather than 20 stretched ones.
+//
+// A raster interrupt that switched the bottom rows to 40 columns was tried
+// first and CANNOT work: the VIC-IV latches SCRNPTR, LINESTEP, CHRCOUNT *and
+// CHRXSCL* once a frame, so changing the geometry part way down the screen
+// does nothing until the next frame starts and whichever half was written
+// last simply wins the whole of it. Only per-pixel registers like the border
+// colour answer mid-frame. See documentation and irq notes in git history.
 #define FB_WIDTH  320
+
+// How many of those pixels get a ray of their own. WIDE=1 marches all 320,
+// which doubles the march -- two thirds of the frame -- and roughly halves
+// the frame rate. The default marches 160 and has each ray fill the two
+// neighbouring pixels, which costs one extra byte write per span pixel and
+// leaves the picture indistinguishable from the old stretched one.
+#if WIDE
+#define VX_COLS   320
 #else
-#define FB_WIDTH  160
+#define VX_COLS   160
 #endif
+#define VX_STEP   (FB_WIDTH / VX_COLS)  // pixels written per ray
 
 #define FB_HEIGHT 152
 #define FB_COLS   (FB_WIDTH / 8)   // character strips across
@@ -26,23 +40,24 @@
 #define PANEL_ROWS  (SCREEN_ROWS - FB_ROWS)
 #define PANEL_COLS  FB_COLS
 
+// Where the overview map sits in the panel: a square of full-colour tiles
+// tucked against the right edge, clear of the readouts on the left.
+// PANEL_MAP_SIZE must match OVERVIEW_CHARS in loader.h.
+#define PANEL_MAP_SIZE 4
+#define PANEL_MAP_COL  (PANEL_COLS - PANEL_MAP_SIZE)
+#define PANEL_MAP_ROW  1
+
 // Colour RAM is aliased into chip RAM at $1F800, so bank 1 only offers
 // $10000-$1F7FF. Writing past that does not fault, it silently fills colour
 // RAM with pixel data and the VIC-IV reads it back as character attributes,
-// blanking cells across the display. Two 24320-byte buffers and the sky
-// template leave plenty of room now; at 320 wide they will not, and one of
-// the maps moves to attic RAM.
-#if WIDE
-// 48640 bytes each. Bank 1 holds one and the sky template; the other needs a
-// whole bank of its own, which is why the colourmap leaves chip RAM. Each
-// buffer must stay inside one 64K bank: the fill loop's pointer step never
-// carries into byte 2.
+// blanking cells across the display.
+//
+// 48640 bytes each at 320 wide. Bank 1 holds one and the sky template; the
+// other needs a whole bank of its own, which is why both maps live in attic
+// RAM. Each buffer must stay inside one 64K bank: the fill loop's pointer
+// step never carries into byte 2.
 #define FB_A 0x10000UL  // to $1BE00
 #define FB_B 0x50000UL  // to $5BE00
-#else
-#define FB_A 0x10000UL  // 24320 bytes, to $15F00
-#define FB_B 0x16000UL  // 24320 bytes, to $1BF00
-#endif
 
 // In column-strip layout every strip's sky is the same FB_STRIDE bytes, so
 // one strip is prepared at startup and DMAd across the buffer each frame
@@ -65,6 +80,21 @@ void vic4_init(void);
 // character numbers are full colour. Both screen tables get it: the panel is
 // the same in either buffer, so it is not double buffered.
 void vic4_panel_char(uint8_t col, uint8_t row, uint8_t ch, uint8_t colour);
+
+// Put a full-colour character into a panel cell -- a character number above
+// $FF, whose 64 bytes of palette indices live at number * 64. This is what
+// mixes the overview map's tiles in among the panel's text: the mode is
+// chosen per character number, so the two cost the same screen RAM.
+void vic4_panel_tile(uint8_t col, uint8_t row, uint16_t charnum);
+
+// Take the copy of the overview map that vic4_crosshair restores from. Call
+// it once the map has been loaded and before the first crosshair.
+void vic4_overview_ready(void);
+
+// Mark a pixel of the overview map, 0..OVERVIEW_PX-1 on each axis, restoring
+// whatever the last call covered. Drawn into the map rather than carried by a
+// hardware sprite -- see the comment on the implementation for why.
+void vic4_crosshair(uint8_t px, uint8_t py);
 
 // planes: 768 bytes, 256 red then 256 green then 256 blue, each already
 // nybble-swapped for the palette registers (see tools/convmap.py).
