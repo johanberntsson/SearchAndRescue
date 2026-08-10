@@ -29,14 +29,13 @@ flight, and a debrief when you find the survivor and file a report on them.
   billboard drawn over the finished terrain: scaled by distance, and clipped
   against the heightfield with the same y-buffer the ray march already keeps, so
   a ridge in front of them hides their feet
-- Drone controls: `W`/`S` forward and back, `A`/`D` yaw, `R`/`F` climb and
-  descend, `Q`/`E` gimbal, `1`/`2`/`3` for cinematic, normal and sport speed,
-  `SPACE` to file a report once you have them in shot
+- Drone controls modelled on a real one: yaw, climb, camera gimbal and a
+  three-position speed limiter (see Controls below)
 
 Getting there meant building a profiler first (`src/profile.c`, read with
 `tools/profread.py`) rather than guessing. The compiler's 32-bit multiply turned out
 to be 64% of the frame at 2203 cycles a go, against 85 on the hardware multiplier.
-See `todo.txt` for what is next.
+See `todo.md` for what is next.
 
 ## Building
 
@@ -53,6 +52,7 @@ You will need:
 ```sh
 make run                         # build build/sar.d81 and boot it in the emulator
 make PROFILE=0                   # without the instrumentation; use this for timing
+make FLYNOW=1                    # skip the menus and launch straight into a flight
 make HGT_SIZE=1024 COL_SIZE=512  # map resolutions, powers of two from 256 to 1024
 make clean
 ```
@@ -62,16 +62,24 @@ boot, and the converted maps alongside it as separate files.
 
 ## Controls
 
+After the title screen and the briefing, `SPACE` launches the flight.
+
 | Key | |
 |---|---|
 | `W` / `S` | forward, back |
 | `A` / `D` | turn left, right |
 | `R` / `F` | climb, descend |
+| `Q` / `E` | camera gimbal up, down |
+| `1` / `2` / `3` | speed limiter: cinematic, normal, sport |
+| `SPACE` | file a report, and go on from any screen |
+
+A report only counts with the survivor on screen and within about ten map
+cells — near enough to have actually seen them.
 
 ## Layout
 
     src/            engine: display, DMA, resource loading and decrunching,
-                    renderer, input, panel
+                    renderer, sprites, input, panel; game: screens, missions
     tools/          convmap.py builds the map resources, profread.py reads
                     profiles, diskutil.rb builds the disk image
     resources/      source height and colour maps
@@ -79,7 +87,7 @@ boot, and the converted maps alongside it as separate files.
     release/        a disk image you can just boot
     screenshots/
     CLAUDE.md       memory map, display conventions, hardware notes, measurements
-    todo.txt        what is next
+    todo.md         what is next
 
 ## Credits
 
