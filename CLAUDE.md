@@ -6,13 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A MEGA65 heightfield voxel flight simulator / drone search-and-rescue game, written in C (Calypsi) with the rendering inner loop in 45GS02 assembly. `documentation/vision.md` holds the full technical and gameplay design; `todo.txt` is the authoritative "what's next" and should be updated as work lands.
 
-Currently: a flyable voxel engine at about 12.5 fps — a 320x152 3D view over a
-six-row 40-column text panel, with 512x512 height and 1024x1024 colour maps
-unpacked into attic RAM at boot. The renderer marches 160 rays and writes each
-one to two neighbouring pixels; see Performance. One world object exists: a
-survivor billboard on the pyramid at 46.713N 8.110E, scaled by distance and
-clipped against the terrain in front of it. No game yet: no controls beyond
-ASWD/RF, no mission.
+Currently: mission one, end to end. A title screen, a mission list, a
+briefing, a flight, and a debrief when the pilot finds the survivor on the
+pyramid at 46.713N 8.110E and files a report on them. Underneath is the voxel
+engine at about 12.5 fps — a 320x152 3D view over a six-row 40-column text
+panel, with 512x512 height and 1024x1024 colour maps unpacked into attic RAM
+at boot, marching 160 rays and writing each to two neighbouring pixels; see
+Performance.
 
 ## Build and run
 
@@ -64,19 +64,25 @@ Only banks 1, 4 and 5 are free: `$20000-$3FFFF` holds the C65 ROM, and **colour 
 | `$8000000-$80FFFFF` | 1 MB | Colourmap planes, attic RAM |
 | `$8100000-$81FFFFF` | 1 MB | Heightmap planes, when larger than 256x256 |
 | `$8200000-` | | Staging for the crunched stream being unpacked |
+| `$5C000`, `$5D000` | 2000 each | The two screen tables |
 | `$8300000` | 768 | The palette, until `vic4_set_palette` uploads it |
 
-**The 32 KB is full.** After the survivor sprite went in, `zdata` leaves about
-360 spare bytes at the default settings and under 100 at `WIDE=1`, where the
-per-ray tables double. Room for it came from moving the palette out to attic
-RAM and taking the loader's bounce buffer from 2048 bytes down to 512; that
-last one costs nothing measurable, because the per-call overhead of a Kernal
-read is small against half a kilobyte of copying (17669 frames in a fixed
-run at 1024, 17514 at 512). The next thing that needs a kilobyte will have to
-move the screen tables — `screen[2][25*40]` of `uint16_t`, 4000 bytes in
-vic4.c — up into banked RAM, which `SCRNPTR` can address perfectly well and
-which only the cold panel-writing paths would have to reach with far
-pointers.
+**The 32 KB fills up fast.** The survivor sprite took it down to about 360
+spare bytes; the game screens needed a couple of kilobytes more. Where the
+room came from, in the order it was taken:
+
+- the palette to attic RAM (768 bytes) and the loader's bounce buffer from
+  2048 down to 512. The smaller chunk costs nothing measurable — the per-call
+  overhead of a Kernal read is small against half a kilobyte of copying, and a
+  fixed run rendered 17669 frames at 1024 against 17514 at 512.
+- **the screen tables to bank 5** (4000 bytes), which is the big one.
+  `SCRNPTR` is a 32-bit register, so screen RAM can live anywhere the VIC-IV
+  can read, and bank 5 above framebuffer B is 16K of nothing. Everything that
+  writes it is cold: the panel's handful of characters a frame, and building
+  the tables once.
+
+Next after that would be the 512-byte bounce buffer itself, or the sprite's
+1028.
 
 The framebuffer is 320 wide whatever `WIDE` is set to, so a buffer is 48640
 bytes and B lives in bank 5. Bank 4 is free too whenever the heightmap is
@@ -202,6 +208,54 @@ colours that were there out to unused slots; palette 0 is the screen colour
 and serves as the paper. Palette entries 240 and 241 stay reserved for a
 future pixel-drawn overlay over the 3D view, where a byte per pixel means any
 of the 256 entries will do.
+
+## The game
+
+`src/main.c` is a state machine over four full-screen pages and a flight:
+title, mission list, briefing, fly, debrief, back to the list. `src/screens.c`
+draws the pages, `src/mission.c` holds what there is to be sent on — one
+entry, and the table is there so the second one is data rather than a rewrite.
+
+**The pages cost no pixels.** The display picks text or full colour per
+character *number*, so writing numbers below `$100` into the rows the 3D view
+normally occupies turns them into ordinary characters; `vic4_text_mode` does
+that and `vic4_view_mode` puts the framebuffer tiles back. Nothing moves but
+screen RAM.
+
+**The startup order is forced, and not by taste.** Resources must be read
+before anything else happens, because two separate things leave the Kernal
+unable to open a file at all:
+
+- **`profile_init` takes CIA2's two timers** for its clock, and the Kernal
+  needs them to talk to a disk.
+- **`vic4_init`** does it too. Which register was not worth isolating —
+  `CPU_PORTDDR`, `VFAST` and the sprite enable were each ruled out on their
+  own run — because loading has to come first for the timer reason anyway.
+
+So the sequence is: loading, then the benchmarks, then the display. That is
+why the loading bar is *printed* on the ROM's text screen rather than drawn on
+the game's own, and why it only ever grows one block at a time — printing is
+the only tool available on a screen there is no cursor addressing for. The
+title screen proper comes after `vic4_init`, in the game's own font and
+palette. **Once the display is up, nothing may `printf`**: the Kernal's screen
+editor writes colour RAM, and the game is using it. `load_resources` reports
+failures through `loader_error()` instead.
+
+Controls, which follow a real drone's (see `documentation/real-drones/`):
+`W`/`S` forward and back, `A`/`D` yaw, `R`/`F` climb and descend, `Q`/`E`
+gimbal up and down, `1`/`2`/`3` the speed limiter (cinematic, normal, sport),
+`SPACE` to file a report. `src/input.c` scans three matrix rows now and
+returns held keys and fresh presses from one scan — an edge only means
+anything against the scan before it, so two scans in a frame would see none.
+
+**The gimbal is free.** `cam->horizon` was always a field the renderer
+rebuilt its per-step horizon table from whenever it moved; tilting is a
+frame's worth of table and nothing per pixel.
+
+A report counts only if the survivor was **on screen in the frame just
+drawn** and within ten map cells (`sprite_reportable`). On screen is half the
+test on purpose: a report should mean you looked at them, not that you flew
+past with the camera pointed somewhere else.
 
 ## The survivor billboard
 

@@ -22,27 +22,9 @@
 // latter, and 192 -- due west -- came out as 14 degrees.
 #define DEGREES(a) ((uint16_t)(a) * 45 / 32)
 
-// Screen codes are not ASCII: in the uppercase character set the letters run
-// from 1 rather than from $41, while digits and most punctuation sit where
-// ASCII has them.
-static uint8_t screen_code(char c)
-{
-  uint8_t u = (uint8_t)c;
-
-  if (u >= 0x40 && u < 0x60)
-    return u - 0x40;  // A-Z
-  if (u >= 0x60 && u < 0x80)
-    return u - 0x60;  // a-z, same glyphs
-  return u;
-}
-
 void panel_puts(uint8_t col, uint8_t row, const char *s, uint8_t colour)
 {
-  while (*s && col < PANEL_COLS) {
-    vic4_panel_char(col, row, screen_code(*s), colour);
-    col++;
-    s++;
-  }
+  vic4_puts(col, (uint8_t)(FB_ROWS + row), s, colour);
 }
 
 // Zero padded rather than space padded, for the fractional half of a
@@ -66,7 +48,7 @@ static void put_degrees(uint8_t col, uint8_t row, uint16_t mdeg, uint8_t width,
   put_frac(col, row, mdeg / 1000, width, PANEL_INK);
   vic4_panel_char(col + width, row, '.', PANEL_INK);
   put_frac(col + width + 1, row, mdeg % 1000, 3, PANEL_INK);
-  vic4_panel_char(col + width + 4, row, screen_code(hemisphere), PANEL_INK);
+  vic4_panel_char(col + width + 4, row, vic4_screen_code(hemisphere), PANEL_INK);
 }
 
 // Right-aligned unsigned number, `width` digits, space padded. Returns
@@ -104,16 +86,28 @@ void panel_init(void)
   panel_puts(13, ROW_POS, "LON", PANEL_LABEL);
   panel_puts(0, ROW_STATUS, "FPS", PANEL_LABEL);
 
+  panel_puts(10, ROW_STATUS, "SPD", PANEL_LABEL);
+
   // The overview map: full-colour tiles dropped straight into panel cells.
   // Their pixels came off the disk already in character order, so there is
   // nothing to do here but name them.
+  //
+  // vic4_overview_ready is NOT called here. This runs again every time a
+  // flight starts, and by then the map carries a crosshair -- taking the
+  // pristine copy from it now would bake that crosshair in permanently. main
+  // takes the copy once, when the map is first loaded.
   for (row = 0; row < OVERVIEW_CHARS; row++)
     for (col = 0; col < OVERVIEW_CHARS; col++)
       vic4_panel_tile(PANEL_MAP_COL + col, PANEL_MAP_ROW + row,
                       (uint16_t)OVERVIEW_CHAR + row * OVERVIEW_CHARS + col);
+}
 
-  vic4_overview_ready();
+// Cinematic / normal / sport, the three a real drone offers.
+void panel_speed(uint8_t mode)
+{
+  static const char *const names[] = {"SLO", "NRM", "SPT"};
 
+  panel_puts(14, ROW_STATUS, names[mode > 2 ? 2 : mode], PANEL_INK);
 }
 
 void panel_message(const char *s)

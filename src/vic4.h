@@ -59,6 +59,16 @@
 #define FB_A 0x10000UL  // to $1BE00
 #define FB_B 0x50000UL  // to $5BE00
 
+// The two screen tables, 25 rows of 40 16-bit character numbers each. They
+// used to be a C array and were 4000 bytes of the 32K the program, its data
+// and its stack share -- which the game screens needed back. SCRNPTR is a
+// 32-bit register, so screen RAM can sit anywhere the VIC-IV can read, and
+// bank 5 above framebuffer B is 16K of nothing. Everything that writes them
+// is a cold path: the panel, and building them once at startup.
+#define SCREEN_BYTES (SCREEN_ROWS * FB_COLS * 2)
+#define SCREEN_A     0x5C000UL
+#define SCREEN_B     0x5D000UL
+
 // In column-strip layout every strip's sky is the same FB_STRIDE bytes, so
 // one strip is prepared at startup and DMAd across the buffer each frame
 // instead of being drawn a pixel at a time.
@@ -73,13 +83,33 @@
 //
 #define FB_COLUMN(base, x) ((base) + (uint32_t)((x) >> 3) * FB_STRIDE + ((x) & 7))
 
+// Set the display up. The Kernal cannot read a disk afterwards -- an open
+// fails outright -- so everything that comes off the disk has to be loaded
+// BEFORE this is called, which is why the loading screen is on the ROM's own
+// text display and only the title screen after it is on this one.
 void vic4_init(void);
 
-// Put one character into the panel. Character numbers below $100 are ordinary
-// 8x8 text -- FCLRHI is set and FCLRLO is not, so only the framebuffer's own
-// character numbers are full colour. Both screen tables get it: the panel is
-// the same in either buffer, so it is not double buffered.
+// Put one character anywhere on the 25-row display. Character numbers below
+// $100 are ordinary 8x8 text -- FCLRHI is set and FCLRLO is not, so only the
+// framebuffer's own character numbers are full colour. Both screen tables get
+// it: text is the same in either buffer, so it is not double buffered.
+void vic4_text_char(uint8_t col, uint8_t row, uint8_t ch, uint8_t colour);
+
+// The same, with the row counted from the top of the panel.
 void vic4_panel_char(uint8_t col, uint8_t row, uint8_t ch, uint8_t colour);
+
+// A string at an absolute row, stopped at the right edge rather than wrapped.
+void vic4_puts(uint8_t col, uint8_t row, const char *s, uint8_t colour);
+
+// ASCII to the screen code the character generator wants.
+uint8_t vic4_screen_code(char c);
+
+// Turn the whole display into text and back. The 3D view's rows are text
+// whenever their character numbers are below $100, so a full-screen page
+// costs a rewrite of screen RAM and no pixels at all. vic4_view_mode puts the
+// framebuffer tiles back; the panel has to be redrawn after it.
+void vic4_text_mode(void);
+void vic4_view_mode(void);
 
 // Put a full-colour character into a panel cell -- a character number above
 // $FF, whose 64 bytes of palette indices live at number * 64. This is what
@@ -101,6 +131,10 @@ void vic4_crosshair(uint8_t px, uint8_t py);
 // because it is read straight out of the banked buffer it was loaded into --
 // the 32K the program lives in has no room to spare for something used once.
 void vic4_set_palette(const uint8_t __far *planes);
+
+// One entry, from plain 8-bit channels. For the handful of colours the title
+// screen needs before there is a palette on disk to load.
+void vic4_set_entry(uint8_t index, uint8_t r, uint8_t g, uint8_t b);
 
 // Point the display at framebuffer 0 (FB_A) or 1 (FB_B).
 void vic4_show(uint8_t buffer);

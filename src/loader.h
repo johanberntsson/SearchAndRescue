@@ -58,10 +58,23 @@
 #define PALETTE_BUF   ATTIC_PALETTE
 #define PALETTE_BYTES 768
 
+// Called as loading proceeds, with how much of it is done as a percentage.
+// It is called once per chunk read, so most calls repeat the last figure.
+typedef void (*load_progress)(uint8_t percent);
+
 // Load the heightmap, colourmap, palette, overview map and survivor sprite.
-// Returns 0 on success. Call this before switching the display, so failures
-// can still be printed.
-int load_resources(void);
+// Returns 0 on success; `report` may be null.
+//
+// This runs with the display already in the game's own mode, so it must not
+// print: the Kernal's screen editor writes colour RAM, which is live. Only
+// the failure paths still do, and whatever they corrupt is redrawn by the
+// error screen.
+int load_resources(load_progress report);
+
+// Why the last load_resources failed, and which file it was on. Null until
+// something does fail.
+const char *loader_error(void);
+const char *loader_error_file(void);
 
 // Read a small resource into a near buffer, returning how many bytes arrived
 // -- which may be fewer than asked for, since the only way to read a whole

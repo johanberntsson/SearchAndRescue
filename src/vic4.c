@@ -9,56 +9,107 @@
 
 #define COLOUR_RAM 0xFF80000UL
 
-// Screen RAM: one 16-bit character number per cell, read row by row.
-static uint16_t screen[2][SCREEN_ROWS * FB_COLS];
+// Screen RAM: one 16-bit character number per cell, read row by row. Up in
+// bank 5 rather than in a C array -- see vic4.h -- so every access here is a
+// far one. All of them are cold: nothing in a frame touches screen RAM except
+// the panel's handful of characters.
+static uint16_t __far *screen(uint8_t buffer)
+{
+  return (uint16_t __far *)(buffer ? SCREEN_B : SCREEN_A);
+}
 
+// Both tables at once, which is what almost every caller wants: the panel and
+// the game screens are the same in either buffer, so only the framebuffer
+// tiles differ between them.
+static void put_cell(uint16_t cell, uint16_t a, uint16_t b, uint8_t colour)
+{
+  uint8_t __far *cram = (uint8_t __far *)COLOUR_RAM;
+
+  screen(0)[(int16_t)cell] = a;
+  screen(1)[(int16_t)cell] = b;
+
+  // Two colour RAM bytes per cell in 16-bit character mode: attributes then
+  // the foreground colour, which is a full 8-bit palette index. A full-colour
+  // character carries a palette index per pixel and takes no ink from here.
+  cram[(int16_t)(cell * 2)] = 0;
+  cram[(int16_t)(cell * 2 + 1)] = colour;
+}
+
+// The framebuffer's own character numbers for the 3D view, and spaces for the
+// panel below it.
 static void build_screen_tables(void)
 {
   uint8_t row, col;
 
   for (row = 0; row < SCREEN_ROWS; row++) {
     for (col = 0; col < FB_COLS; col++) {
-      uint16_t a, b;
+      uint16_t cell = (uint16_t)row * FB_COLS + col;
 
       if (row < FB_ROWS) {
-        uint16_t cell = col * FB_ROWS + row;  // column-major, see vic4.h
-        a = (uint16_t)(FB_A / 64) + cell;
-        b = (uint16_t)(FB_B / 64) + cell;
+        uint16_t tile = col * FB_ROWS + row;  // column-major, see vic4.h
+
+        put_cell(cell, (uint16_t)(FB_A / 64) + tile,
+                 (uint16_t)(FB_B / 64) + tile, 0);
       } else {
-        a = b = ' ';  // panel: a text character number, below $100
+        put_cell(cell, ' ', ' ', PANEL_INK);  // a text number, below $100
       }
-      screen[0][row * FB_COLS + col] = a;
-      screen[1][row * FB_COLS + col] = b;
     }
   }
 }
 
+void vic4_text_char(uint8_t col, uint8_t row, uint8_t ch, uint8_t colour)
+{
+  put_cell((uint16_t)row * FB_COLS + col, ch, ch, colour);
+}
+
 void vic4_panel_char(uint8_t col, uint8_t row, uint8_t ch, uint8_t colour)
 {
-  uint16_t cell = (uint16_t)(FB_ROWS + row) * FB_COLS + col;
-  uint8_t __far *cram = (uint8_t __far *)COLOUR_RAM;
-
-  screen[0][cell] = ch;
-  screen[1][cell] = ch;
-
-  // Two colour RAM bytes per cell in 16-bit character mode: attributes then
-  // the foreground colour, which is a full 8-bit palette index.
-  cram[(int16_t)(cell * 2)] = 0;
-  cram[(int16_t)(cell * 2 + 1)] = colour;
+  vic4_text_char(col, (uint8_t)(FB_ROWS + row), ch, colour);
 }
 
 void vic4_panel_tile(uint8_t col, uint8_t row, uint16_t charnum)
 {
-  uint16_t cell = (uint16_t)(FB_ROWS + row) * FB_COLS + col;
-  uint8_t __far *cram = (uint8_t __far *)COLOUR_RAM;
+  put_cell((uint16_t)(FB_ROWS + row) * FB_COLS + col, charnum, charnum, 0);
+}
 
-  screen[0][cell] = charnum;
-  screen[1][cell] = charnum;
+// Screen codes are not ASCII: in the uppercase character set the letters run
+// from 1 rather than from $41, while digits and most punctuation sit where
+// ASCII has them.
+uint8_t vic4_screen_code(char c)
+{
+  uint8_t u = (uint8_t)c;
 
-  // A full-colour character carries a palette index per pixel, so colour RAM
-  // holds no ink for it -- only attributes, and none of those are wanted.
-  cram[(int16_t)(cell * 2)] = 0;
-  cram[(int16_t)(cell * 2 + 1)] = 0;
+  if (u >= 0x40 && u < 0x60)
+    return u - 0x40;  // A-Z
+  if (u >= 0x60 && u < 0x80)
+    return u - 0x60;  // a-z, same glyphs
+  return u;
+}
+
+void vic4_puts(uint8_t col, uint8_t row, const char *s, uint8_t colour)
+{
+  while (*s && col < FB_COLS) {
+    vic4_text_char(col, row, vic4_screen_code(*s), colour);
+    col++;
+    s++;
+  }
+}
+
+// Give the whole display over to text: the mode is chosen per character
+// NUMBER, so writing numbers below $100 into the rows the 3D view normally
+// occupies turns them into ordinary characters, and vic4_view_mode turns them
+// back. No pixels move either way.
+void vic4_text_mode(void)
+{
+  uint16_t cell;
+
+  for (cell = 0; cell < SCREEN_ROWS * FB_COLS; cell++)
+    put_cell(cell, ' ', ' ', PANEL_INK);
+}
+
+void vic4_view_mode(void)
+{
+  build_screen_tables();
 }
 
 // The crosshair over the overview map.
@@ -141,6 +192,11 @@ void vic4_init(void)
   // makes the VIC-IV recompute the layout and undo everything below.
   VICIV.sdbdrwd_msb &= (uint8_t)~VIC4_HOTREG_MASK;
 
+  // Whatever the ROM left enabled: the sprite pointers come from screen+$3F8,
+  // which in this layout is somebody else's data, so any enabled sprite draws
+  // confetti. Safe to write now that the hot registers are off.
+  *(volatile uint8_t *)0xD015 = 0;
+
   VICIV.ctrlc |= VIC4_CHR16_MASK    // 16-bit character numbers
                  | VIC4_FCLRHI_MASK // full colour for characters above $FF
                  | VIC4_VFAST_MASK;
@@ -174,6 +230,17 @@ void vic4_init(void)
   vic4_show(0);
 }
 
+
+
+void vic4_set_entry(uint8_t index, uint8_t r, uint8_t g, uint8_t b)
+{
+  // The registers hold each channel with its nybbles reversed, which is why
+  // tools/convmap.py ships the palette that way.
+  PALETTE.red[index] = (uint8_t)((r & 0x0F) << 4 | r >> 4);
+  PALETTE.green[index] = (uint8_t)((g & 0x0F) << 4 | g >> 4);
+  PALETTE.blue[index] = (uint8_t)((b & 0x0F) << 4 | b >> 4);
+}
+
 void vic4_set_palette(const uint8_t __far *planes)
 {
   uint16_t i;
@@ -189,7 +256,7 @@ void vic4_show(uint8_t buffer)
 {
   // Writing all four bytes also clears the CHRCOUNT high bits and the screen
   // pointer megabyte in $D063, which is what we want.
-  VICIV.scrnptr = (uint32_t)(uint16_t)&screen[buffer & 1][0];
+  VICIV.scrnptr = (buffer & 1) ? SCREEN_B : SCREEN_A;
 }
 
 uint32_t vic4_base(uint8_t buffer)

@@ -1,7 +1,5 @@
 #include "sprite.h"
 
-#include <stdio.h>
-
 #include "loader.h"
 #include "vic4.h"
 
@@ -36,9 +34,15 @@ static uint8_t spr_w, spr_h;
 static uint16_t spr_x, spr_y;  // 8.8 map position
 static int16_t spr_ground;     // heightmap units under it
 
-// Where this frame's projection put it, in screen pixels.
+// Where this frame's projection put it, in screen pixels, and how far away it
+// was along the view axis.
 static int16_t spr_left, spr_top, spr_wide, spr_high;
+static int16_t spr_depth;
 static uint8_t spr_shown;
+
+// Close enough to report, in 8.8 map cells. Ten cells draws the figure about
+// 25 pixels tall, which is plainly a person rather than a red speck.
+#define SPR_REPORT_RANGE 2560
 
 // Which source column each destination column samples, and which source row
 // each destination row does. Built once a frame so that the drawing loop is a
@@ -61,7 +65,6 @@ int sprite_load(void)
   spr_h = spr_file[1];
   if (spr_w > SPR_MAX_W || spr_h > SPR_MAX_H ||
       (uint16_t)spr_w * spr_h + 4 > (uint16_t)got) {
-    printf("TERRAIN.SPR: %ux%u DOES NOT FIT\n", spr_w, spr_h);
     spr_w = 0;
     return -1;
   }
@@ -144,9 +147,15 @@ uint8_t sprite_prepare(const camera *cam, int16_t cs, int16_t sn)
 
   ramp(src_col, spr_wide, spr_w);
   ramp(src_row, spr_high, spr_h);
+  spr_depth = (int16_t)z;
   spr_shown = 1;
 
   return voxel_depth_step((uint16_t)z);
+}
+
+uint8_t sprite_reportable(void)
+{
+  return spr_shown && spr_depth <= SPR_REPORT_RANGE;
 }
 
 void sprite_draw(uint32_t base)

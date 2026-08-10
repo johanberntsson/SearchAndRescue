@@ -5,10 +5,11 @@
 
 // Flight needs to know which keys are *held*, which the Kernal's key buffer
 // cannot say, so the matrix is scanned directly. Every key used here lives in
-// row 1 or row 2, so two probes are enough.
+// one of three rows, so three probes are enough.
 //
 //   row 1 ($FD): 3  W  A  4  Z  S  E  LSHIFT   (bit 0 first)
 //   row 2 ($FB): 5  R  D  6  C  F  T  X
+//   row 7 ($7F): 1  <-  CTRL  2  SPACE  C=  Q  STOP
 //
 // A pressed key reads as 0.
 static uint8_t scan_row(uint8_t row)
@@ -26,11 +27,15 @@ static uint8_t scan_row(uint8_t row)
   return (uint8_t)~columns;
 }
 
-uint8_t input_read(void)
+// What was held at the previous scan, for the edge detector.
+static uint16_t was_held;
+
+static uint16_t scan(void)
 {
   uint8_t r1 = scan_row(0xFD);
   uint8_t r2 = scan_row(0xFB);
-  uint8_t keys = 0;
+  uint8_t r7 = scan_row(0x7F);
+  uint16_t keys = 0;
 
   if (r1 & 0x02)
     keys |= KEY_W;
@@ -38,12 +43,42 @@ uint8_t input_read(void)
     keys |= KEY_A;
   if (r1 & 0x20)
     keys |= KEY_S;
+  if (r1 & 0x40)
+    keys |= KEY_E;
+  if (r1 & 0x01)
+    keys |= KEY_3;
   if (r2 & 0x04)
     keys |= KEY_D;
   if (r2 & 0x02)
     keys |= KEY_R;
   if (r2 & 0x20)
     keys |= KEY_F;
+  if (r7 & 0x40)
+    keys |= KEY_Q;
+  if (r7 & 0x01)
+    keys |= KEY_1;
+  if (r7 & 0x08)
+    keys |= KEY_2;
+  if (r7 & 0x10)
+    keys |= KEY_SPACE;
 
   return keys;
+}
+
+void input_scan(uint16_t *held, uint16_t *pressed)
+{
+  uint16_t keys = scan();
+
+  if (held)
+    *held = keys;
+  if (pressed)
+    *pressed = keys & (uint16_t)~was_held;
+  was_held = keys;
+}
+
+void input_flush(void)
+{
+  // Anything still down now counts as held rather than as a fresh press, so
+  // the key that dismissed one screen cannot dismiss the next one too.
+  was_held = scan();
 }

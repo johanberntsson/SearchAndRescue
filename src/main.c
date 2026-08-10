@@ -2,45 +2,58 @@
 
 #include "input.h"
 #include "loader.h"
+#include "mission.h"
 #include "panel.h"
 #include "profile.h"
+#include "screens.h"
 #include "sprite.h"
 #include "vic4.h"
 #include "voxel.h"
 
 #define TURN_RATE   2   // angle units per frame
-#define THRUST      96  // 8.8 map cells per frame
 #define CLIMB_RATE  2   // height units per frame
 #define GROUND_GAP  12  // never fly closer than this to the terrain
 
-// The survivor, on top of the pyramid in the north west of the map. One map
-// cell is one millidegree and latitude counts down the map (see panel.h), so
-// a GPS fix is a cell index and nothing else; the low byte puts them in the
-// middle of the cell rather than on its corner.
-#define SURVIVOR_LAT 46713  // millidegrees north
-#define SURVIVOR_LON  8110  // millidegrees east
-#define SURVIVOR_X ((uint16_t)(SURVIVOR_LON - MAP_LON_WEST) << 8 | 0x80)
-#define SURVIVOR_Y ((uint16_t)(255 - (SURVIVOR_LAT - MAP_LAT_SOUTH)) << 8 | 0x80)
+// The gimbal, in screen rows of horizon. Down means the horizon climbs out of
+// the top of the picture, so tilting down lowers the number.
+#define TILT_RATE   2
+#define TILT_MIN    (-40)
+#define TILT_MAX    140
+#define TILT_LEVEL  (FB_HEIGHT * 2 / 5)
+
+// 8.8 map cells a frame at full stick: cinematic, normal, sport, which is
+// what the speed switch on a real drone offers.
+#define SPEED_MODES 3
+static const int16_t speed_limit[SPEED_MODES] = {40, 96, 176};
+#define SPEED_DEFAULT 1
 
 // How long the startup benchmark report stays up if nobody presses a key.
 // Long enough to read or photograph, short enough that an unattended run
 // still spends most of its time rendering.
 #define REPORT_SECONDS 20
 
-static void fly(camera *cam, uint8_t keys)
+// Frames a message from the game stays up before the standby line comes back.
+// About five seconds at the frame rates this runs at.
+#define MESSAGE_FRAMES 60
+
+#define STANDBY "SAR DRONE READY"
+
+static uint8_t speed_mode = SPEED_DEFAULT;
+
+static void fly(camera *cam, uint16_t held)
 {
   int16_t speed = 0;
   uint8_t ground;
 
-  if (keys & KEY_A)
+  if (held & KEY_A)
     cam->angle -= TURN_RATE;
-  if (keys & KEY_D)
+  if (held & KEY_D)
     cam->angle += TURN_RATE;
 
-  if (keys & KEY_W)
-    speed = THRUST;
-  if (keys & KEY_S)
-    speed = -THRUST;
+  if (held & KEY_W)
+    speed = speed_limit[speed_mode];
+  if (held & KEY_S)
+    speed = (int16_t)-speed_limit[speed_mode];
 
   if (speed) {
     // sin/cos are 8.8, speed is 8.8, and the position is 8.8: one shift of 8
@@ -49,53 +62,91 @@ static void fly(camera *cam, uint8_t keys)
     cam->y += (int16_t)(((int32_t)voxel_sin(cam->angle) * speed) >> 8);
   }
 
-  if (keys & KEY_R)
+  if (held & KEY_R)
     cam->height += CLIMB_RATE;
-  if (keys & KEY_F)
+  if (held & KEY_F)
     cam->height -= CLIMB_RATE;
+
+  // The renderer rebuilds its horizon table whenever this moves, so tilting
+  // costs a frame's worth of table and nothing per pixel.
+  if (held & KEY_Q)
+    cam->horizon += TILT_RATE;
+  if (held & KEY_E)
+    cam->horizon -= TILT_RATE;
+  if (cam->horizon > TILT_MAX)
+    cam->horizon = TILT_MAX;
+  if (cam->horizon < TILT_MIN)
+    cam->horizon = TILT_MIN;
 
   ground = voxel_ground(cam->x, cam->y);
   if (cam->height < (int16_t)ground + GROUND_GAP)
     cam->height = (int16_t)ground + GROUND_GAP;
 }
 
-int main(void)
+// 1, 2 and 3 pick the speed limiter. Held rather than edge-triggered: there
+// is nothing to repeat, so pressing it twice is the same as pressing it once.
+static void set_speed(uint16_t held)
 {
+  uint8_t mode = speed_mode;
+
+  if (held & KEY_1)
+    mode = 0;
+  if (held & KEY_2)
+    mode = 1;
+  if (held & KEY_3)
+    mode = 2;
+
+  if (mode != speed_mode) {
+    speed_mode = mode;
+    panel_speed(mode);
+  }
+}
+
+// Sit on a finished screen until the pilot presses space.
+static void wait_for_space(void)
+{
+  uint16_t pressed;
+
+  input_flush();
+  do {
+    input_scan(0, &pressed);
+  } while (!(pressed & KEY_SPACE));
+}
+
+// One flight. Returns when the pilot has filed a report on the survivor.
+static void flight(uint8_t mission_no, uint16_t *seconds)
+{
+  const mission *m = &missions[mission_no];
   camera cam;
   uint8_t back = 1;
   uint16_t fps10 = 0;
+  uint16_t message_left = 0;
+  uint32_t launched;
 
-  if (load_resources()) {
-    printf("RESOURCE LOAD FAILED\n");
-    return 1;
-  }
+  sprite_place(FIX_TO_X(m->lon), FIX_TO_Y(m->lat));
 
-  // The benchmarks and their report come first, while the Kernal's text
-  // screen still exists to print on: vic4_init takes it away, and real
-  // hardware has no -dumpmem to read the results out of afterwards.
-  profile_init();
-  profile_calibrate();
-  profile_bench();
-  profile_report(REPORT_SECONDS);
-
-  vic4_init();
-  vic4_set_palette(loaded_palette());
-  voxel_init();
+  vic4_view_mode();
   panel_init();
-  sprite_place(SURVIVOR_X, SURVIVOR_Y);
-  panel_message("SAR DRONE READY");
+  panel_message(STANDBY);
+  panel_speed(speed_mode);
 
   cam.x = 128 << 8;  // middle of the map
   cam.y = 128 << 8;
   cam.angle = 0;
-  cam.horizon = FB_HEIGHT * 2 / 5;
+  cam.horizon = TILT_LEVEL;
   cam.height = voxel_ground(cam.x, cam.y) + 60;
+
+  input_flush();
+  launched = profile_now32();
 
   for (;;) {
     uint32_t frame_start = profile_now32();
     uint16_t t0 = PROF_NOW();
+    uint16_t held, pressed;
 
-    fly(&cam, input_read());
+    input_scan(&held, &pressed);
+    fly(&cam, held);
+    set_speed(held);
     PROF_ADD(P_OTHER, t0);
 
     voxel_render(vic4_base(back), &cam);
@@ -108,5 +159,77 @@ int main(void)
 
     profile_count(C_FRAMES, 1);  // always: the FPS readout needs it
     fps10 = profile_fps10(frame_start - profile_now32());
+
+    if (message_left && !--message_left)
+      panel_message(STANDBY);
+
+    // The report button. sprite_reportable answers for the frame just drawn,
+    // which is why this comes after the render rather than with the rest of
+    // the input.
+    if (pressed & KEY_SPACE) {
+      if (sprite_reportable()) {
+        uint32_t ticks = launched - profile_now32();
+
+        *seconds = (uint16_t)(ticks / profile_ticks_per_second());
+        return;
+      }
+      panel_message("NO SURVIVOR IN SIGHT");
+      message_left = MESSAGE_FRAMES;
+    }
+  }
+}
+
+int main(void)
+{
+  uint8_t mission_no = 0;
+
+  // Loading comes first, and on the ROM's own text screen. Both halves of
+  // that are forced:
+  //
+  //   - profile_init takes CIA2's two timers over as its clock, and the
+  //     Kernal needs them to talk to a disk. Anything read after it fails to
+  //     open at all.
+  //   - vic4_init leaves the Kernal unable to open a file either.
+  //
+  // So the only place a resource can be read is here, before both, which is
+  // why the loading bar is printed rather than drawn.
+  screens_boot();
+  if (load_resources(screens_loading)) {
+    screens_load_failed(loader_error(), loader_error_file());
+    for (;;)
+      ;
+  }
+
+  // The benchmarks and their report while the text screen is still up:
+  // vic4_init takes it away, and real hardware has no -dumpmem to read the
+  // results out of afterwards.
+  profile_init();
+  profile_calibrate();
+  profile_bench();
+  profile_report(REPORT_SECONDS);
+
+  vic4_init();
+  vic4_set_palette(loaded_palette());
+  voxel_init();
+  // Once, before any crosshair has been drawn into the overview map: this is
+  // the copy every later crosshair is lifted with.
+  vic4_overview_ready();
+
+  screens_title();
+  wait_for_space();
+
+  for (;;) {
+    uint16_t seconds;
+
+    screens_missions(mission_no);
+    wait_for_space();
+
+    screens_briefing(mission_no);
+    wait_for_space();
+
+    flight(mission_no, &seconds);
+
+    screens_accomplished(mission_no, seconds);
+    wait_for_space();
   }
 }

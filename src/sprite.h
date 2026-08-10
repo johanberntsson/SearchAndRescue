@@ -26,4 +26,10 @@ uint8_t sprite_prepare(const camera *cam, int16_t cs, int16_t sn);
 // Draw it over the terrain just marched, clipped against voxel_yclip.
 void sprite_draw(uint32_t base);
 
+// Whether the survivor was on screen in the frame just drawn AND near enough
+// to file a report about: what the report button asks. Being on screen is
+// half the test on purpose -- a report means you looked at them, not that you
+// flew past with the camera pointed elsewhere.
+uint8_t sprite_reportable(void);
+
 #endif

@@ -12,7 +12,8 @@ aftershocks that reshape the landscape mid-flight. `documentation/vision.md` has
 
 ## Status
 
-Early. There is a voxel engine you can fly around in, and not yet a game.
+Mission one exists, end to end: a title screen, a mission list, a briefing, a
+flight, and a debrief when you find the survivor and file a report on them.
 
 - 320x152 full-colour 3D view, double buffered, over a six-row 40-column text panel
 - 512x512 height and 1024x1024 colour maps, exomizer-crunched on the disk and
@@ -28,6 +29,9 @@ Early. There is a voxel engine you can fly around in, and not yet a game.
   billboard drawn over the finished terrain: scaled by distance, and clipped
   against the heightfield with the same y-buffer the ray march already keeps, so
   a ridge in front of them hides their feet
+- Drone controls: `W`/`S` forward and back, `A`/`D` yaw, `R`/`F` climb and
+  descend, `Q`/`E` gimbal, `1`/`2`/`3` for cinematic, normal and sport speed,
+  `SPACE` to file a report once you have them in shot
 
 Getting there meant building a profiler first (`src/profile.c`, read with
 `tools/profread.py`) rather than guessing. The compiler's 32-bit multiply turned out

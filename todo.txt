@@ -1,10 +1,13 @@
 WHERE IT IS
 
-A flyable voxel engine: 320x152 3D view over a six-row 40-column text panel
-with an overview map, 12.5 fps (PROFILE=0, default map sizes). The march is 160 rays; each fills the
-two pixels it owns. One world object: a survivor billboard on the pyramid at
-46.713N 8.110E, which you have to fly north-west from the start to find. No
-game yet.
+Mission one, end to end: title, mission list, briefing, flight, debrief. Find
+the survivor on the pyramid at 46.713N 8.110E -- the briefing gives the fix
+and the panel gives your own -- get within ten cells with them on screen, and
+press SPACE to file the report.
+
+Underneath: a 320x152 3D view over a six-row 40-column text panel with an
+overview map, 12.5 fps (PROFILE=0, default map sizes). The march is 160 rays;
+each fills the two pixels it owns.
 
 Build knobs, all in the Makefile:
     PROFILE=0            no per-column instrumentation; use it for timing
@@ -33,13 +36,17 @@ it started. The optimisation ideas left in OPEN below are there so they are
 not rediscovered from scratch, NOT as a queue to work through -- the next
 work is the game, not another few percent.
 
-- controls: joystick and keyboard. Long push -> big speed change, short push
-  -> small, accelerating towards a target speed rather than jumping to it.
-  Joystick forward/back and left/right, cursor keys to rotate the drone.
-  Scale the acceleration by the measured frame time: between 7 and 15 fps a
-  per-frame constant will not feel the same twice.
-- then the game itself. documentation/vision.md has the design; the survivor
-  billboard is the first piece of it.
+- flight FEEL. The keys are all there now, but thrust is still a per-frame
+  constant that jumps to full speed and back. Wanted: long push -> big speed
+  change, short push -> small, accelerating towards a target rather than
+  snapping to it, and scaled by the measured frame time, because between 7 and
+  15 fps a per-frame constant does not feel the same twice. Joystick too.
+- no way out of a flight except finding the survivor. RUN/STOP to abort back
+  to the mission list.
+- the mission list has a cursor and one entry, so nothing moves it. The second
+  mission needs up/down keys and a reason to choose.
+- then more of the game. documentation/vision.md has the design; mission one
+  is the first piece of it.
 - the sprite draw is C at ~170 cycles a pixel. Harmless at any distance you
   would search from, 9% of a frame nose to nose. Assembly when there is a
   reason, not before.
@@ -139,6 +146,15 @@ DONE
 - exomizer compression (src/exo_asm.s, ported from mega65/ozmoo-z6) unpacking
   into attic RAM, and both map resolutions as build knobs up to the source
   1024x1024
+- mission one: title, mission list, briefing, flight, debrief, and the drone
+  controls a real one has (WASD, RF, QE gimbal, 123 speed, SPACE to report).
+  Full-screen text pages cost no pixels -- the display picks text or full
+  colour per character NUMBER, so a page is a rewrite of screen RAM. The
+  screen tables moved to bank 5 to pay for the code. WATCH THE STARTUP ORDER:
+  resources must load before profile_init (it takes CIA2's timers, which the
+  Kernal needs for the disk) and before vic4_init (same effect, cause not
+  isolated), which is why the loading bar is printed on the ROM's screen and
+  why nothing may printf once the display is up.
 - survivor billboard, 12.7 -> 12.5 fps. convmap.py cuts the front pose off the
   sprite sheet's checkerboard and gives it fifteen palette entries the
   colourmap left free; src/sprite.c projects it with the renderer's own
