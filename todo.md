@@ -176,7 +176,12 @@ Do not re-litigate these without new measurements.
   the same height and colour PNGs `convmap.py` already eats, reproducibly from
   one seeded stream, with `maps/palette.yaml` as the shared index ramp both
   sides will read. Nothing generated is on the disk yet; the build still ships
-  the hand-drawn pair. Worth knowing: a generated map uses 48 palette entries
+  the hand-drawn pair. Rivers took a second pass after the first flight over
+  one: measured against the live map a channel digs itself a canyon, ends up
+  below sea level and comes out as a black line — they are cut against a
+  pristine copy now, meander by choosing between neighbours that already run
+  downhill, and end in a pool where the slope pits out. Worth knowing: a
+  generated map uses 48 palette entries
   against the hand-drawn one's ~170, which leaves 143 free rather than 12 —
   the budget that limits the game to two figures is a property of that
   colourmap, not of the engine.

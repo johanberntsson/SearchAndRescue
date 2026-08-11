@@ -543,8 +543,16 @@ the RGB behind those indices chosen by the mission's `climate`. Nothing
 generated is on the disk yet — the Makefile still names `resources/D1.png` —
 and the previewer and `mission.bin` are not written.
 `documentation/procedural-maps.md` has the design, what is built, and the traps
-found building it (a lake flood will flood the ocean; a river arriving at the
-coast will raise the sea; fold ridged noise once at the end, not per octave).
+found building it. The one to know before touching the water: **a river
+measured against the live map digs itself a canyon** — each disc flattens the
+ground ahead of the walk, so the walk reads its own channel floor and cuts
+again, and thirty steps later it is below sea level, flattened to the sea plane
+and painted in the darkest water there is. It looks like a black line ruled
+across the map. Measure against a pristine copy. The others: a lake flood will
+flood the ocean; a river arriving at the coast will raise the sea; meander
+noise may only choose between neighbours that already run downhill, never
+decide whether the river goes on; fold ridged noise once at the end, not per
+octave.
 
 **`tools/preview.py` flies a generated map on the PC, and it is this renderer
 rather than a lookalike.** The band schedule, the 8.8 position update with its
