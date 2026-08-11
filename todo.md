@@ -114,8 +114,12 @@ Do not re-litigate these without new measurements.
 - The gimbal shears the picture rather than rotating it, because moving
   `cam->horizon` is a shear. Fine at the tilts flying uses; it will look wrong
   long before straight down.
-- The panel layout is still mostly empty: ALT/HDG, LAT/LON and FPS use the
-  left half of three rows out of six.
+- The panel is nearly full now: message, ALT/HDG, LAT/LON, FPS/SPD/BATT and
+  CARGO/WIND, with the overview map on the right.
+- **Under 200 bytes of the 32K are left.** The low free RAM at $1600 still has
+  about 1.2K spare, but only renderer-owned tables may go there. After that
+  the candidates are the loader's 512-byte bounce buffer and the sprite's
+  1028-byte drawing buffer.
 - No HUD over the 3D view. `vision.md` wants an artificial horizon, battery,
   GPS and signal strength. Palette 240/241 are reserved for it; `hud.c` did
   exactly this kind of pixel drawing and is in git history if wanted back.
@@ -181,6 +185,9 @@ Do not re-litigate these without new measurements.
   overview is north up; it used to call east 000 and north 270. Both bearings
   on the panel go through the one macro, so heading and wind stay in the same
   frame as each other.
+- **Battery**, 8.8 percent on the panel, drained per frame by speed mode so
+  sport empties it in about a quarter of the time. Flat ends the flight. Found
+  a Calypsi sign-extension trap on the way — see `DEGREES` in `panel.c`.
 - **Wind.** A direction and strength picked at launch from a 16-bit xorshift,
   added to the position every frame, veering a little every eight seconds, and
   reported on the panel by the direction it comes from. It is applied before

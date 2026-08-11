@@ -43,6 +43,40 @@ static const int16_t speed_limit[SPEED_MODES] = {40, 96, 176};
 
 static uint8_t speed_mode = SPEED_DEFAULT;
 
+// The battery, in 8.8 percent -- so the figure the panel shows is simply the
+// high byte and there is no divide anywhere in the drain.
+#define BATTERY_FULL (100 << 8)
+#define BATTERY_LOW  (20 << 8)  // where the warning comes up, once
+
+// What a frame costs, by speed mode. Sport is what a real drone's sport mode
+// is: the props work harder whatever the sticks are doing, so it empties the
+// pack in about a quarter of the time rather than only when you are moving.
+// At around 11.6 fps these are roughly five minutes, four, and a minute and a
+// quarter -- an unhurried search, or a fast one you have to finish.
+static const uint16_t battery_drain[SPEED_MODES] = {7, 10, 28};
+
+static uint16_t battery;
+static uint8_t battery_warned;
+
+// Take a frame out of the pack. Returns non-zero when it is flat.
+static uint8_t battery_step(void)
+{
+  uint16_t drain = battery_drain[speed_mode];
+  uint8_t was = (uint8_t)(battery >> 8);
+
+  if (battery <= drain) {
+    battery = 0;
+    panel_battery(0);
+    return 1;
+  }
+  battery -= drain;
+  // Only when the figure actually moves: at the fastest drain that is every
+  // ninth frame, and at the slowest every thirty-seventh.
+  if ((uint8_t)(battery >> 8) != was)
+    panel_battery((uint8_t)(battery >> 8));
+  return 0;
+}
+
 // The wind: the one thing in the flight model that is not the pilot's. It
 // blows the drone about whatever it is doing, including a hover, and it veers
 // every few seconds so that trimming for it once is not enough.
@@ -285,7 +319,11 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
   panel_message(STANDBY);
   panel_speed(speed_mode);
   panel_cargo(mission_cargo_name(m));
-  wind_start();  // after panel_init, which would otherwise blank the readout
+  // Both after panel_init, which would otherwise blank the readouts they set.
+  battery = BATTERY_FULL;
+  battery_warned = 0;
+  panel_battery(BATTERY_FULL >> 8);
+  wind_start();
 
   cam.x = 128 << 8;  // middle of the map
   cam.y = 128 << 8;
@@ -300,10 +338,11 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
     uint32_t frame_start = profile_now32();
     uint16_t t0 = PROF_NOW();
     uint16_t held, pressed;
-    uint8_t hit;
+    uint8_t hit, flat;
 
     input_scan(&held, &pressed);
     wind_drift();
+    flat = battery_step();
     hit = fly(&cam, held);
     if (set_speed(held)) {
       panel_message("SPORT: NO TERRAIN FOLLOWING");
@@ -334,6 +373,17 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
     if (hit) {
       *seconds = elapsed(launched);
       return FLIGHT_CRASHED;
+    }
+    if (flat) {
+      *seconds = elapsed(launched);
+      return FLIGHT_FLAT;
+    }
+    // Once, on the way past: a warning that repeated every frame below a
+    // fifth would sit on the message line for the rest of the flight.
+    if (!battery_warned && battery <= BATTERY_LOW) {
+      battery_warned = 1;
+      panel_message("BATTERY LOW -- COME HOME");
+      message_left = MESSAGE_FRAMES;
     }
     if (pressed & KEY_STOP) {
       *seconds = elapsed(launched);

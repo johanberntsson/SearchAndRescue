@@ -355,14 +355,27 @@ uses, because the wind is applied every frame and the compiler's version is
 **`DEGREES` adds a quarter turn, and that is not decoration.** Angle 0 moves
 the camera along +x, which is east, while the overview map is north up — so
 printing the raw angle as degrees called east 000 and north 270. The macro
-rotates by 64 before converting, and the cast back to `uint8_t` is what wraps
-north round to 000 instead of 360. Both readouts that show a bearing go
-through it, so the heading and the wind stay in the same frame as each other:
-fly the heading the wind is reported on and you have a headwind.
+rotates by 64 before converting and masks the wrap in 16 bits. Both readouts
+that show a bearing go through it, so the heading and the wind stay in the
+same frame as each other: fly the heading the wind is reported on and you have
+a headwind.
+
+**The wrap must be a mask, not a cast through `uint8_t`** — see the
+sign-extension trap under Performance. Getting that wrong printed a wind of
+896 degrees.
 
 **The gimbal is free.** `cam->horizon` was always a field the renderer
 rebuilt its per-step horizon table from whenever it moved; tilting is a
 frame's worth of table and nothing per pixel.
+
+**The battery is 8.8 percent**, so the figure on the panel is the high byte
+and there is no divide in the drain. `battery_drain` is indexed by speed mode
+— 7, 10 and 28 a frame, roughly five minutes, four, and a minute and a quarter
+at 11.6 fps — because a real drone's sport mode works the props harder
+whatever the sticks are doing, not only when you are moving. Flat is
+`FLIGHT_FLAT`, tested at the bottom of the loop with the other exits, and the
+readout is rewritten only when the figure moves, which at the fastest drain is
+every ninth frame.
 
 A report counts only if the survivor was **on screen in the frame just
 drawn** and within ten map cells (`sprite_reportable`). On screen is half the
@@ -598,6 +611,18 @@ trusted.
 `FB_WIDTH / 2 * 256` in a macro folded to a negative number. Reassociate
 (`* 45 / 32`) or force the width (`256L`); the compiler warns about the second
 kind but not the first.
+
+**A narrowing cast to `uint8_t` inside a wider expression is SIGN-extended.**
+`(uint16_t)(uint8_t)(angle + 64)` compiles to `adc #64 / ora #127 / bmi / lda
+#0` — the byte is widened as though it were signed, so every value from 128 up
+comes out negative and the arithmetic after it is nonsense. It cost a wind
+bearing of 896 degrees, and it is invisible at small inputs: the heading
+readout that shares the macro looked right for a whole commit because the
+camera launches at angle 0. Never let a value pass through a byte type in the
+middle of an expression — widen first and mask (`((uint16_t)a + 64) & 0xFF`),
+which never puts it in a byte at all. **Check the `--list-file` listing when a
+number comes out wrong and the arithmetic looks unarguable**; that is what
+found this in one look.
 
 **Coordinates through `int8_t`, and small `static const` arrays inside a
 function, miscompile.** The crosshair was first written with `int8_t` x and y

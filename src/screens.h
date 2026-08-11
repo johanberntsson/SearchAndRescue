@@ -36,6 +36,7 @@ typedef enum {
   FLIGHT_DONE,     // the job was done
   FLIGHT_LOST,     // the cargo went down in the wrong place
   FLIGHT_CRASHED,  // flown into the hillside, which only sport mode allows
+  FLIGHT_FLAT,     // the battery ran out before the job was done
   FLIGHT_ABORTED,  // the pilot gave up and flew home
 } flight_outcome;
 

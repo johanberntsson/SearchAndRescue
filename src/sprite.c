@@ -67,8 +67,11 @@ static uint8_t spr_near;  // within SPR_DROP_RANGE, camera pointing anywhere
 // FB_HEIGHT covers both: SPR_Z_NEAR keeps the drawn figure no taller than the
 // view, and no wider, since it is taller than it is wide -- sprite_prepare
 // clamps the width to this in case a future pose is not.
-static uint8_t src_col[FB_HEIGHT];
-static uint8_t src_row[FB_HEIGHT];
+// In the low free RAM at $1600 with the renderer's own tables: they are
+// rebuilt every frame a figure is in view and never touched while the disk is
+// being read, which is what LOW_FREE requires.
+LOW_FREE static uint8_t src_col[FB_HEIGHT];
+LOW_FREE static uint8_t src_row[FB_HEIGHT];
 
 const char *sprite_load(void)
 {

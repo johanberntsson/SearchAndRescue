@@ -180,6 +180,9 @@ void screens_debrief(uint8_t mission_no, flight_outcome how, uint16_t seconds)
   } else if (how == FLIGHT_CRASHED) {
     heading = "DRONE DESTROYED";
     what = "SPORT MODE HAS NO TERRAIN FOLLOWING";
+  } else if (how == FLIGHT_FLAT) {
+    heading = "BATTERY EMPTY";
+    what = "THE DRONE CAME DOWN SHORT OF THE FIX";
   } else if (how == FLIGHT_ABORTED) {
     heading = "MISSION ABANDONED";
     what = "THE DRONE CAME HOME EMPTY HANDED";

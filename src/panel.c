@@ -16,8 +16,11 @@
 #define CARGO_WIDTH 12
 
 // The wind shares the bottom row with the cargo bay, to the right of it and
-// clear of the overview map, which only reaches down to the row above.
+// clear of the overview map, which only reaches down to the row above. The
+// battery sits directly above the wind, in the space the FPS and speed
+// readouts leave on their row.
 #define WIND_COL 20
+#define BATT_COL 20
 
 #define ALT_COL 4
 #define HDG_COL 13
@@ -36,7 +39,14 @@
 //
 // 45/32 rather than the equal 360/256: a heading of 183 or more overflows the
 // 16-bit product of the latter, and 192 came out as 14 degrees.
-#define DEGREES(a) ((uint16_t)(uint8_t)((a) + 64) * 45 / 32)
+//
+// **The wrap is a 16-bit mask and must not be a cast through uint8_t.**
+// Written the obvious way, `(uint16_t)(uint8_t)((a) + 64)`, Calypsi 5.18
+// SIGN-extends the byte -- `ora #127 / bmi / lda #0` in the listing -- so
+// every bearing from 128 up came out negative and the wind read 896 degrees.
+// Widening first and masking in 16 bits never puts the value in a byte at
+// all. This is the same family as the int8_t miscompile under Performance.
+#define DEGREES(a) (((((uint16_t)(a) + 64) & 0xFF) * 45) / 32)
 
 void panel_puts(uint8_t col, uint8_t row, const char *s, uint8_t colour)
 {
@@ -104,6 +114,9 @@ void panel_init(void)
 
   panel_puts(10, ROW_STATUS, "SPD", PANEL_LABEL);
 
+  panel_puts(BATT_COL, ROW_STATUS, "BATT", PANEL_LABEL);
+  vic4_panel_char(BATT_COL + 8, ROW_STATUS, vic4_screen_code('%'), PANEL_LABEL);
+
   panel_puts(0, ROW_CARGO, "CARGO", PANEL_LABEL);
 
   // Only the two numbers are rewritten when the wind shifts; the units are
@@ -141,6 +154,11 @@ void panel_cargo(const char *what)
   for (col = 0; col < CARGO_WIDTH; col++)
     vic4_panel_char((uint8_t)(6 + col), ROW_CARGO, ' ', PANEL_INK);
   panel_puts(6, ROW_CARGO, what, PANEL_INK);
+}
+
+void panel_battery(uint8_t percent)
+{
+  put_number(BATT_COL + 5, ROW_STATUS, percent, 3, PANEL_INK);
 }
 
 void panel_wind(uint8_t from, uint8_t mps)

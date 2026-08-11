@@ -59,6 +59,21 @@
 // starts. A DMA of a kilobyte, once, against a per-pixel far read forever.
 #define SPRITE_STORE 0x1DC00UL
 
+// $1600-$1EFF is 2304 bytes of ordinary chip RAM that the linker rules for
+// this target hand to a section called `zpsave`, which nothing in this
+// program puts anything in. It is near-addressable, so moving a table there
+// costs nothing per access, and the 32K the program shares is the scarcest
+// thing in the build -- WIDE=1 does not link without this.
+//
+// **Only tables the renderer builds and owns.** It sits below $2001, where
+// the C65 ROM keeps its own buffers, so nothing that has to survive a Kernal
+// disk call may live here. Everything currently in it is first written after
+// the last resource has been read.
+//
+// Budget: 800 bytes of per-ray tables at 160 rays and 1600 at 320, plus 304
+// for the sprite's ramps. The link fails outright if it is overrun.
+#define LOW_FREE __attribute__((section("zpsave")))
+
 // Where the palette waits for vic4_set_palette. It used to be a C array, and
 // the 768 bytes of it went to the survivor sprite when the 32K the program,
 // its data and its stack share ran out. Attic RAM is fine for it: it is read

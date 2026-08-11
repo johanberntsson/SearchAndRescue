@@ -51,26 +51,17 @@ static const int16_t sin_quarter[65] = {
     245, 247, 248, 250, 251, 252, 253, 254, 255, 255, 256, 256, 256,
 };
 
-// The three per-ray tables live at $1600-$1EFF rather than in the 32K the
-// program shares. The linker rules for this target hand that block to the
-// `zpsave` section, which nothing in this program puts anything in, and it is
-// ordinary chip RAM the CPU addresses as cheaply as any other -- so the move
-// costs nothing per pixel and buys back 800 bytes at VX_COLS 160 and 1600 at
-// 320. WIDE=1 does not link without it.
-//
-// Only tables the *renderer* owns go here: they are built by voxel_init and
-// rewritten each frame, long after the last Kernal disk call, so if the C65
-// ROM does use this area for its own buffers it can only do so before
-// anything below is written. Nothing loaded off the disk may live here.
-#define VX_FREE __attribute__((section("zpsave")))
-
-VX_FREE static int16_t tan_tab[VX_COLS]; // 8.8 offset from the view axis per ray
+// The three per-ray tables live in the low free RAM at $1600 rather than in
+// the 32K the program shares -- 800 bytes of it at VX_COLS 160, 1600 at 320.
+// They are built by voxel_init and rewritten every frame, long after the last
+// Kernal disk call, which is what makes them eligible; see LOW_FREE.
+LOW_FREE static int16_t tan_tab[VX_COLS]; // 8.8 offset from the view axis per ray
 
 // Byte offset into a framebuffer of the pixel one row *below* the bottom of
 // each column: where the span fill starts counting down from. Precomputed
 // because working it out needs a multiply by FB_STRIDE, and the compiler
 // builds that out of a shift loop made of jsr fragments.
-VX_FREE static uint16_t col_top[VX_COLS];
+LOW_FREE static uint16_t col_top[VX_COLS];
 
 // Shared with src/voxel_asm.s, which indexes both with an 8-bit register, so
 // neither may grow past 256 bytes.
@@ -121,7 +112,7 @@ __zpage uint8_t vx_bands, vx_bandsteps, vx_band, vx_step;
 // "never do it" value.
 __zpage uint8_t vx_zclip, vx_yclip;
 
-VX_FREE uint8_t voxel_yclip[VX_COLS];
+LOW_FREE uint8_t voxel_yclip[VX_COLS];
 static uint8_t clip_y;  // vx_zclip for every column of the current frame
 #if PROFILE_DETAIL
 // Event counts for one column, reset before the call and added up after it.

@@ -37,6 +37,10 @@ void panel_speed(uint8_t mode);
 // mission flown with the camera alone shows for the whole flight.
 void panel_cargo(const char *what);
 
+// What is left in the pack, 0 to 100. Called only when the figure changes,
+// which at the fastest drain is every ninth frame or so.
+void panel_battery(uint8_t percent);
+
 // The wind. `from` is the direction it blows FROM in 256ths of a turn, the
 // same units as the heading, shown in degrees beside it; `mps` is its speed.
 // Only called when the wind actually shifts, not every frame.
