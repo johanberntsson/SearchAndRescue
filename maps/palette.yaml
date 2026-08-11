@@ -1,0 +1,56 @@
+# The shared palette for every generated map.
+#
+# One index ramp, fixed for all maps and all climates: a colour map written by
+# tools/genmap.py only ever holds indices from the bands below, so any two
+# generated maps can share one palette upload and a mission can change climate
+# without changing a single map byte.  What the climate changes is the *RGB
+# behind* those indices, which is the only thing that has to be re-uploaded.
+#
+# Indices 0-15 are the system's and are never touched here: index 0 is the
+# border and screen colour, 1 and 2 are the panel ink (a text character takes
+# its colour from colour RAM, which is a four-bit field, so panel ink has to
+# live down here), and the rest are left for the same kind of use.  224-239 are
+# the sky gradient, 240/241 the reserved HUD pair, and everything from 64 up is
+# the pool tools/convmap.py hands to the sprite sheets -- which is why the land
+# ramp stops at 63 rather than spreading over everything that is free.
+#
+# The land bands are contiguous and in ascending order on purpose: shore,
+# lowland, highland and peak are one 40-step elevation ramp that genmap.py
+# indexes with a single add, and the band boundaries only decide where the
+# colours change character.  Keep them adjacent if you re-cut them.
+
+bands:
+  # Water is shaded by depth, deepest at the first index.
+  water:    {base: 16, count: 8}
+  # The land ramp, low to high. 40 shades from 24 to 63.
+  shore:    {base: 24, count: 4}
+  lowland:  {base: 28, count: 16}
+  highland: {base: 44, count: 12}
+  peak:     {base: 56, count: 8}
+
+# Each climate gives every band a list of at least two RGB stops, interpolated
+# evenly across the band's indices.  The band names are shared, so their
+# meaning is elevation, not vegetation: "lowland" is forest in a temperate
+# climate, dry savannah in a hot one, and tundra in a cold one, and "peak" is
+# snow in two of the three and sun-bleached rock in the other.
+climates:
+  temperate:
+    water:    [[8, 24, 52], [58, 112, 148]]
+    shore:    [[126, 116, 86], [196, 186, 150]]
+    lowland:  [[40, 72, 36], [104, 128, 62]]
+    highland: [[96, 104, 64], [122, 112, 96]]
+    peak:     [[140, 138, 132], [246, 248, 252]]
+
+  hot:
+    water:    [[10, 40, 60], [70, 150, 170]]
+    shore:    [[176, 158, 110], [226, 212, 166]]
+    lowland:  [[122, 124, 64], [186, 172, 104]]
+    highland: [[150, 110, 70], [190, 150, 104]]
+    peak:     [[198, 166, 120], [236, 222, 196]]
+
+  cold:
+    water:    [[12, 28, 44], [72, 104, 124]]
+    shore:    [[110, 110, 112], [166, 170, 176]]
+    lowland:  [[54, 72, 58], [96, 106, 82]]
+    highland: [[104, 106, 104], [150, 152, 156]]
+    peak:     [[200, 206, 214], [255, 255, 255]]

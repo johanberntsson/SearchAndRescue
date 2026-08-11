@@ -1,0 +1,16 @@
+general:
+  id: 3
+  seed: 12345
+  type: island
+  climate: temperate
+  rivers: few
+  river-size: small
+  hills: few
+  hills-size: small
+  lakes: few
+  lakes-size: small
+  ruggedness: rolling
+
+# Placed by hand in the previewer once there is one; parsed and checked today,
+# written to mission.bin in the next stage.
+items: []

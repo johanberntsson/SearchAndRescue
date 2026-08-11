@@ -46,6 +46,14 @@ wrong place.
   over the finished picture, leaning as it falls. It costs 0.68 ms a frame,
   because the sky is sixteen palette entries rather than any pixels at all
 
+Off to the side, and not on the disk yet: **maps can now be generated instead of
+drawn.** `tools/genmap.py` turns a short YAML description — island or mountains
+or flatlands, a climate, how many rivers and lakes and hills, how rugged — into
+the same height/colour PNG pair the converter already reads, reproducibly from
+a seed. `maps/` holds the shared palette and three examples;
+`documentation/procedural-maps.md` has the design and what the first stage
+actually does.
+
 Getting there meant building a profiler first (`src/profile.c`, read with
 `tools/profread.py`) rather than guessing. The compiler's 32-bit multiply turned out
 to be 64% of the frame at 2203 cycles a go, against 85 on the hardware multiplier.

@@ -1,0 +1,14 @@
+general:
+  id: 4
+  seed: 8801
+  type: mountains
+  climate: cold
+  rivers: many
+  river-size: small
+  hills: none
+  hills-size: small
+  lakes: few
+  lakes-size: large
+  ruggedness: rugged
+
+items: []

@@ -1,1 +1,3 @@
 build/
+maps/*.png
+__pycache__/

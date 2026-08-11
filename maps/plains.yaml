@@ -1,0 +1,14 @@
+general:
+  id: 5
+  seed: 4242
+  type: flatlands
+  climate: hot
+  rivers: few
+  river-size: large
+  hills: many
+  hills-size: large
+  lakes: many
+  lakes-size: small
+  ruggedness: smooth
+
+items: []

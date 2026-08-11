@@ -82,6 +82,13 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
 - One billboard, one depth. Several at different depths need either a clip
   step per sprite (another pass of the march) or a real per-column depth
   buffer. Sorting them and snapshotting at the nearest is probably enough.
+- **Procedural maps, stage two.** `tools/genmap.py` generates a map pair from a
+  YAML file now (see Done). What it needs next is the Python previewer, because
+  terrain is judged by flying it and not by looking at a PNG; then
+  `mission.bin` and the item coordinates the previewer exists to collect; then
+  a Makefile knob for which map pair the disk is built from.
+  `documentation/procedural-maps.md` has the order and the open question about
+  sprite palette indices below 16.
 
 ## Decisions already settled
 
@@ -154,6 +161,15 @@ Do not re-litigate these without new measurements.
 
 ## Done
 
+- **Procedural map generation, stage one.** `tools/genmap.py` turns a mission
+  YAML — type, climate, ruggedness, rivers/hills/lakes and their sizes — into
+  the same height and colour PNGs `convmap.py` already eats, reproducibly from
+  one seeded stream, with `maps/palette.yaml` as the shared index ramp both
+  sides will read. Nothing generated is on the disk yet; the build still ships
+  the hand-drawn pair. Worth knowing: a generated map uses 48 palette entries
+  against the hand-drawn one's ~170, which leaves 143 free rather than 12 —
+  the budget that limits the game to two figures is a property of that
+  colourmap, not of the engine.
 - Calypsi toolchain, d81 build with `autoboot.c65`, resources as SEQ files.
 - Minimal voxel engine, 160x192 double buffered, ASWD/RF to fly.
 - Profiler (`src/profile.c`, `tools/profread.py`) with a raster-calibrated

@@ -534,6 +534,19 @@ free**, which `convmap.py` prints at the end of every run. A third figure
 needs fewer colours each, or shared colours between them, and the converter
 will say so rather than quietly painting terrain in a sprite colour.
 
+**Maps can also be generated rather than drawn.** `tools/genmap.py` turns a
+mission YAML in `maps/` into `hmapNN.png`/`cmapNN.png` — the same two shapes
+`convmap.py` reads — from one seeded RNG stream, so a seed and a YAML file
+reproduce a map byte for byte. `maps/palette.yaml` is the shared index ramp:
+water at 16..23 by depth, then one contiguous 40-step land ramp at 24..63, with
+the RGB behind those indices chosen by the mission's `climate`. Nothing
+generated is on the disk yet — the Makefile still names `resources/D1.png` —
+and the previewer and `mission.bin` are not written.
+`documentation/procedural-maps.md` has the design, what stage one does, and the
+traps found building it (a lake flood will flood the ocean; a river arriving at
+the coast will raise the sea; fold ridged noise once at the end, not per
+octave).
+
 Height units are a quarter of a map cell — the source is 4x the renderer's 256-cell grid and the heights were not rescaled — and `SCALE_H` in `src/voxel.c` folds that in. `HGT_SIZE` does not change this: a finer heightmap subdivides each cell rather than widening the world, so the world stays 256 cells across whatever the map resolution.
 
 The maps are **exomizer-crunched**, which is what lets any resolution above
