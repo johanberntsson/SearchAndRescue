@@ -13,7 +13,7 @@ aftershocks that reshape the landscape mid-flight. `documentation/vision.md` has
 ## Status
 
 Mission one exists, end to end: a title screen, a mission list, a briefing, a
-flight, and a debrief when you find the survivor and file a report on them.
+flight, and a debrief when you find a lost person and file a report on them.
 
 - 320x152 full-colour 3D view, double buffered, over a six-row 40-column text panel
 - 512x512 height and 1024x1024 colour maps, exomizer-crunched on the disk and
@@ -25,7 +25,7 @@ flight, and a debrief when you find the survivor and file a report on them.
   renderer was all C; a real MEGA65 runs a few percent slower than the emulator
 - Altitude, heading, GPS coordinates and frame rate in the panel, with an overview
   map of the whole world and a crosshair showing where you are
-- One survivor, waving from the top of the pyramid at 46.713N 8.110E. A software
+- One lost person, waving from the top of the pyramid at 46.713N 8.110E. A software
   billboard drawn over the finished terrain: scaled by distance, and clipped
   against the heightfield with the same y-buffer the ray march already keeps, so
   a ridge in front of them hides their feet
@@ -36,6 +36,8 @@ Getting there meant building a profiler first (`src/profile.c`, read with
 `tools/profread.py`) rather than guessing. The compiler's 32-bit multiply turned out
 to be 64% of the frame at 2203 cycles a go, against 85 on the hardware multiplier.
 See `todo.md` for what is next.
+
+![Mission 1: finding a lost person](screenshots/screenshot-260811.png)
 
 ## Building
 
@@ -73,7 +75,7 @@ After the title screen and the briefing, `SPACE` launches the flight.
 | `1` / `2` / `3` | speed limiter: cinematic, normal, sport |
 | `SPACE` | file a report, and go on from any screen |
 
-A report only counts with the survivor on screen and within about ten map
+A report only counts with the lost person on screen and within about ten map
 cells — near enough to have actually seen them.
 
 ## Layout
