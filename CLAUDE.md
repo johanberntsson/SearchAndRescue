@@ -7,10 +7,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A MEGA65 heightfield voxel flight simulator / drone search-and-rescue game, written in C (Calypsi) with the rendering inner loop in 45GS02 assembly. `documentation/vision.md` holds the full technical and gameplay design; `todo.md` is the authoritative "what's next" and should be updated as work lands.
 
 Currently: two missions, end to end. A title screen, a mission list, a
-briefing, a flight, and a debrief — the survivor on the pyramid at 46.713N
+briefing, a flight, and a debrief — the lost hiker on the pyramid at 46.713N
 8.110E to be found and reported, and an EpiPen to be dropped to a pair of
-hikers by the lake at 46.597N 8.227E. Underneath is the voxel engine at about
-12.5 fps — a 320x152 3D view over a six-row 40-column text panel, with 512x512
+hikers by the lake at 46.597N 8.227E. A flight also carries a wind that blows
+the drone about, a battery that runs it out, and per-mission weather; it can
+end four ways, all of them the same debrief page with different words on it.
+Underneath is the voxel engine at about 12.5 fps — a 320x152 3D view over a six-row 40-column text panel, with 512x512
 height and 1024x1024 colour maps unpacked into attic RAM at boot, marching 160
 rays and writing each to two neighbouring pixels; see Performance.
 

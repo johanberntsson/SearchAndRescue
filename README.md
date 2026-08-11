@@ -15,7 +15,7 @@ aftershocks that reshape the landscape mid-flight. `documentation/vision.md` has
 Two missions exist, end to end: a title screen, a mission list, a briefing, a
 flight, and a debrief. They are deliberately the same flight with different
 words on it — fly to somebody and press a key — because that is where the
-engine is: **The Lost Hiker** wants a report filed on a person waving from a
+engine is: **The Lost Hiker** wants a report filed on a hiker waving from a
 summit, and **First Aid** wants an EpiPen dropped to a pair of hikers by a
 lake, with only one EpiPen aboard and a failed mission if it goes down in the
 wrong place.
@@ -30,7 +30,7 @@ wrong place.
   renderer was all C; a real MEGA65 runs a few percent slower than the emulator
 - Altitude, heading, GPS coordinates and frame rate in the panel, with an overview
   map of the whole world and a crosshair showing where you are
-- Two software billboards — a lost person waving from the top of the pyramid at
+- Two software billboards — a lost hiker waving from the top of the pyramid at
   46.713N 8.110E, and a casualty and their friend on the lake shore at 46.597N
   8.227E — drawn over the finished terrain: scaled by distance, and clipped
   against the heightfield with the same y-buffer the ray march already keeps, so
@@ -51,7 +51,7 @@ Getting there meant building a profiler first (`src/profile.c`, read with
 to be 64% of the frame at 2203 cycles a go, against 85 on the hardware multiplier.
 See `todo.md` for what is next.
 
-![Mission 1: finding a lost person](screenshots/screenshot-260811.png)
+![Mission 2: the EpiPen delivery, in the rain by the lake](screenshots/screenshot-260812.png)
 
 ## Building
 
@@ -98,7 +98,7 @@ it does not, and touching the hillside destroys it. Real drones turn their
 obstacle sensors off in sport too, so the fastest mode is the one that will fly
 you into a mountain.
 
-A report only counts with the lost person on screen and within about ten map
+A report only counts with the lost hiker on screen and within about ten map
 cells — near enough to have actually seen them. A cargo drop does not care
 where the camera is pointing but wants you within five, and there is only one
 of whatever is in the bay: release it anywhere else and the mission is lost.

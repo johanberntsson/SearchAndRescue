@@ -3,17 +3,25 @@
 ## Where it is
 
 Two missions, end to end: title, mission list, briefing, flight, debrief.
-Mission one finds the survivor on the pyramid at 46.713N 8.110E — get within
+Mission one finds the lost hiker on the pyramid at 46.713N 8.110E — get within
 ten cells with them on screen and press `SPACE`. Mission two drops an EpiPen to
 a pair of hikers on the lake shore at 46.597N 8.227E — get within five cells
-and press `RETURN`, and it fails if the one EpiPen goes down anywhere else.
-`RUN/STOP` abandons a flight, and sport mode (`3`) has no terrain following, so
-the third way to fail is to fly into a hill. The briefing gives the fix and the
-panel gives your own.
+and press `RETURN`. The briefing gives the fix and the panel gives your own.
+
+A flight can end four ways. The job done; the one EpiPen released in the wrong
+place; the drone flown into a hill, which only sport mode allows; or the
+battery flat, which takes about four minutes at normal speed. `RUN/STOP`
+abandons one at any time. All four are the same debrief page with different
+words on it, the same way the two missions are the same flight.
+
+Three things happen to the drone whatever the pilot does: the wind blows it
+about and veers every few seconds, the battery runs down faster in sport, and
+mission two flies in rain under an overcast sky.
 
 Underneath: a 320x152 3D view over a six-row 40-column text panel with an
-overview map, 12.5 fps (`PROFILE=0`, default map sizes). The march is 160
-rays; each fills the two pixels it owns.
+overview map, 12.5 fps (`PROFILE=0`, default map sizes; the rain costs 0.68 ms
+of that on mission two). The march is 160 rays; each fills the two pixels it
+owns.
 
 Build knobs, all in the Makefile:
 
@@ -47,6 +55,14 @@ fresh screenshot against the first one: clearly more detail, and faster than
 it started. The optimisation ideas left in Open below are there so they are
 not rediscovered from scratch, **not** as a queue to work through — the next
 work is the game, not another few percent.
+
+**And the game layer is at a natural stopping point too**, called on 12 Aug
+2026: two missions, four ways for a flight to end, wind, battery and weather,
+all of it driven from the mission table rather than from branches. The shape
+is proven — a third mission is data plus a sprite sheet. What is actually
+scarce now is not ideas but *memory*: about 800 bytes of the 32K and 80 of the
+low free RAM, with the easy reclaims already spent. Read the Open note on
+`cstack` before starting anything large.
 
 - **Flight feel.** The keys are all there now, but thrust is still a per-frame
   constant that jumps to full speed and back. Wanted: long push → big speed
@@ -157,7 +173,7 @@ Do not re-litigate these without new measurements.
   pixel-identical: carried the write pointer between spans, moved the
   position's whole-cell bytes into the map pointer, biased the height
   difference positive.
-- 320-wide rendering behind `WIDE=1`.
+- 320-wide rendering behind `WIDE=1`, since retired — see Weather below.
 - **Overview map and GPS readout, 12.9 → 12.7 fps.** `convmap.py` ships the
   colourmap scaled to 32x32 as sixteen full-colour character tiles, so the
   MEGA65 only has to name them; the crosshair is drawn into the map and lifted
@@ -226,8 +242,9 @@ Do not re-litigate these without new measurements.
   which **12 are left**, and that is what limits a third. Figures live in bank
   1 and `sprite_select` DMAs the flight's own into the near buffer. To pay for
   the code, the renderer's three per-ray tables moved to the 2304 bytes of
-  chip RAM at `$1600-$1EFF` that the linker rules hand to an unused section —
-  `WIDE=1` does not link without it.
+  chip RAM at `$1600-$1EFF` that the linker rules hand to an unused section.
+  That was the first thing to go there; the weather entry above spent the
+  rest.
 - **Mission one**: title, mission list, briefing, flight, debrief, and the
   drone controls a real one has (WASD, RF, QE gimbal, 123 speed, `SPACE` to
   report). Full-screen text pages cost no pixels — the display picks text or
