@@ -1,3 +1,4 @@
 build/
 maps/*.png
+maps/*.marks.yaml
 __pycache__/

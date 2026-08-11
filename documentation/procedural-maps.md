@@ -1,11 +1,12 @@
 # Procedural map generation — design summary
 
-Status: **stage one is built** — `tools/genmap.py` turns a mission YAML into a
-height/colour map pair, and `maps/` holds the palette definition and three
-example missions. The previewer and `mission.bin` are not written yet, and
-nothing generated is on the disk: the build still ships the hand-drawn pair in
-`resources/`. See "As built" at the end for what the tool actually does and
-what was learned making it.
+Status: **stages one and two are built** — `tools/genmap.py` turns a mission
+YAML into a height/colour map pair, and `tools/preview.py` flies it on the PC
+with the game's own renderer. `maps/` holds the palette definition and three
+example missions. `mission.bin` is not written yet, and nothing generated is on
+the disk: the build still ships the hand-drawn pair in `resources/`. See "As
+built" at the end for what the tools actually do and what was learned making
+them.
 
 This covers **build-time map generation only**. Runtime (on-device) generation
 is an explicit future possibility, not part of this phase — see "Out of scope"
@@ -308,11 +309,59 @@ about. Two consequences worth keeping:
   along every band boundary**. A lattice cell every four map cells reads as
   patches of vegetation instead.
 
+## As built (stage two): the previewer
+
+```sh
+python3 tools/preview.py maps/island.yaml          # fly it
+python3 tools/preview.py maps/island.yaml --shot out.png --at 137,117,0,162
+```
+
+`W`/`S`/`A`/`D`, `R`/`F`, `Q`/`E` and `1`/`2`/`3` are the game's controls;
+`M` marks the current position, `L` reloads after a rerun of `genmap.py`, `ESC`
+quits. tkinter and Pillow, no new dependency beyond `python3-tkinter`.
+
+**It is the game's renderer, not a lookalike.** The band schedule, the position
+update in 8.8 with its 16-bit wrap, the biased horizon, the y buffer, the map
+sampling, the sky, the flight model and the panel readouts are all the ones in
+`src/` — the hardware walks a column at a time and this walks a *step* at a
+time across all 160 rays, which is the same front-to-back order with the loops
+exchanged. Maps are read through `convmap.py`'s own loaders, so what is flown
+is what the disk would carry, down to the box-averaged heightmap and the sky
+gradient's palette entries.
+
+**The constants are read out of the C source at startup, not copied.**
+`C_DEFINES` names the `#define`s and the file each lives in, and the sine table
+and the speed limits are parsed out too; if one moves or becomes an expression
+the previewer exits saying so rather than quietly flying a different game. That
+is the whole difference between a tool that stays honest and one that drifts a
+release later.
+
+**Checked against the machine, not by eye.** The panel gives the camera exactly
+— `LAT`/`LON` are the cell, `ALT` the height, `HDG` the angle — so a screenshot
+from xemu can be reproduced here. At the same camera, over the 319 columns the
+screenshot contains, **2 pixels of 48488 differ**, and the sub-cell offset the
+panel cannot report was found by search. The picture is the machine's picture.
+
+Worth knowing:
+
+- **it runs at 12.5 frames a second on purpose.** Every rate in the flight
+  model is per *frame*, so a preview at 60 fps would be a drone flying five
+  times as fast. The frame's own cost comes off the wait. Rendering is 4 ms.
+- **no wind and nothing crashes.** The wind would blow you off a spot while you
+  were writing it down; the ground clamp is there but sport mode's crash is
+  not. This is an inspection tool.
+- `M` prints the position as a YAML item block and appends it to
+  `<mission>.marks.yaml`, so nothing is lost to a scrolled terminal. Item
+  coordinates are **map pixels at the generated size** — a quarter of a cell at
+  1024, which converts to the game's 8.8 position exactly.
+- items already in the YAML are drawn as pins, projected with `sprite.c`'s own
+  numbers and clipped against the march's y buffer at their depth — so the
+  question "can this be seen from the air" is answered by the same arithmetic
+  that will answer it on the MEGA65.
+
 ### Next, in order
 
-1. The previewer, which is the point of all this — terrain is judged by flying
-   it, not by looking at a PNG from above.
-2. `mission.bin`, and with it the item coordinates the previewer is for.
-3. A Makefile knob for which map pair the disk is built from. Note that
+1. `mission.bin`, and with it the item coordinates the previewer collects.
+2. A Makefile knob for which map pair the disk is built from. Note that
    `convmap.py` hands sprites any free index including 3..15, which the design
    reserves; worth settling before a generated map ships.

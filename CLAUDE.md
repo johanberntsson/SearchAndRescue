@@ -542,10 +542,30 @@ water at 16..23 by depth, then one contiguous 40-step land ramp at 24..63, with
 the RGB behind those indices chosen by the mission's `climate`. Nothing
 generated is on the disk yet — the Makefile still names `resources/D1.png` —
 and the previewer and `mission.bin` are not written.
-`documentation/procedural-maps.md` has the design, what stage one does, and the
-traps found building it (a lake flood will flood the ocean; a river arriving at
-the coast will raise the sea; fold ridged noise once at the end, not per
-octave).
+`documentation/procedural-maps.md` has the design, what is built, and the traps
+found building it (a lake flood will flood the ocean; a river arriving at the
+coast will raise the sea; fold ridged noise once at the end, not per octave).
+
+**`tools/preview.py` flies a generated map on the PC, and it is this renderer
+rather than a lookalike.** The band schedule, the 8.8 position update with its
+16-bit wrap, the biased horizon, the y buffer, the map sampling, the sky, the
+flight model and the panel readouts are all the ones in `src/`; the hardware
+walks a column at a time and the previewer walks a *step* at a time across all
+160 rays, which is the same order with the loops exchanged. Three things about
+it:
+
+- **it reads the renderer's constants out of the C source** (`C_DEFINES` names
+  each `#define` and its file, and the sine table and speed limits are parsed
+  too). A constant that moves or becomes an expression stops the tool with a
+  message instead of quietly flying a different game. Maps go through
+  `convmap.py`'s own loaders for the same reason.
+- **verified against the machine, not by eye.** The panel reports the camera
+  exactly, so a xemu screenshot can be reproduced: at the same camera, 2 pixels
+  of 48488 differ. If a change to `voxel.c` ever breaks that, the previewer is
+  the cheapest place to notice.
+- it runs at **12.5 fps on purpose** — every rate in the flight model is per
+  frame, so a faster preview is a faster drone. No wind and no crash: it is an
+  inspection tool, and `M` marks a position in the form the mission YAML wants.
 
 Height units are a quarter of a map cell — the source is 4x the renderer's 256-cell grid and the heights were not rescaled — and `SCALE_H` in `src/voxel.c` folds that in. `HGT_SIZE` does not change this: a finer heightmap subdivides each cell rather than widening the world, so the world stays 256 cells across whatever the map resolution.
 

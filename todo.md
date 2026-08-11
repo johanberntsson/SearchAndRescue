@@ -82,13 +82,12 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
 - One billboard, one depth. Several at different depths need either a clip
   step per sprite (another pass of the march) or a real per-column depth
   buffer. Sorting them and snapshotting at the nearest is probably enough.
-- **Procedural maps, stage two.** `tools/genmap.py` generates a map pair from a
-  YAML file now (see Done). What it needs next is the Python previewer, because
-  terrain is judged by flying it and not by looking at a PNG; then
-  `mission.bin` and the item coordinates the previewer exists to collect; then
-  a Makefile knob for which map pair the disk is built from.
-  `documentation/procedural-maps.md` has the order and the open question about
-  sprite palette indices below 16.
+- **Procedural maps, stage three.** The generator and the previewer are both
+  done (see Done). Next is `mission.bin` — the pre-parsed struct the game reads
+  instead of hardcoded coordinates, which is what the previewer's `M` key
+  exists to fill in — and then a Makefile knob for which map pair the disk is
+  built from. `documentation/procedural-maps.md` has the order and the open
+  question about sprite palette indices below 16.
 
 ## Decisions already settled
 
@@ -161,6 +160,15 @@ Do not re-litigate these without new measurements.
 
 ## Done
 
+- **The previewer, `tools/preview.py`.** Flies a generated map on the PC with
+  the game's own renderer — the same march, projection, map sampling, sky and
+  flight model, at the same 12.5 fps, because every rate in the flight model is
+  per frame. Its constants are **read out of the C source** at startup rather
+  than copied, so it cannot drift; checked against a xemu screenshot at the
+  same camera, **2 pixels of 48488 differ**. `M` marks a position in the form
+  the mission YAML wants, which is where item coordinates will come from; items
+  already in the file are drawn as pins clipped against the march's own y
+  buffer. tkinter and Pillow, no new dependency. Nothing in `src/` changed.
 - **Procedural map generation, stage one.** `tools/genmap.py` turns a mission
   YAML — type, climate, ruggedness, rivers/hills/lakes and their sizes — into
   the same height and colour PNGs `convmap.py` already eats, reproducibly from

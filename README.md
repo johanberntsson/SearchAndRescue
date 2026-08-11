@@ -50,9 +50,13 @@ Off to the side, and not on the disk yet: **maps can now be generated instead of
 drawn.** `tools/genmap.py` turns a short YAML description — island or mountains
 or flatlands, a climate, how many rivers and lakes and hills, how rugged — into
 the same height/colour PNG pair the converter already reads, reproducibly from
-a seed. `maps/` holds the shared palette and three examples;
-`documentation/procedural-maps.md` has the design and what the first stage
-actually does.
+a seed. `tools/preview.py` then flies one on the PC **with the game's own
+renderer** — the same march, projection, map sampling and flight model, at the
+same 12.5 frames a second, with the constants read out of `src/` rather than
+copied — so terrain can be judged from the air and item coordinates noted down
+by flying to them. At the same camera it draws the same picture as the machine
+to within two pixels. `maps/` holds the shared palette and three examples;
+`documentation/procedural-maps.md` has the design and what is built so far.
 
 Getting there meant building a profiler first (`src/profile.c`, read with
 `tools/profread.py`) rather than guessing. The compiler's 32-bit multiply turned out
@@ -68,7 +72,9 @@ You will need:
 - [Calypsi 6502 tools](https://github.com/hth313/Calypsi-tool-chains/releases) 5.18 or later
 - [Xemu](https://github.com/lgblgblgb/xemu) for `xemu-xmega65`
 - Ruby, for the bundled `tools/diskutil.rb`
-- Python with Pillow and NumPy, for the map converter
+- Python with Pillow and NumPy, for the map converter and the generator.
+  `tools/preview.py` also wants tkinter (`python3-tkinter` on Fedora,
+  `python3-tk` on Debian) and PyYAML
 - [exomizer](https://bitbucket.org/magli143/exomizer/wiki/Home), which crunches the
   maps so they fit a D81. `tools/convmap.py` looks for it in `$EXOMIZER`, at
   `tools/exomizer`, in an `ozmoo-z6` checkout beside this project, and on `PATH`
