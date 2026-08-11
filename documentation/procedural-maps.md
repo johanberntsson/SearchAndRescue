@@ -336,11 +336,31 @@ the previewer exits saying so rather than quietly flying a different game. That
 is the whole difference between a tool that stays honest and one that drifts a
 release later.
 
-**Checked against the machine, not by eye.** The panel gives the camera exactly
-— `LAT`/`LON` are the cell, `ALT` the height, `HDG` the angle — so a screenshot
-from xemu can be reproduced here. At the same camera, over the 319 columns the
-screenshot contains, **2 pixels of 48488 differ**, and the sub-cell offset the
-panel cannot report was found by search. The picture is the machine's picture.
+**Checked against the machine, not by eye, and the check is checked in.** The
+panel gives the camera exactly — `LAT`/`LON` are the cell, `ALT` the height,
+`HDG` the angle — so a screenshot from xemu can be reproduced here, and at the
+same camera **every one of the 48336 palette indices is identical**. The
+sub-cell fraction the panel cannot report is recovered by search.
+
+```sh
+python3 tools/genmap.py maps/island.yaml    # the maps are not in git
+python3 tools/checkview.py                  # 4 seconds, no emulator
+```
+
+`tools/checkview.py` is that comparison as a command, against a reference
+screenshot in `documentation/reference/` whose filename carries the camera.
+**Run it after touching the renderer.** The previewer is a second
+implementation of `src/voxel_asm.s`, and a second implementation is a liability
+the day somebody changes one and not the other — it would go on drawing a
+confident picture of a renderer that no longer exists. Reading the constants
+out of the C source covers the numbers; this covers the algorithm. Both were
+tested by breaking them on purpose: `SCALE_H` 25→26 moves 13% of the pixels and
+a half-step error in the march moves 2.9%, and the check fails on either.
+
+A deliberate change to the renderer makes the *reference* stale rather than the
+previewer wrong. `checkview.py`'s header has the three commands for taking a
+new one, since there is still no Makefile knob for building a disk from a
+generated map.
 
 Worth knowing:
 

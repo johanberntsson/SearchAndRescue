@@ -54,8 +54,9 @@ a seed. `tools/preview.py` then flies one on the PC **with the game's own
 renderer** — the same march, projection, map sampling and flight model, at the
 same 12.5 frames a second, with the constants read out of `src/` rather than
 copied — so terrain can be judged from the air and item coordinates noted down
-by flying to them. At the same camera it draws the same picture as the machine
-to within two pixels. `maps/` holds the shared palette and three examples;
+by flying to them. At the same camera it draws the machine's picture exactly,
+and `tools/checkview.py` is that comparison as a four-second command to run
+after touching the renderer. `maps/` holds the shared palette and three examples;
 `documentation/procedural-maps.md` has the design and what is built so far.
 
 Getting there meant building a profiler first (`src/profile.c`, read with

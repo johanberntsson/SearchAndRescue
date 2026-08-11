@@ -559,10 +559,16 @@ it:
   too). A constant that moves or becomes an expression stops the tool with a
   message instead of quietly flying a different game. Maps go through
   `convmap.py`'s own loaders for the same reason.
-- **verified against the machine, not by eye.** The panel reports the camera
-  exactly, so a xemu screenshot can be reproduced: at the same camera, 2 pixels
-  of 48488 differ. If a change to `voxel.c` ever breaks that, the previewer is
-  the cheapest place to notice.
+- **verified against the machine, not by eye — and the check is a command.**
+  The panel reports the camera exactly, so a xemu screenshot can be reproduced;
+  at the same camera every one of the 48336 palette indices is identical.
+  `python3 tools/checkview.py` is that comparison against a reference
+  screenshot in `documentation/reference/` (4 seconds, no emulator; it needs
+  `genmap.py` to have written the maps, which are not in git). **Run it after
+  touching the renderer.** A failure means the two implementations disagree —
+  either `preview.py` has not caught up, or the change was deliberate and the
+  reference screenshot is stale. Proved to catch both kinds of drift by
+  breaking each on purpose.
 - it runs at **12.5 fps on purpose** — every rate in the flight model is per
   frame, so a faster preview is a faster drone. No wind and no crash: it is an
   inspection tool, and `M` marks a position in the form the mission YAML wants.

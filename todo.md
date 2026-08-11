@@ -165,7 +165,9 @@ Do not re-litigate these without new measurements.
   flight model, at the same 12.5 fps, because every rate in the flight model is
   per frame. Its constants are **read out of the C source** at startup rather
   than copied, so it cannot drift; checked against a xemu screenshot at the
-  same camera, **2 pixels of 48488 differ**. `M` marks a position in the form
+  same camera, **every one of the 48336 palette indices is identical**, and
+  `tools/checkview.py` is that check as a four-second command with no emulator
+  in it — **run it after touching the renderer**. `M` marks a position in the form
   the mission YAML wants, which is where item coordinates will come from; items
   already in the file are drawn as pins clipped against the march's own y
   buffer. tkinter and Pillow, no new dependency. Nothing in `src/` changed.
