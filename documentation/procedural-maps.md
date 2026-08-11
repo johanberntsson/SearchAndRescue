@@ -301,10 +301,26 @@ about. Two consequences worth keeping:
   bell around the middle: a `range` of 0.8 delivers about half of that, and
   almost every pixel sits near 0.5 — which is exactly where the fold above puts
   its crease, so an unstretched ridged map is nearly all ridge.
-- Steepest descent down a smooth field is a **straight line**. Rivers follow a
-  blurred copy of the terrain (the raw surface has a noise pit every few pixels
-  and stops a walk immediately) with a little noise on top, which bends the
-  path where the ground is flat and leaves it alone where it is steep.
+- **A river digs itself into a canyon.** The channel floor was `min(run,
+  terrain - RIVER_DEPTH)` read off the live map — but a disc flattens the
+  ground several pixels *ahead* of the walk, so when the walk arrives it reads
+  its own channel floor and cuts RIVER_DEPTH below that again. Every step took
+  another notch; after thirty the river was below sea level, where the sea pass
+  flattens it to the sea plane and the depth shading paints it in the darkest
+  water there is. It read as a black line ruled across the map and as a gash of
+  noise in the 3D view. Measure the channel against a **pristine copy** of the
+  terrain, and stop the river when it reaches the sea plane.
+- **Meander noise may only choose between the descenders.** Steepest descent
+  down a smooth field is a straight line, but noise added to the field the
+  termination test reads is a pit dug in front of the river: too little and the
+  path stays straight, too much and it stops after three pixels. Pick the
+  neighbours that are genuinely downhill on the blurred field, and let the
+  noise choose *among those*. It cannot stall and it cannot loop, because the
+  field falls at every step.
+- **A pool at the end of a river cannot be flooded against live water.** It is
+  surrounded by that river's own channel, so the "a basin cannot grow into
+  standing water" rule walls it in at one pixel. Block on the water as it stood
+  before the river set out.
 - Colour dither at one-pixel frequency is not texture, it is **salt and pepper
   along every band boundary**. A lattice cell every four map cells reads as
   patches of vegetation instead.
@@ -357,10 +373,12 @@ out of the C source covers the numbers; this covers the algorithm. Both were
 tested by breaking them on purpose: `SCALE_H` 25→26 moves 13% of the pixels and
 a half-step error in the march moves 2.9%, and the check fails on either.
 
-A deliberate change to the renderer makes the *reference* stale rather than the
-previewer wrong. `checkview.py`'s header has the three commands for taking a
-new one, since there is still no Makefile knob for building a disk from a
-generated map.
+A deliberate change to the renderer — **or to the generator**, since a
+different map under the same camera fails it just the same — makes the
+*reference* stale rather than the previewer wrong. That is not hypothetical:
+the river fix above moved 12 pixels of the island and the check said so.
+`checkview.py`'s header has the three commands for taking a new screenshot,
+since there is still no Makefile knob for building a disk from a generated map.
 
 Worth knowing:
 

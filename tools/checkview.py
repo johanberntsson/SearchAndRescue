@@ -7,10 +7,10 @@ With no arguments it uses the reference screenshot in documentation/reference/,
 so the check needs no emulator and takes a couple of seconds:
 
     $ python3 tools/checkview.py
-    view: 319x152 of 320 at (82,104), 2x   (PAL clips the last column)
+    view: 318x152 of 320 at (82,104), 2x   (PAL clips the last column)
     palette: worst colour 1.0 from an entry
-    camera: cell 137,117 angle 0 height 162, sub-cell 64,46 by search
-    0 of 48488 palette indices differ -- OK
+    camera: cell 115,115 angle 0 height 162, sub-cell 192,46 by search
+    0 of 48336 palette indices differ -- OK
 
 The previewer is a second implementation of `src/voxel_asm.s`, and a second
 implementation is a liability the day somebody changes one and not the other:
@@ -20,9 +20,10 @@ algorithm, so this covers the algorithm -- **run it after touching the
 renderer.** A failure means the two disagree; which of them is now wrong is for
 you to say.
 
-If the renderer is changed *deliberately*, the reference screenshot is what
-goes stale. Take a new one -- there is no Makefile knob for building a disk
-from a generated map yet, so it is three commands:
+If the renderer or the *generator* is changed deliberately -- a different map
+under the same camera fails this just as a different renderer does -- the
+reference screenshot is what goes stale. Take a new one; there is no Makefile
+knob for building a disk from a generated map yet, so it is three commands:
 
     make FLYNOW=1 build/autoboot.c65
     python3 tools/convmap.py maps/hmap03.png maps/cmap03.png \\
@@ -50,7 +51,7 @@ import preview as P                                       # noqa: E402
 
 REFERENCE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "documentation", "reference", "island-x137-y117-a0-h162.png")
+    "documentation", "reference", "island-x115-y115-a0-h162.png")
 
 # A colour in the screenshot should land exactly on the palette entry that put
 # it there; xemu's rendering of the VIC-IV palette is a unit or so out, which
@@ -64,7 +65,7 @@ def camera_from_name(path):
     m = re.search(r"-x(\d+)-y(\d+)-a(\d+)-h(-?\d+)", os.path.basename(path))
     if not m:
         sys.exit(f"{path}: no camera in the filename, and no --at given. "
-                 f"Name it like island-x137-y117-a0-h162.png, from the panel's "
+                 f"Name it like island-x115-y115-a0-h162.png, from the panel's "
                  f"LON/LAT/HDG/ALT.")
     return [int(v) for v in m.groups()]
 
@@ -197,10 +198,17 @@ def main():
         print(f"{args.diff}: {d.sum()} pixels marked")
 
     if n > args.max_diff:
-        print("\nThe previewer and the machine disagree. Either src/ changed "
-              "and tools/preview.py has not caught up, or the change to the "
-              "renderer was deliberate and the reference screenshot is stale "
-              "-- see this file's header for how to take a new one.")
+        print("\nThe two disagree. In order of likelihood:\n"
+              "  - tools/genmap.py changed, so the map under the camera is no "
+              "longer the one in the screenshot. A handful of pixels, usually "
+              "wherever the generator was touched.\n"
+              "  - the renderer in src/ changed and tools/preview.py has not "
+              "caught up, or the other way about. Usually a lot of pixels.\n"
+              "  - either change was deliberate, and it is the reference "
+              "screenshot that is stale.\n"
+              "Only the last needs a new screenshot; see this file's header. "
+              "--diff writes a map of what moved, which tells the three apart "
+              "faster than reasoning does.")
         return 1
     return 0
 

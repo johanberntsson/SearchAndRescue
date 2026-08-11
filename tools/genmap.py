@@ -131,8 +131,21 @@ RAMP_GAMMA = 1.8
 # steepest-descent walk falls into the first noise pit it meets and stops after
 # a few pixels; the blur is what gives it the macro slope to follow.
 FLOW_BLUR = 16
-MEANDER = 0.012       # how far the meander noise may lift or drop the flow field
 RIVER_DEPTH = 0.012      # how far the channel is cut below its own banks
+
+# The meander. It is added to the flow field only to *choose* between the
+# neighbours that already run downhill, never to decide whether the river goes
+# on at all: noise strong enough to bend a path is also strong enough to dig a
+# pit in front of it, and a river that stops at the first one is a river three
+# pixels long. Choosing among descenders cannot stall and cannot loop, because
+# the blurred field falls at every step.
+MEANDER = 0.006
+MEANDER_LATTICE = LATTICE << 4   # a bend every sixteen pixels, four map cells
+
+# Where a river ends when the macro slope pits out before it reaches any water:
+# the pool it would make, rather than nothing at all.
+RIVER_POOL = 400
+RIVER_POOL_RISE = 0.02
 
 # A lake stops growing when its surface has risen this far above the basin it
 # started in -- otherwise a shallow basin on a plain floods half the map before
@@ -368,6 +381,56 @@ def local_minima(h, water):
     return np.argwhere(low & ~water)
 
 
+def flood_basin(h, water, level, cy, cx, budget, rise, blocked=None):
+    """Flood the basin around one cell until it fills `budget` cells.
+
+    A priority flood: the region grows by repeatedly swallowing its lowest
+    frontier cell, so the water level only ever rises and the region is exactly
+    the basin that level fills. The surface is the highest cell taken, which is
+    the lip it would spill over.
+
+    A basin too shallow to hold the budget hits `rise` first and keeps whatever
+    it had -- better a small lake than a flooded plain.
+
+    `blocked` is the water this pool may not grow into, and it is not always
+    the live map: a pool at the end of a river is surrounded by that river's
+    own channel, so blocking on live water walls it in at one pixel. Passing
+    the water as it stood before the river set out lets the pool back up into
+    its own channel, which is what a pool does, while still refusing to spread
+    into a lake or the sea.
+    """
+    size = h.shape[0]
+    if blocked is None:
+        blocked = water
+    start = h[cy, cx]
+    seen = {(cy, cx)}
+    frontier = [(float(start), cy, cx)]
+    region = []
+    surface = start
+    while frontier and len(region) < budget:
+        hh, y, x = heapq.heappop(frontier)
+        if hh > start + rise:
+            break
+        surface = max(surface, hh)
+        region.append((y, x))
+        for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+            ny, nx = ny % size, nx % size
+            # Standing water is not somewhere a basin can grow into. Left in,
+            # the frontier reaches the coast, finds the sea to be the lowest
+            # thing available and spends the whole area budget painting ocean
+            # at the lake's own surface level -- a raised sheet of water
+            # halfway across the map.
+            if (ny, nx) not in seen and not blocked[ny, nx]:
+                seen.add((ny, nx))
+                heapq.heappush(frontier, (float(h[ny, nx]), ny, nx))
+
+    ys = np.array([p[0] for p in region])
+    xs = np.array([p[1] for p in region])
+    water[ys, xs] = True
+    level[ys, xs] = surface
+    return len(region)
+
+
 def fill_lakes(h, water, level, spec, stream):
     """Flood basins at local minima until each reaches its area budget.
 
@@ -404,33 +467,7 @@ def fill_lakes(h, water, level, spec, stream):
         if water[cy, cx]:
             continue
         placed += 1
-
-        start = h[cy, cx]
-        seen = {(cy, cx)}
-        frontier = [(float(start), cy, cx)]
-        region = []
-        surface = start
-        while frontier and len(region) < budget:
-            hh, y, x = heapq.heappop(frontier)
-            if hh > start + LAKE_RISE:
-                break
-            surface = max(surface, hh)
-            region.append((y, x))
-            for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
-                ny, nx = ny % size, nx % size
-                # Standing water is not somewhere a basin can grow into. Left
-                # in, the frontier reaches the coast, finds the sea to be the
-                # lowest thing available and spends the whole area budget
-                # painting ocean at the lake's own surface level -- a raised
-                # sheet of water halfway across the map.
-                if (ny, nx) not in seen and not water[ny, nx]:
-                    seen.add((ny, nx))
-                    heapq.heappush(frontier, (float(h[ny, nx]), ny, nx))
-
-        ys = np.array([p[0] for p in region])
-        xs = np.array([p[1] for p in region])
-        water[ys, xs] = True
-        level[ys, xs] = surface
+        flood_basin(h, water, level, cy, cx, budget, LAKE_RISE)
 
 
 def carve_rivers(h, water, level, spec, stream):
@@ -442,19 +479,24 @@ def carve_rivers(h, water, level, spec, stream):
     monotonically falling -- once the river has been down to a level it never
     climbs back, so a channel is always something water could run along rather
     than a groove draped over the noise.
+
+    **The channel is measured against the terrain as it was before any of this
+    ran.** Against the live map it digs itself in: a disc flattens the ground
+    several pixels ahead of the walk, so when the walk arrives there the ground
+    it reads is its own channel floor and it cuts RIVER_DEPTH below that again.
+    Every step took another notch out, and after thirty of them the river was
+    below sea level -- which the sea pass downstream then flattens and paints
+    in the deepest shade there is. That is a black canyon across the map, and
+    it is what a river looked like here until the pristine copy was kept.
     """
     count = COUNTS[spec["rivers"]]
     if not count:
         return
     radius = max(1, round(RIVER_SIZE[spec["river-size"]] * h.shape[0] / DEFAULT_SIZE))
     size = h.shape[0]
-    # The blur gives the walk a macro slope to follow; the noise on top of it
-    # is what makes a river meander. Steepest descent down a smooth field goes
-    # in a straight line, which is the one thing a river never does -- and the
-    # amplitude is small enough that it only bends the path where the ground is
-    # nearly flat, which is where real rivers wander too.
     flow = box_blur(h, max(1, round(FLOW_BLUR * size / DEFAULT_SIZE)))
-    flow = flow + MEANDER * (2.0 * value_noise(size, LATTICE << 3, stream.salt()) - 1.0)
+    wander = MEANDER * (2.0 * value_noise(size, MEANDER_LATTICE, stream.salt()) - 1.0)
+    surface = h.copy()
 
     # Sources in the top third of the terrain, so a river has somewhere to run
     # from; below that it would meet water within a few steps.
@@ -464,7 +506,7 @@ def carve_rivers(h, water, level, spec, stream):
 
     for pick in stream.choice(len(high), count):
         y, x = (int(v) for v in high[pick])
-        run = h[y, x]
+        run = surface[y, x]
         # The water that was already standing when this river set out: the sea,
         # the lakes, and whatever earlier rivers cut. It is both where this one
         # stops and where it may not write, because a channel arriving at the
@@ -476,17 +518,35 @@ def carve_rivers(h, water, level, spec, stream):
         for _ in range(4 * size):
             if standing[y, x]:
                 break            # reached the sea, a lake or another river
-            run = min(run, h[y, x] - RIVER_DEPTH)
+            run = min(run, surface[y, x] - RIVER_DEPTH)
+            if run <= spec["sea"]:
+                break            # down to the sea plane: there is nothing lower
             stamp_river(h, water, level, y, x, radius, run, standing)
-            best = None
+
+            # Every neighbour that is genuinely downhill, and the meander picks
+            # between them. The test that ends the river is on the blurred
+            # field alone, so the wander can bend the path without ever being
+            # able to stop it.
+            best, score = None, None
+            here = flow[y, x]
             for dy in (-1, 0, 1):
                 for dx in (-1, 0, 1):
                     if dy or dx:
                         ny, nx = (y + dy) % size, (x + dx) % size
-                        if best is None or flow[ny, nx] < flow[best[0], best[1]]:
-                            best = (ny, nx)
-            if flow[best] >= flow[y, x]:
-                break            # a pit in the macro slope: the river ends here
+                        if flow[ny, nx] < here:
+                            s = flow[ny, nx] + wander[ny, nx]
+                            if score is None or s < score:
+                                best, score = (ny, nx), s
+            if best is None:
+                # A pit in the macro slope. The river has to end in *something*
+                # -- a blue thread stopping in the middle of a plain is the one
+                # thing you notice from the air -- so it ends in the pool it
+                # would actually make, which on a plain with nowhere to drain
+                # is what happens to a river anyway.
+                flood_basin(h, water, level, y, x,
+                            round(RIVER_POOL * (size / DEFAULT_SIZE) ** 2),
+                            RIVER_POOL_RISE, blocked=standing)
+                break
             y, x = best
 
 
