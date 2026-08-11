@@ -9,6 +9,7 @@
 #include "sprite.h"
 #include "vic4.h"
 #include "voxel.h"
+#include "weather.h"
 
 #define TURN_RATE   2   // angle units per frame
 #define CLIMB_RATE  2   // height units per frame
@@ -104,27 +105,12 @@ static uint8_t wind_from;
 static int16_t wind_speed;
 static uint16_t wind_next;  // frames until it shifts again
 
-// xorshift16, seeded off the profiler's free-running clock when a flight
-// launches so that no two get the same weather. The state must never be zero,
-// which is the one value this generator cannot leave.
-static uint16_t rng_state = 1;
-
-static uint16_t rnd(void)
-{
-  uint16_t x = rng_state;
-
-  x ^= (uint16_t)(x << 7);
-  x ^= x >> 9;
-  x ^= (uint16_t)(x << 8);
-  rng_state = x;
-  return x;
-}
-
+// The gusts come out of weather_rnd, the same stream the rain's drops do --
+// one generator for all the weather rather than two.
 static void wind_start(void)
 {
-  rng_state = (uint16_t)profile_now32() | 1;
-  wind_from = (uint8_t)rnd();
-  wind_speed = WIND_MIN + (int16_t)(rnd() & (WIND_SPAN - 1));
+  wind_from = (uint8_t)weather_rnd();
+  wind_speed = WIND_MIN + (int16_t)(weather_rnd() & (WIND_SPAN - 1));
   wind_next = WIND_GUST;
   panel_wind(wind_from, WIND_MPS(wind_speed));
 }
@@ -137,8 +123,8 @@ static void wind_drift(void)
   if (--wind_next)
     return;
 
-  wind_from = (uint8_t)(wind_from + (rnd() & 15) - 8);
-  wind_speed += (rnd() & 1) ? 1 : -1;
+  wind_from = (uint8_t)(wind_from + (weather_rnd() & 15) - 8);
+  wind_speed += (weather_rnd() & 1) ? 1 : -1;
   if (wind_speed < WIND_MIN)
     wind_speed = WIND_MIN;
   else if (wind_speed > WIND_MAX)
@@ -319,6 +305,11 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
   panel_message(STANDBY);
   panel_speed(speed_mode);
   panel_cargo(mission_cargo_name(m));
+  // Seeded before anything asks for a random number, and the weather set
+  // before the wind because arming the rain scatters its first drops.
+  weather_seed((uint16_t)profile_now32());
+  weather_set(m->weather);
+
   // Both after panel_init, which would otherwise blank the readouts they set.
   battery = BATTERY_FULL;
   battery_warned = 0;

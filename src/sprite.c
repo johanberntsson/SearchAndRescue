@@ -30,6 +30,14 @@
 #define SPR_MAX  32
 #define SPR_SLOT (4 + SPR_MAX * SPR_MAX)
 
+// The figure is held in the loader's staging buffer rather than in one of its
+// own: the two are never live at the same time, and 32K has no room for a
+// kilobyte twice. See LOAD_STAGING for the invariant that makes it safe.
+#define spr_file load_staging
+#if SPR_SLOT > LOAD_STAGING
+#error "LOAD_STAGING is too small to hold a figure"
+#endif
+
 // The figures on disk, in the order missions number them. They all live in
 // bank 1 (SPRITE_STORE) and only the flight's own is copied down here.
 static const char *const spr_files[SPRITE_FIGURES] = {
@@ -37,7 +45,6 @@ static const char *const spr_files[SPRITE_FIGURES] = {
     "TERRAIN.SP2",  // 1: the pair by the lake, one of them down
 };
 
-static uint8_t spr_file[SPR_SLOT];
 static uint8_t spr_w, spr_h;
 
 static uint16_t spr_x, spr_y;  // 8.8 map position

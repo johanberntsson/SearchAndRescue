@@ -6,15 +6,20 @@
 #include "loader.h"
 #include "sprite.h"
 
-// Down from 2048 when the survivor sprite's tables went in: the program, its
-// data and its stack share 32K and the slack is now under a hundred bytes at
-// WIDE=1, where the per-ray tables are twice the size. More Kernal calls per
-// resource costs nothing measurable against half a kilobyte of copying each.
+// How much of the staging buffer one Kernal read fills. Down from 2048 when
+// the survivor sprite's tables went in: the program, its data and its stack
+// share 32K. More Kernal calls per resource costs nothing measurable against
+// half a kilobyte of copying each.
+//
+// This is a *chunk size*, not the buffer size. The palette is read whole and
+// is larger; see LOAD_STAGING.
 #define CHUNK 512
 
 // Kernal reads land in the 64K address space, so everything is bounced
-// through here and DMAd up into the banks above.
-static uint8_t bounce[CHUNK];
+// through here and DMAd up into the banks above. Shared with src/sprite.c,
+// which draws the flight's figure straight out of it -- see LOAD_STAGING in
+// loader.h for why the two can never collide.
+uint8_t load_staging[LOAD_STAGING];
 
 // What went wrong, for the screen to show. Loading happens with the game's
 // own display up, so a printf goes somewhere nobody can see -- and worse,
@@ -105,15 +110,15 @@ static uint16_t read_exact(int fd, uint8_t *dest, uint16_t length)
 }
 
 // Read `length` bytes from an already-open file into `dest`, through the
-// bounce buffer.
+// staging buffer, CHUNK bytes at a time.
 static int read_far(int fd, const char *name, uint32_t dest, uint32_t length)
 {
   while (length) {
     uint16_t want = length > CHUNK ? CHUNK : (uint16_t)length;
 
-    if (read_exact(fd, bounce, want) != want)
+    if (read_exact(fd, load_staging, want) != want)
       return fail("SHORT READ", name);
-    dma_copy((uint32_t)(uint16_t)bounce, dest, want);
+    dma_copy((uint32_t)(uint16_t)load_staging, dest, want);
     dest += want;
     length -= want;
     prog_done += want;
@@ -201,15 +206,18 @@ int load_resources(load_progress report)
   // uploading it while the text screen is still up would recolour the loading
   // message out of existence.
   //
-  // Read into the bounce buffer and moved up afterwards, rather than through
+  // Read into the staging buffer and moved up afterwards, rather than through
   // load_far, which HANGS on this one file: the Kernal never returns from the
   // open or the read that follows it. Same file, same 768 bytes, same buffer,
   // any destination -- only the call path differs, and load_far reads
   // TERRAIN.OVR two lines below perfectly happily. Not understood; the
   // arrangement below is the one that works.
-  if (load_small("TERRAIN.PAL", bounce, PALETTE_BYTES) != PALETTE_BYTES)
+  // Whole rather than in chunks, and it is the reason LOAD_STAGING is sized
+  // the way it is: 768 bytes went into a 512-byte buffer here for several
+  // commits, overrunning it by 256 every boot.
+  if (load_small("TERRAIN.PAL", load_staging, PALETTE_BYTES) != PALETTE_BYTES)
     return fail("SHORT READ", "TERRAIN.PAL");
-  dma_copy((uint32_t)(uint16_t)bounce, PALETTE_BUF, PALETTE_BYTES);
+  dma_copy((uint32_t)(uint16_t)load_staging, PALETTE_BUF, PALETTE_BYTES);
   progress_to(97);
   if (load_far("TERRAIN.OVR", OVERVIEW, OVERVIEW_BYTES))
     return -1;

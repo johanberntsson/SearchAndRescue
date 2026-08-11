@@ -7,6 +7,7 @@
 #include "profile.h"
 #include "sprite.h"
 #include "vic4.h"
+#include "weather.h"
 
 // The ray march walks in bands, doubling the step each band, so near ground is
 // sampled finely and the far distance cheaply. All three bands are the same
@@ -72,11 +73,17 @@ int16_t vx_horiz[NSTEPS];   // the horizon, biased per step: see CAM_BIAS
 // together to make the map pointer's bank byte. A table rather than shifts
 // because the shift count depends on the map size and the cost must not:
 // this is one `lda abs,x` either way, for four planes or sixteen.
+//
+// In the low free RAM at $1600, which is what retiring WIDE=1 paid for: a
+// kilobyte is 38% of everything the 32K had left for data. They are read by
+// the inner loop 10240 times a frame, so they have to stay *near* -- $1600 is
+// ordinary chip RAM the CPU addresses as cheaply as any other, so this costs
+// nothing per sample. Built by voxel_init, long after the last disk call.
 #if COL_AXIS > 1
-uint8_t vx_cplane_x[256], vx_cplane_y[256];
+LOW_FREE uint8_t vx_cplane_x[256], vx_cplane_y[256];
 #endif
 #if HGT_AXIS > 1
-uint8_t vx_hplane_x[256], vx_hplane_y[256];
+LOW_FREE uint8_t vx_hplane_x[256], vx_hplane_y[256];
 #endif
 
 // The assembly column routine's parameter block. Zero page because every one
@@ -242,6 +249,14 @@ void voxel_init(void)
   }
 }
 
+uint16_t voxel_column_offset(uint16_t raycol)
+{
+  // col_top addresses the row one *below* the bottom of the column, because
+  // that is where the span fill counts down from. Anything drawing downwards
+  // from the top wants one strip less.
+  return col_top[raycol] - FB_STRIDE;
+}
+
 uint8_t voxel_ground(uint16_t x, uint16_t y)
 {
 #if HGT_AXIS > 1
@@ -382,7 +397,12 @@ void voxel_render(uint32_t base, const camera *cam)
 
   {
     uint16_t t0 = PROF_NOW();
+
     sprite_draw(base);
+    // Last, so the rain is in front of the terrain and the figure both. It
+    // needs no clearing pass of its own: the sky DMA at the top of the next
+    // frame repaints every pixel before anything reads it.
+    weather_rain_draw(base);
     PROF_ADD(P_SPRITE, t0);
   }
 

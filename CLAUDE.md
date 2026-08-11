@@ -20,14 +20,13 @@ rays and writing each to two neighbouring pixels; see Performance.
 make run          # build build/sar.d81 and boot it in xemu
 make prg          # skip the disk, run the PRG directly (no resources available)
 make PROFILE=0    # without the per-column instrumentation; use this for timing
-make WIDE=1       # march 320 rays instead of doubling 160 pixels
 make FLYNOW=1     # skip the title and menus, launch straight into the flight
 make HGT_SIZE=1024 COL_SIZE=512     # map resolutions, 256..1024
 make release      # PROFILE=0 disk, copied to release/sar-latest.d81
 make clean
 ```
 
-`make release` spells `PROFILE=0 WIDE=0 FLYNOW=0` out in a sub-make rather
+`make release` spells `PROFILE=0 FLYNOW=0` out in a sub-make rather
 than leaning on the defaults, so the handed-out disk is the same one however
 the tree was last built; the map sizes are left to the defaults, because those
 *are* the shipping resolution. It shares `build/`, so it and an interactive
@@ -114,14 +113,26 @@ Next after that would be the 512-byte bounce buffer itself, or the sprite's
 1028.
 
 **`$1600-$1EFF` is 2304 bytes of ordinary chip RAM the linker rules hand to a
-section called `zpsave`, which nothing in this program uses** — the map says
-0.0% before `tan_tab`, `col_top` and `voxel_yclip` were put there with
-`__attribute__((section("zpsave")))`. It is near-addressable, so the move costs
-nothing per pixel, and without it `WIDE=1` no longer links: mission two's code
-and strings took the 32K past what the doubled tables need. Only things the
-*renderer* owns belong there. It is below `$2001`, where the C65 ROM keeps its
-own buffers, so nothing that has to survive a Kernal disk call may live in it —
-these tables are first written by `voxel_init`, long after the last one.
+section called `zpsave`, which nothing in this program uses** — the map said
+0.0% before anything was put there with `LOW_FREE` (`loader.h`). It is
+near-addressable, so the move costs nothing per access, and it is now the only
+place a table can go when the 32K runs out. It holds, of 2304 bytes: the three
+per-ray tables (800), the sprite's ramps (304), the rain (96) and the
+renderer's plane lookups (1024).
+
+Only things the *renderer* owns belong there. It is below `$2001`, where the
+C65 ROM keeps its own buffers, so nothing that has to survive a Kernal disk
+call may live in it — everything in it is first written after the last
+resource has been read.
+
+**This is what retired `WIDE=1`.** At 320 rays the per-ray tables are 1600
+bytes rather than 800 and the plane tables no longer fit — and those are the
+ones that cannot move, because the inner loop reads them 10240 times a frame
+and they have to stay near. Marching 320 rays was already a settled dead end
+(half the frame rate for a picture that barely changes), so the kilobyte is
+better spent. The march still has the code; `loader.h` `#error`s on `WIDE=1`
+with what would have to move to bring it back, rather than failing as an
+unexplained `cstack` placement error.
 
 The framebuffer is 320 wide whatever `WIDE` is set to, so a buffer is 48640
 bytes and B lives in bank 5. Bank 4 is free too whenever the heightmap is
@@ -376,6 +387,43 @@ whatever the sticks are doing, not only when you are moving. Flat is
 `FLIGHT_FLAT`, tested at the bottom of the loop with the other exits, and the
 readout is rewritten only when the figure moves, which at the fastest drain is
 every ninth frame.
+
+## The weather
+
+`src/weather.c` owns an overcast sky, the rain, and the one pseudo-random
+stream the weather uses (the wind's gusts come out of it too). Which weather a
+flight gets is a `weather` field in the mission table, like its cargo and its
+figure; mission two rains.
+
+**The sky costs nothing per frame.** `voxel_init` bakes only the *shape* of
+the gradient into the template it DMAs across the buffer — `SKY_BASE + y *
+SKY_SHADES / FB_HEIGHT` — so the sixteen colours it names are just palette
+entries. An overcast sky is sixteen `vic4_set_entry` calls at flight start and
+no new palette entries at all.
+
+**A clear sky is restored from the loaded palette, not recomputed.** The blue
+comes from `SKY_TOP`/`SKY_HORIZON` in `tools/convmap.py`; a second copy of
+those numbers in C would drift from them the first time anybody changed the
+sky. `vic4_set_range` puts the sixteen entries back exactly as they shipped —
+verified bit-identical against a screenshot from before the weather existed.
+
+**Rain is drawn last, after the billboard, and needs no clearing pass**: the
+sky DMA at the top of the next frame repaints every pixel before anything
+reads it. 48 drops in four layers, and the layers come from the low bits of
+the drop's index rather than from stored fields — speed, length and colour all
+from `i & 3`, which cannot get out of step with itself and costs no memory.
+Each streak leans one pixel right every second row using the same
+strip-crossing step `sprite.c` makes along a figure's width, and spawning is
+kept `RAIN_LEAN` columns clear of the right edge because leaning off the last
+strip would write past the framebuffer into the sky template at `$1C000`.
+
+State is two bytes a drop in `LOW_FREE` — a ray column and a row. The
+framebuffer offset is not stored: `voxel_column_offset` already has it in the
+march's own `col_top` table, so a lookup a frame is cheaper than 96 more bytes
+of a budget that tight, and it avoids `FB_COLUMN`'s 657-cycle multiply.
+
+**Measured cost, frozen camera, `PROFILE=0`: 0.68 ms a frame, 12.2 fps to
+12.1.**
 
 A report counts only if the survivor was **on screen in the frame just
 drawn** and within ten map cells (`sprite_reportable`). On screen is half the
@@ -696,6 +744,9 @@ view is the real one):
   back out free and exact: `(256 * inv_z) >> 8` is `inv_z`, so the correction
   is a subtraction folded into a per-step horizon table, and the low eight
   bits it discards are zero.
+
+**`WIDE=1` is retired** — see the low free RAM note under Memory map. The
+figures below are the measurements that were taken while it still built.
 
 Map resolution is two build knobs, `HGT_SIZE` and `COL_SIZE`, powers of two
 from 256 up to the source PNGs' 1024. Measured at 160 wide:

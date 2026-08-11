@@ -136,13 +136,18 @@ void screens_briefing(uint8_t mission_no)
   put_digits(10, 1, (uint16_t)(mission_no + 1), 1, PANEL_LABEL);
   vic4_puts(13, 1, m->name, PANEL_INK);
 
+  // The brief sits a row higher than it reads like it should, so that the
+  // weather line below fits without eating the blank row before OBJECTIVE.
+  // The page is full: rows 2, 6, 10 and 13 are the only separators left.
   for (i = 0; i < BRIEF_LINES; i++)
-    vic4_puts(2, (uint8_t)(4 + i), m->brief[i], PANEL_INK);
+    vic4_puts(2, (uint8_t)(3 + i), m->brief[i], PANEL_INK);
 
-  vic4_puts(2, 8, "LAST KNOWN POSITION", PANEL_LABEL);
-  put_position(22, 8, m, PANEL_INK);
-  vic4_puts(2, 9, "CARGO", PANEL_LABEL);
-  vic4_puts(22, 9, mission_cargo_name(m), PANEL_INK);
+  vic4_puts(2, 7, "LAST KNOWN POSITION", PANEL_LABEL);
+  put_position(22, 7, m, PANEL_INK);
+  vic4_puts(2, 8, "CARGO", PANEL_LABEL);
+  vic4_puts(22, 8, mission_cargo_name(m), PANEL_INK);
+  vic4_puts(2, 9, "WEATHER", PANEL_LABEL);
+  vic4_puts(22, 9, m->weather == WEATHER_RAIN ? "RAIN" : "CLEAR", PANEL_INK);
 
   vic4_puts(2, 11, "OBJECTIVE", PANEL_LABEL);
   vic4_puts(4, 12, m->objective, PANEL_INK);

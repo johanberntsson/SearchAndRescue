@@ -63,16 +63,53 @@
 // this target hand to a section called `zpsave`, which nothing in this
 // program puts anything in. It is near-addressable, so moving a table there
 // costs nothing per access, and the 32K the program shares is the scarcest
-// thing in the build -- WIDE=1 does not link without this.
+// thing in the build -- without this there is no room for a feature at all.
 //
 // **Only tables the renderer builds and owns.** It sits below $2001, where
 // the C65 ROM keeps its own buffers, so nothing that has to survive a Kernal
 // disk call may live here. Everything currently in it is first written after
 // the last resource has been read.
 //
-// Budget: 800 bytes of per-ray tables at 160 rays and 1600 at 320, plus 304
-// for the sprite's ramps. The link fails outright if it is overrun.
+// Budget, of 2304: 800 bytes of per-ray tables, 304 for the sprite's ramps,
+// 96 for the rain, and 1024 for the renderer's plane lookups. The link fails
+// outright if it is overrun.
+//
+// **That last kilobyte is why WIDE=1 is retired.** At 320 rays the per-ray
+// tables are 1600 bytes rather than 800 and the plane tables no longer fit,
+// and they are the ones that cannot move: the inner loop reads them 10240
+// times a frame, so they have to be near. Marching 320 rays was already a
+// settled dead end -- half the frame rate for a picture that barely changes,
+// see todo.md -- so the space is better spent. The renderer still has the
+// code for it; reviving it means finding another kilobyte first.
 #define LOW_FREE __attribute__((section("zpsave")))
+
+#if WIDE
+#error "WIDE=1 is retired: the plane tables now live in the low free RAM at \
+$1600, which only has room for them when the per-ray tables are half size. \
+The march still supports 320 rays -- see LOW_FREE in loader.h for what would \
+have to move to bring it back."
+#endif
+
+// The one near buffer everything is staged through. It has two users, and
+// they are never live at the same time:
+//
+//   - the loader bounces every Kernal read through it -- CHUNK-sized pieces
+//     for the maps and the overview, and the palette whole at 768 bytes;
+//   - src/sprite.c keeps the flight's billboard here and draws out of it.
+//
+// Loading and flying cannot overlap: the Kernal cannot open a file once
+// vic4_init has run, so nothing loads during a flight, and nothing draws
+// during loading. **Do not call a loader function while a flight is running**
+// -- it would repaint the figure being drawn.
+//
+// Sized by the sprite, which is the larger user at a 32x32 figure plus its
+// four byte header; src/sprite.c static-asserts against it. That the
+// palette's 768 bytes fit inside is the point rather than a happy accident:
+// the palette used to be read into a separate 512-byte bounce buffer and
+// overran it by 256 bytes every boot.
+#define LOAD_STAGING (4 + 32 * 32)
+
+extern uint8_t load_staging[LOAD_STAGING];
 
 // Where the palette waits for vic4_set_palette. It used to be a C array, and
 // the 768 bytes of it went to the survivor sprite when the 32K the program,

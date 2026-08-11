@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include "panel.h"
+#include "weather.h"
 
 // A GPS fix in millidegrees is a map cell and nothing else -- the world is
 // 256 cells square and a cell is one millidegree -- and latitude counts down
@@ -32,6 +33,7 @@ typedef struct {
   const char *done;   // the debrief's line when it goes right
   const char *lost;   // ... and when the cargo goes down in the wrong place
   uint8_t figure;     // which billboard stands at the fix; see sprite.h
+  uint8_t weather;    // WEATHER_CLEAR or WEATHER_RAIN; see weather.h
   uint16_t lat;       // millidegrees north of the target's last known fix
   uint16_t lon;       // millidegrees east
 } mission;

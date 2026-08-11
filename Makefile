@@ -3,7 +3,10 @@ TARGET   = --target=mega65
 # slower (615ms a frame against 533ms), so the defaults stay.
 # PROFILE=0 compiles out the per-column instrumentation; the FPS counter stays.
 PROFILE ?= 1
-# WIDE=1 renders all 320 pixels instead of stretching 160. See vic4.h.
+# WIDE=1 marched all 320 pixels instead of doubling 160. RETIRED: the
+# renderer still has the code, but the plane lookup tables now live in the low
+# free RAM at $1600 and only fit there when the per-ray tables are half size,
+# so src/loader.h #errors on it. See LOW_FREE there.
 WIDE    ?= 0
 # FLYNOW=1 skips the title and menu screens and launches straight into the
 # flight. The headless profiling run cannot press a key, so without it a
@@ -98,10 +101,9 @@ $(D81): $(PRG) $(RES)
 	    -writeseq -copyf1 $(RES)
 
 # The disk to hand out. PROFILE=0 drops the per-column instrumentation, which
-# is about 7% of a frame; WIDE=0 keeps the 160-ray march, which is twice the
-# speed of 320 for a picture that barely differs; FLYNOW=0 puts the menus back.
-# All three are spelled out rather than left to the defaults above, so that a
-# release is the same disk however this was last invoked -- but the map sizes
+# is about 7% of a frame; FLYNOW=0 puts the menus back. Both are spelled out
+# rather than left to the defaults above, so that a release is the same disk
+# however this was last invoked -- but the map sizes
 # are not, because those defaults *are* the shipping resolution and pinning
 # them here would be two places to change it.
 #
@@ -111,7 +113,7 @@ $(D81): $(PRG) $(RES)
 RELEASE = release/sar-latest.d81
 
 release:
-	$(MAKE) PROFILE=0 WIDE=0 FLYNOW=0 $(D81)
+	$(MAKE) PROFILE=0 FLYNOW=0 $(D81)
 	mkdir -p $(dir $(RELEASE))
 	cp $(D81) $(RELEASE)
 	@echo "release: $(RELEASE)"

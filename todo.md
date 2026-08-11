@@ -20,7 +20,6 @@ Build knobs, all in the Makefile:
 | | |
 |---|---|
 | `PROFILE=0` | no per-column instrumentation; use it for timing |
-| `WIDE=1` | march 320 rays instead of doubling 160 pixels |
 | `FLYNOW=1` | skip the menus; a headless run needs it to render anything at all, since it cannot press a key |
 | `HGT_SIZE`, `COL_SIZE` | map resolutions, powers of two from 256 to 1024 |
 | `make release` | not a knob but a target: the `PROFILE=0` disk, into `release/sar-latest.d81` |
@@ -74,9 +73,11 @@ Do not re-litigate these without new measurements.
 
 - **Detail per cycle lives in the map, not in the raster.** Marching 320 rays
   doubles the march and halves the frame rate for a picture that barely
-  changes; a finer colourmap is free and plainly better. `WIDE=1` is kept as
-  an option, off by default. The 40-column panel used to be its argument and
-  is no longer: the framebuffer is 320 wide with a 160-ray march.
+  changes; a finer colourmap is free and plainly better. The 40-column panel
+  used to be its argument and is no longer: the framebuffer is 320 wide with a
+  160-ray march. `WIDE=1` is now **retired** — the memory it wanted went to
+  the plane tables instead — and reviving it means finding a kilobyte of near
+  RAM first.
 - **A raster split cannot give the panel its own geometry.** The VIC-IV
   latches `SCRNPTR`, `LINESTEP`, `CHRCOUNT` *and* `CHRXSCL` once a frame, so a
   mid-screen write does nothing until the next frame and the last value
@@ -116,10 +117,11 @@ Do not re-litigate these without new measurements.
   long before straight down.
 - The panel is nearly full now: message, ALT/HDG, LAT/LON, FPS/SPD/BATT and
   CARGO/WIND, with the overview map on the right.
-- **Under 200 bytes of the 32K are left.** The low free RAM at $1600 still has
-  about 1.2K spare, but only renderer-owned tables may go there. After that
-  the candidates are the loader's 512-byte bounce buffer and the sprite's
-  1028-byte drawing buffer.
+- **About 800 bytes of the 32K are left, and the low free RAM at $1600 is
+  96.5% full** (80 bytes). The easy reclaims are spent: the staging buffers
+  are merged and everything movable is already at $1600. The next lever is
+  `cstack`, which is 4096 bytes on a program with no recursion and shallow
+  calls — worth measuring with a canary before trusting a smaller one.
 - No HUD over the 3D view. `vision.md` wants an artificial horizon, battery,
   GPS and signal strength. Palette 240/241 are reserved for it; `hud.c` did
   exactly this kind of pixel drawing and is in git history if wanted back.
@@ -185,6 +187,19 @@ Do not re-litigate these without new measurements.
   overview is north up; it used to call east 000 and north 270. Both bearings
   on the panel go through the one macro, so heading and wind stay in the same
   frame as each other.
+- **Weather**, per mission: an overcast sky and rain over the 3D view, mission
+  two. The sky is sixteen palette entries and costs nothing per frame; the
+  rain is 48 slanted streaks drawn after the billboard, 0.68 ms. A clear sky
+  is restored out of the loaded palette rather than recomputed, so it is
+  bit-identical to what shipped.
+- **`WIDE=1` retired** to pay for it: the renderer's plane lookups moved into
+  the low free RAM at $1600, which only has room for them at 160 rays. The
+  march still has the code and `loader.h` `#error`s with what would have to
+  move to bring it back. 320 rays was already a settled dead end below.
+- **A 768-byte read into a 512-byte buffer** in the loader, live since the
+  bounce buffer was cut from 2048. Fixed by merging it with the sprite's
+  drawing buffer, which the two never need at the same time -- and that
+  reclaimed 512 bytes as well.
 - **Battery**, 8.8 percent on the panel, drained per frame by speed mode so
   sport empties it in about a quarter of the time. Flat ends the flight. Found
   a Calypsi sign-extension trap on the way — see `DEGREES` in `panel.c`.

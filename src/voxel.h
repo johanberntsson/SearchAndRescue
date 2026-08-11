@@ -68,4 +68,10 @@ uint8_t voxel_depth_step(uint16_t z);
 // the row below the bottom of the view -- means nothing is in the way.
 extern uint8_t voxel_yclip[VX_COLS];
 
+// Byte offset into a framebuffer of pixel row 0 of ray column `raycol`. The
+// march already precomputes these, so anything else drawing a vertical run
+// can have one for free rather than paying FB_COLUMN's 16-bit multiply --
+// 657 cycles a go from C.
+uint16_t voxel_column_offset(uint16_t raycol);
+
 #endif

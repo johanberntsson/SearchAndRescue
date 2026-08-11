@@ -132,6 +132,12 @@ void vic4_crosshair(uint8_t px, uint8_t py);
 // the 32K the program lives in has no room to spare for something used once.
 void vic4_set_palette(const uint8_t __far *planes);
 
+// The same for a slice of it. This is how a colour that has been overwritten
+// at runtime gets put back exactly as it shipped, rather than by writing a
+// second copy of the number in C and letting the two drift.
+void vic4_set_range(const uint8_t __far *planes, uint16_t first,
+                    uint16_t count);
+
 // One entry, from plain 8-bit channels. For the handful of colours the title
 // screen needs before there is a palette on disk to load.
 void vic4_set_entry(uint8_t index, uint8_t r, uint8_t g, uint8_t b);

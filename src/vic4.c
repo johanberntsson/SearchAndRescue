@@ -241,15 +241,22 @@ void vic4_set_entry(uint8_t index, uint8_t r, uint8_t g, uint8_t b)
   PALETTE.blue[index] = (uint8_t)((b & 0x0F) << 4 | b >> 4);
 }
 
-void vic4_set_palette(const uint8_t __far *planes)
+void vic4_set_range(const uint8_t __far *planes, uint16_t first, uint16_t count)
 {
   uint16_t i;
 
-  for (i = 0; i < 256; i++) {
-    PALETTE.red[i] = planes[i];
-    PALETTE.green[i] = planes[256 + i];
-    PALETTE.blue[i] = planes[512 + i];
+  for (i = 0; i < count; i++) {
+    uint16_t n = first + i;
+
+    PALETTE.red[n] = planes[n];
+    PALETTE.green[n] = planes[256 + n];
+    PALETTE.blue[n] = planes[512 + n];
   }
+}
+
+void vic4_set_palette(const uint8_t __far *planes)
+{
+  vic4_set_range(planes, 0, 256);
 }
 
 void vic4_show(uint8_t buffer)

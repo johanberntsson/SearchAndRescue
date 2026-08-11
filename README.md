@@ -42,6 +42,9 @@ wrong place.
   way a weather report does, by the direction it comes from
 - A battery that runs down as you fly, four minutes or so at normal speed and
   a quarter of that in sport. Run it flat and the mission is over
+- Weather per mission: mission two flies under an overcast sky with rain drawn
+  over the finished picture, leaning as it falls. It costs 0.68 ms a frame,
+  because the sky is sixteen palette entries rather than any pixels at all
 
 Getting there meant building a profiler first (`src/profile.c`, read with
 `tools/profread.py`) rather than guessing. The compiler's 32-bit multiply turned out
