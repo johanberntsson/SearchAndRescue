@@ -352,14 +352,13 @@ degrees and a step of speed every 96 frames. Three things about it:
 uses, because the wind is applied every frame and the compiler's version is
 2203 cycles against 85.
 
-**The heading readout is 90 degrees out, and the wind inherits it.** Angle 0
-moves the drone along +x, which is east, and `DEGREES` prints it as 000 — but
-the overview map is north up, so a compass 000 ought to be north. Displayed
-270 is north, 000 is east. The two readouts are consistent with *each other*,
-which is what a pilot flying a headwind needs, so this is cosmetic rather than
-broken; the fix is `DEGREES(heading + 64)` in `panel_status` and the same in
-`panel_wind`'s caller. Not done, because it changes a readout that has been
-there since the panel was built.
+**`DEGREES` adds a quarter turn, and that is not decoration.** Angle 0 moves
+the camera along +x, which is east, while the overview map is north up — so
+printing the raw angle as degrees called east 000 and north 270. The macro
+rotates by 64 before converting, and the cast back to `uint8_t` is what wraps
+north round to 000 instead of 360. Both readouts that show a bearing go
+through it, so the heading and the wind stay in the same frame as each other:
+fly the heading the wind is reported on and you have a headwind.
 
 **The gimbal is free.** `cam->horizon` was always a field the renderer
 rebuilt its per-step horizon table from whenever it moved; tilting is a

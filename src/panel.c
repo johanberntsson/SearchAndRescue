@@ -25,11 +25,18 @@
 #define LON_COL 17
 #define FPS_COL 4
 
-// Heading in 256ths of a turn, the same units as the camera angle, shown as
-// degrees because that is what a pilot expects to read. 45/32 rather than the
-// equal 360/256: a heading of 183 or more overflows the 16-bit product of the
-// latter, and 192 -- due west -- came out as 14 degrees.
-#define DEGREES(a) ((uint16_t)(a) * 45 / 32)
+// An angle in 256ths of a turn -- the camera's units, and the wind's -- as the
+// compass bearing a pilot expects to read.
+//
+// The quarter turn is the whole point of it. Angle 0 moves the camera along
+// +x, which is east, while the overview map is north up, so the raw angle
+// printed as degrees called east 000 and north 270. Adding 64 first turns it
+// into a real bearing; the cast back to uint8_t is what wraps 192 (north)
+// round to 000 rather than letting it read 360.
+//
+// 45/32 rather than the equal 360/256: a heading of 183 or more overflows the
+// 16-bit product of the latter, and 192 came out as 14 degrees.
+#define DEGREES(a) ((uint16_t)(uint8_t)((a) + 64) * 45 / 32)
 
 void panel_puts(uint8_t col, uint8_t row, const char *s, uint8_t colour)
 {
