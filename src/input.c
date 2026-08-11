@@ -5,8 +5,9 @@
 
 // Flight needs to know which keys are *held*, which the Kernal's key buffer
 // cannot say, so the matrix is scanned directly. Every key used here lives in
-// one of three rows, so three probes are enough.
+// one of four rows, so four probes are enough.
 //
+//   row 0 ($FE): DEL  RETURN  CRSR-R  F7  F1  F3  F5  CRSR-D
 //   row 1 ($FD): 3  W  A  4  Z  S  E  LSHIFT   (bit 0 first)
 //   row 2 ($FB): 5  R  D  6  C  F  T  X
 //   row 7 ($7F): 1  <-  CTRL  2  SPACE  C=  Q  STOP
@@ -32,6 +33,7 @@ static uint16_t was_held;
 
 static uint16_t scan(void)
 {
+  uint8_t r0 = scan_row(0xFE);
   uint8_t r1 = scan_row(0xFD);
   uint8_t r2 = scan_row(0xFB);
   uint8_t r7 = scan_row(0x7F);
@@ -61,6 +63,10 @@ static uint16_t scan(void)
     keys |= KEY_2;
   if (r7 & 0x10)
     keys |= KEY_SPACE;
+  if (r7 & 0x80)
+    keys |= KEY_STOP;
+  if (r0 & 0x02)
+    keys |= KEY_RETURN;
 
   return keys;
 }

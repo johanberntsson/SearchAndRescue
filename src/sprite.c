@@ -1,5 +1,6 @@
 #include "sprite.h"
 
+#include "dma.h"
 #include "loader.h"
 #include "vic4.h"
 
@@ -21,14 +22,22 @@
 // not drawn either, so there is nothing to stand on.
 #define SPR_Z_FAR 30720
 
-// The stored figure, straight off the disk: a four byte header (width,
-// height, two spare) and then the pixels column by column, which is the order
-// they are drawn in. tools/convmap.py fixes the height and lets the width
-// follow the figure's proportions, so only the maximum is known here.
-#define SPR_MAX_W 32
-#define SPR_MAX_H 32
+// A stored figure, straight off the disk: a four byte header (width, height,
+// two spare) and then the pixels column by column, which is the order they are
+// drawn in. tools/convmap.py scales each one to fit a SPR_MAX box, longest
+// side first -- a lone standing hiker comes out full height and a scene of two
+// people full width -- so only the box is known here.
+#define SPR_MAX  32
+#define SPR_SLOT (4 + SPR_MAX * SPR_MAX)
 
-static uint8_t spr_file[4 + SPR_MAX_W * SPR_MAX_H];
+// The figures on disk, in the order missions number them. They all live in
+// bank 1 (SPRITE_STORE) and only the flight's own is copied down here.
+static const char *const spr_files[SPRITE_FIGURES] = {
+    "TERRAIN.SPR",  // 0: the lost hiker, arms up
+    "TERRAIN.SP2",  // 1: the pair by the lake, one of them down
+};
+
+static uint8_t spr_file[SPR_SLOT];
 static uint8_t spr_w, spr_h;
 
 static uint16_t spr_x, spr_y;  // 8.8 map position
@@ -39,10 +48,17 @@ static int16_t spr_ground;     // heightmap units under it
 static int16_t spr_left, spr_top, spr_wide, spr_high;
 static int16_t spr_depth;
 static uint8_t spr_shown;
+static uint8_t spr_near;  // within SPR_DROP_RANGE, camera pointing anywhere
 
 // Close enough to report, in 8.8 map cells. Ten cells draws the figure about
 // 25 pixels tall, which is plainly a person rather than a red speck.
 #define SPR_REPORT_RANGE 2560
+
+// Close enough to drop something to, which is a shorter reach than a camera's
+// and does not care where the camera is pointing: a delivery is made by flying
+// to the spot, not by looking at it. Five cells is half a kilometre at the
+// map's scale -- close enough that the pilot has had to go and find them.
+#define SPR_DROP_RANGE 1280
 
 // Which source column each destination column samples, and which source row
 // each destination row does. Built once a frame so that the drawing loop is a
@@ -54,21 +70,37 @@ static uint8_t spr_shown;
 static uint8_t src_col[FB_HEIGHT];
 static uint8_t src_row[FB_HEIGHT];
 
-int sprite_load(void)
+const char *sprite_load(void)
 {
-  int got = load_small("TERRAIN.SPR", spr_file, sizeof spr_file);
+  uint8_t n;
 
-  if (got < 4)
-    return -1;
+  spr_w = 0;  // nothing selected until a flight asks for one
+  for (n = 0; n < SPRITE_FIGURES; n++) {
+    int got = load_small(spr_files[n], spr_file, sizeof spr_file);
 
-  spr_w = spr_file[0];
-  spr_h = spr_file[1];
-  if (spr_w > SPR_MAX_W || spr_h > SPR_MAX_H ||
-      (uint16_t)spr_w * spr_h + 4 > (uint16_t)got) {
-    spr_w = 0;
-    return -1;
+    if (got < 4 || spr_file[0] > SPR_MAX || spr_file[1] > SPR_MAX ||
+        (uint16_t)spr_file[0] * spr_file[1] + 4 > (uint16_t)got)
+      return spr_files[n];
+
+    // Straight back up out of the near buffer, whole slot and all: the tail
+    // past the figure is never read, so there is nothing to be gained by
+    // copying only the bytes that matter.
+    dma_copy((uint32_t)(uint16_t)spr_file,
+             SPRITE_STORE + (uint32_t)n * SPR_SLOT, SPR_SLOT);
   }
   return 0;
+}
+
+void sprite_select(uint8_t figure)
+{
+  if (figure >= SPRITE_FIGURES) {
+    spr_w = 0;  // draws nothing, rather than drawing the wrong thing
+    return;
+  }
+  dma_copy(SPRITE_STORE + (uint32_t)figure * SPR_SLOT,
+           (uint32_t)(uint16_t)spr_file, SPR_SLOT);
+  spr_w = spr_file[0];
+  spr_h = spr_file[1];
 }
 
 void sprite_place(uint16_t x, uint16_t y)
@@ -101,8 +133,16 @@ uint8_t sprite_prepare(const camera *cam, int16_t cs, int16_t sn)
   uint16_t inv_z;
 
   spr_shown = 0;
+  spr_near = 0;
   if (!spr_w)
     return VOXEL_NO_STEP;
+
+  // How near, before anything is projected: a delivery is judged on this and
+  // has to be answerable on the frames where the figure is off screen or
+  // behind a hill. A square rather than a circle -- it saves two multiplies
+  // and nobody can tell the corners from the edge of a search radius.
+  spr_near = dx < SPR_DROP_RANGE && dx > -SPR_DROP_RANGE &&
+             dy < SPR_DROP_RANGE && dy > -SPR_DROP_RANGE;
 
   // The camera's own axes: the view runs along (cos, sin) and the ray for
   // screen column i leaves it sideways by tan_tab[i], so the lateral axis is
@@ -156,6 +196,11 @@ uint8_t sprite_prepare(const camera *cam, int16_t cs, int16_t sn)
 uint8_t sprite_reportable(void)
 {
   return spr_shown && spr_depth <= SPR_REPORT_RANGE;
+}
+
+uint8_t sprite_in_range(void)
+{
+  return spr_near;
 }
 
 void sprite_draw(uint32_t base)

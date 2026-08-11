@@ -22,13 +22,23 @@ void screens_load_failed(const char *why, const char *file);
 // The title, on the game's own display once there is a palette for it.
 void screens_title(void);
 
-// The mission list, with `selected` highlighted. One mission exists so far.
+// The mission list, with `selected` highlighted.
 void screens_missions(uint8_t selected);
 
-// What the pilot is being sent to do, and the controls to do it with.
+// What the pilot is being sent to do, and the controls to do it with. Both
+// come out of the mission rather than being spelled out here, so the two
+// kinds of flight read differently without being written twice.
 void screens_briefing(uint8_t mission);
 
-// The debrief, after a report is filed. `seconds` is how long the flight took.
-void screens_accomplished(uint8_t mission, uint16_t seconds);
+// How a flight ended. The three are one screen with different words on it,
+// which is all the difference there is between them.
+typedef enum {
+  FLIGHT_DONE,     // the job was done
+  FLIGHT_LOST,     // the cargo went down in the wrong place
+  FLIGHT_ABORTED,  // the pilot gave up and flew home
+} flight_outcome;
+
+// The debrief. `seconds` is how long the flight took, however it ended.
+void screens_debrief(uint8_t mission, flight_outcome how, uint16_t seconds);
 
 #endif

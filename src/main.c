@@ -102,33 +102,84 @@ static void set_speed(uint16_t held)
   }
 }
 
-// Sit on a finished screen until the pilot presses space.
-static void wait_for_space(void)
+// Seconds since a profiler timestamp. The subtraction is on a line of its own
+// because Calypsi 5.18 emits a call to _FillZPQ -- a runtime helper that is in
+// none of its libraries -- whenever a function call turns up inside a 32-bit
+// expression.
+static uint16_t elapsed(uint32_t since)
+{
+  uint32_t ticks = since - profile_now32();
+
+  return (uint16_t)(ticks / profile_ticks_per_second());
+}
+
+// Sit on a finished screen until the pilot presses one of `keys`, and say
+// which it was.
+static uint16_t wait_for_key(uint16_t keys)
 {
   uint16_t pressed;
 
   input_flush();
   do {
     input_scan(0, &pressed);
-  } while (!(pressed & KEY_SPACE));
+  } while (!(pressed & keys));
+  return pressed & keys;
 }
 
-// One flight. Returns when the pilot has filed a report on the survivor.
-static void flight(uint8_t mission_no, uint16_t *seconds)
+static void wait_for_space(void)
+{
+  wait_for_key(KEY_SPACE);
+}
+
+// The mission list, until one is chosen or the pilot backs out to the title.
+// Returns which mission to brief, or MISSION_COUNT for "none of them".
+static uint8_t choose_mission(uint8_t selected)
+{
+  screens_missions(selected);
+  input_flush();
+
+  for (;;) {
+    uint16_t pressed;
+    uint8_t moved = selected;
+
+    input_scan(0, &pressed);
+    if (pressed & KEY_SPACE)
+      return selected;
+    if (pressed & KEY_STOP)
+      return MISSION_COUNT;
+    if ((pressed & KEY_W) && selected)
+      moved = (uint8_t)(selected - 1);
+    if ((pressed & KEY_S) && selected + 1 < MISSION_COUNT)
+      moved = (uint8_t)(selected + 1);
+
+    // Redrawn only when it changes: the page is a rewrite of screen RAM, and
+    // doing it every scan would flicker the highlight.
+    if (moved != selected) {
+      selected = moved;
+      screens_missions(selected);
+    }
+  }
+}
+
+// One flight, and how it ended. `seconds` is filled in whichever way that is.
+static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
 {
   const mission *m = &missions[mission_no];
+  const uint16_t action = mission_action_key(m);
   camera cam;
   uint8_t back = 1;
   uint16_t fps10 = 0;
   uint16_t message_left = 0;
   uint32_t launched;
 
+  sprite_select(m->figure);
   sprite_place(FIX_TO_X(m->lon), FIX_TO_Y(m->lat));
 
   vic4_view_mode();
   panel_init();
   panel_message(STANDBY);
   panel_speed(speed_mode);
+  panel_cargo(mission_cargo_name(m));
 
   cam.x = 128 << 8;  // middle of the map
   cam.y = 128 << 8;
@@ -163,17 +214,35 @@ static void flight(uint8_t mission_no, uint16_t *seconds)
     if (message_left && !--message_left)
       panel_message(STANDBY);
 
-    // The report button. sprite_reportable answers for the frame just drawn,
-    // which is why this comes after the render rather than with the rest of
-    // the input.
-    if (pressed & KEY_SPACE) {
-      if (sprite_reportable()) {
-        uint32_t ticks = launched - profile_now32();
+    // Every way out of the loop reports the flight that actually happened, so
+    // the debrief times an abandoned one too.
+    if (pressed & KEY_STOP) {
+      *seconds = elapsed(launched);
+      return FLIGHT_ABORTED;
+    }
 
-        *seconds = (uint16_t)(ticks / profile_ticks_per_second());
-        return;
+    // The mission's own button: the camera's shutter, or the cargo release.
+    // sprite_reportable answers for the frame just drawn, which is why this
+    // comes after the render rather than with the rest of the input.
+    if (pressed & action) {
+      if (m->cargo ? sprite_in_range() : sprite_reportable()) {
+        *seconds = elapsed(launched);
+        return FLIGHT_DONE;
+      }
+      // A photograph can be taken again; there is only one EpiPen, and it is
+      // now lying wherever the drone was when the bay opened.
+      if (m->cargo) {
+        panel_cargo("EMPTY");
+        *seconds = elapsed(launched);
+        return FLIGHT_LOST;
       }
       panel_message("NO SURVIVOR IN SIGHT");
+      message_left = MESSAGE_FRAMES;
+    } else if (pressed & (KEY_SPACE | KEY_RETURN)) {
+      // The other one of the two. Saying which key this mission wants beats
+      // saying nothing at all.
+      panel_message(m->cargo ? "RETURN RELEASES THE CARGO"
+                             : "THE CARGO BAY IS EMPTY");
       message_left = MESSAGE_FRAMES;
     }
   }
@@ -225,18 +294,27 @@ int main(void)
 
   for (;;) {
     uint16_t seconds;
+    flight_outcome how;
 
 #if !FLYNOW
-    screens_missions(mission_no);
-    wait_for_space();
+    mission_no = choose_mission(mission_no);
+    if (mission_no >= MISSION_COUNT) {  // backed out of the list
+      screens_title();
+      wait_for_space();
+      mission_no = 0;
+      continue;
+    }
 
     screens_briefing(mission_no);
-    wait_for_space();
+    // RUN/STOP reads the same on the briefing as it does in the air: this is
+    // not the job, take me back.
+    if (wait_for_key(KEY_SPACE | KEY_STOP) & KEY_STOP)
+      continue;
 #endif
 
-    flight(mission_no, &seconds);
+    how = flight(mission_no, &seconds);
 
-    screens_accomplished(mission_no, seconds);
+    screens_debrief(mission_no, how, seconds);
     wait_for_space();
   }
 }

@@ -33,6 +33,10 @@ void panel_message(const char *s);
 // The speed limiter: 0 cinematic, 1 normal, 2 sport.
 void panel_speed(uint8_t mode);
 
+// What is in the cargo bay -- "EMPTY" when there is nothing, which is what a
+// mission flown with the camera alone shows for the whole flight.
+void panel_cargo(const char *what);
+
 // Refresh the flight readouts. x and y are the camera's 8.8 map position,
 // fps10 is frames per second times ten.
 void panel_status(int16_t altitude, uint8_t heading, uint16_t x, uint16_t y,

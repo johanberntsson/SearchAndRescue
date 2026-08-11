@@ -214,8 +214,12 @@ int load_resources(load_progress report)
   if (load_far("TERRAIN.OVR", OVERVIEW, OVERVIEW_BYTES))
     return -1;
   progress_to(98);
-  if (sprite_load())
-    return fail("BAD SPRITE IN", "TERRAIN.SPR");
+  {
+    const char *bad = sprite_load();
+
+    if (bad)
+      return fail("BAD SPRITE IN", bad);
+  }
   progress_to(100);
   return 0;
 }

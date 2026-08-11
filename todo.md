@@ -2,10 +2,13 @@
 
 ## Where it is
 
-Mission one, end to end: title, mission list, briefing, flight, debrief. Find
-the survivor on the pyramid at 46.713N 8.110E — the briefing gives the fix and
-the panel gives your own — get within ten cells with them on screen, and press
-`SPACE` to file the report.
+Two missions, end to end: title, mission list, briefing, flight, debrief.
+Mission one finds the survivor on the pyramid at 46.713N 8.110E — get within
+ten cells with them on screen and press `SPACE`. Mission two drops an EpiPen to
+a pair of hikers on the lake shore at 46.597N 8.227E — get within five cells
+and press `RETURN`, and it fails if the one EpiPen goes down anywhere else.
+`RUN/STOP` abandons a flight. The briefing gives the fix and the panel gives
+your own.
 
 Underneath: a 320x152 3D view over a six-row 40-column text panel with an
 overview map, 12.5 fps (`PROFILE=0`, default map sizes). The march is 160
@@ -49,12 +52,13 @@ work is the game, not another few percent.
   change, short push → small, accelerating towards a target rather than
   snapping to it, and scaled by the measured frame time, because between 7 and
   15 fps a per-frame constant does not feel the same twice. Joystick too.
-- No way out of a flight except finding the survivor. `RUN/STOP` to abort back
-  to the mission list.
-- The mission list has a cursor and one entry, so nothing moves it. The second
-  mission needs up/down keys and a reason to choose.
-- Then more of the game. `documentation/vision.md` has the design; mission one
-  is the first piece of it.
+- Then more of the game. `documentation/vision.md` has the design; the two
+  missions are the first pieces of it. A third is a table entry and a sprite
+  sheet — but only **12 palette entries** are left, so the next figure needs
+  fewer than fifteen colours or has to share with one that exists.
+- Both missions still start the drone in the middle of the map, which for the
+  lake is a hundred cells away and past the draw distance. A launch point per
+  mission, or a heading cue, would save a lot of flying on a compass.
 - The sprite draw is C at ~170 cycles a pixel. Harmless at any distance you
   would search from, 9% of a frame nose to nose. Assembly when there is a
   reason, not before.
@@ -170,6 +174,20 @@ Do not re-litigate these without new measurements.
   bytes to 512. **Watch out:** reading the palette with `load_far` hangs the
   machine and no run explained why — see `CLAUDE.md` before touching
   `src/loader.c`.
+- **Mission two, "First Aid"**, and with it the shape the rest of the missions
+  take: they are the same flight with different words on it. The mission table
+  carries a `cargo` field and everything else follows from it — an empty bay
+  means `SPACE` files a report and a miss costs nothing; a full one means
+  `RETURN` opens it, needs five cells rather than ten and no camera at all, and
+  a miss ends the flight. Three endings, one debrief page. `RUN/STOP` abandons
+  a flight or backs out of a briefing, and the mission list moves on `W`/`S`.
+  The second figure came out of the same `convmap.py` pipeline; both sheets are
+  now quantised together against one shared pool of free palette entries, of
+  which **12 are left**, and that is what limits a third. Figures live in bank
+  1 and `sprite_select` DMAs the flight's own into the near buffer. To pay for
+  the code, the renderer's three per-ray tables moved to the 2304 bytes of
+  chip RAM at `$1600-$1EFF` that the linker rules hand to an unused section —
+  `WIDE=1` does not link without it.
 - **Mission one**: title, mission list, briefing, flight, debrief, and the
   drone controls a real one has (WASD, RF, QE gimbal, 123 speed, `SPACE` to
   report). Full-screen text pages cost no pixels — the display picks text or

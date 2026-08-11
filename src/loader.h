@@ -51,6 +51,14 @@
 #define OVERVIEW_PX    (OVERVIEW_CHARS * 8)
 #define OVERVIEW_BYTES (OVERVIEW_CHARS * OVERVIEW_CHARS * 64)
 
+// Where every billboard waits, above the overview map's pristine copy (which
+// ends at $1DC00) and well clear of the colour RAM alias at $1F800. The 32K
+// the program shares has room for one figure and not for two, and only the
+// current mission's is ever drawn, so they are parked here at load time and
+// src/sprite.c pulls the one it needs down into its near buffer when a flight
+// starts. A DMA of a kilobyte, once, against a per-pixel far read forever.
+#define SPRITE_STORE 0x1DC00UL
+
 // Where the palette waits for vic4_set_palette. It used to be a C array, and
 // the 768 bytes of it went to the survivor sprite when the 32K the program,
 // its data and its stack share ran out. Attic RAM is fine for it: it is read

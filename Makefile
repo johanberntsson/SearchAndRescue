@@ -32,8 +32,12 @@ OBJS     = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS)) \
 ELF      = $(BUILD)/sar.elf
 PRG      = $(BUILD)/autoboot.c65
 D81      = $(BUILD)/sar.d81
+# One sprite sheet per figure the game can stand in the world, in the order
+# src/sprite.c numbers them: 0 the lost hiker, 1 the pair by the lake. They are
+# converted together because they share the one on-screen palette.
+SPRITES  = resources/survivor-sprite.png resources/medicalemergency-sprite.png
 RES      = $(BUILD)/terrain.hgt $(BUILD)/terrain.col $(BUILD)/terrain.pal \
-           $(BUILD)/terrain.ovr $(BUILD)/terrain.spr
+           $(BUILD)/terrain.ovr $(BUILD)/terrain.spr $(BUILD)/terrain.sp2
 
 all: $(D81)
 
@@ -75,10 +79,15 @@ $(ELF): $(OBJS)
 $(PRG): $(ELF)
 	cp $(BUILD)/sar.prg $@
 
-$(RES) &: resources/D1.png resources/C1W.png resources/survivor-sprite.png \
+comma := ,
+empty :=
+space := $(empty) $(empty)
+
+$(RES) &: resources/D1.png resources/C1W.png $(SPRITES) \
           tools/convmap.py $(CONFIG_STAMP) | $(BUILD)
 	python3 tools/convmap.py resources/D1.png resources/C1W.png \
-	    resources/survivor-sprite.png $(BUILD)/terrain $(HGT_SIZE) $(COL_SIZE)
+	    $(subst $(space),$(comma),$(SPRITES)) \
+	    $(BUILD)/terrain $(HGT_SIZE) $(COL_SIZE)
 
 # tools/diskutil.rb refuses to overwrite a file that already exists on the image,
 # so the image is always built from scratch.

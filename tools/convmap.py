@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Convert the VoxelSpace PNG maps into MEGA65 resources.
 
-    convmap.py <height.png> <colour.png> <sprite.png> <out-prefix>
-               [hgt-size] [col-size]
+    convmap.py <height.png> <colour.png> <sprite.png>[,<sprite.png>...]
+               <out-prefix> [hgt-size] [col-size]
 
 writes <out-prefix>.hgt, <out-prefix>.col, <out-prefix>.pal,
-<out-prefix>.ovr (the panel's overview map) and <out-prefix>.spr (the
-survivor billboard).  The two
+<out-prefix>.ovr (the panel's overview map) and one billboard file per sprite
+sheet: <out-prefix>.spr for the first and <out-prefix>.sp2, .sp3 ... for the
+rest, which is the order src/sprite.c numbers its figures in.  The two
 sizes default to 512 and 1024 and must be powers of two from 256 up to the
 source resolution; they have to match HGT_SIZE and COL_SIZE in the build (the
 Makefile passes both).
@@ -16,9 +17,11 @@ so its pixel values are heights, and the colourmap is a palette image whose
 indices can be used directly as VIC-IV colour indices.  Only the resolution
 and the palette encoding need changing.
 
-The sprite sheet is converted here rather than by a tool of its own because
-there is only one palette on screen: its colours have to go in slots the
-colourmap has left free, which is not knowable without the colourmap.
+The sprite sheets are converted here rather than by a tool of their own
+because there is only one palette on screen: their colours have to go in slots
+the colourmap has left free, which is not knowable without the colourmap --
+and every sheet has to draw from that one pool, so they are quantised together
+rather than one at a time.
 """
 
 import os
@@ -143,17 +146,19 @@ def to_overview(indices):
     return tiles.transpose(0, 2, 1, 3).astype(np.uint8).tobytes()
 
 
-# The survivor billboard, out of resources/survivor-sprite.png: a title strip
-# over a grid of poses, drawn on a checkerboard rather than with real alpha, so
-# the figure has to be cut out. The renderer scales one stored pose to whatever
-# the distance calls for; the eight directions are for later, when the survivor
-# faces the drone.
+# The billboards, out of the sprite sheets in resources/: a title strip over a
+# grid of poses, drawn on a checkerboard rather than with real alpha, so the
+# figure has to be cut out. The renderer scales one stored pose to whatever the
+# distance calls for; the eight directions are for later, when the figure faces
+# the drone.
 SPRITE_GRID = (2, 4)   # poses down and across, below the title strip
 SPRITE_POSE = 0        # reading order within the grid: 0 is the front view
-SPRITE_H = 32          # stored height; the width follows the figure's own
-                       # proportions and goes in the file's header
-SPRITE_COLOURS = 15    # palette entries it may claim. Sprite pixel value 0 is
-                       # transparent, so it is not one of them.
+SPRITE_MAX = 32        # the box a stored figure is scaled to fit, longest side
+                       # first, so a scene of two people is as welcome as one
+                       # standing figure; both dimensions go in the header and
+                       # src/sprite.c sizes its buffer from this
+SPRITE_COLOURS = 15    # palette entries each may claim. Sprite pixel value 0
+                       # is transparent, so it is not one of them.
 
 
 def sheet_cell(a, pose):
@@ -206,8 +211,13 @@ def cut_figure(cell):
     return sub[box], mask[box]
 
 
-def shrink_figure(crop, mask, height):
-    """Box-average the figure down to `height` rows, keeping its proportions.
+def shrink_figure(crop, mask, box):
+    """Box-average the figure into a `box` square, keeping its proportions.
+
+    The longest side is what gets scaled to `box`: a lone standing figure is
+    taller than it is wide and comes out full height, while a scene of two
+    people is wider than it is tall and would otherwise overflow the buffer
+    src/sprite.c sizes from SPRITE_MAX.
 
     Averaging rather than point sampling because the sheet is a lossy render:
     every flat area of the pixel art is a cloud of near-identical colours, and
@@ -215,7 +225,10 @@ def shrink_figure(crop, mask, height):
     the figure if at least half of the source block did.
     """
     sh, sw, _ = crop.shape
-    width = max(1, round(sw * height / sh))
+    height = box if sh >= sw else max(1, round(sh * box / sw))
+    # Clamped as well as derived: the two roundings are independent and a wide
+    # figure can come back out of the second one a pixel over the box.
+    width = min(box, max(1, round(sw * height / sh)))
     rgb = np.zeros((height, width, 3))
     opaque = np.zeros((height, width), bool)
 
@@ -230,11 +243,15 @@ def shrink_figure(crop, mask, height):
     return rgb, opaque
 
 
-def to_sprite(path, rgb_palette, used, reserved):
-    """Convert the sprite sheet; returns the file's bytes.
+def to_sprite(path, rgb_palette, pool):
+    """Convert one sprite sheet; returns the file's bytes.
 
     Its colours are median cut down to SPRITE_COLOURS and given palette slots
-    the colourmap left free -- there are around fifty of those below the sky.
+    the colourmap left free -- there are around fifty of those below the sky,
+    which is what limits how many figures can be on the one palette. `pool` is
+    that free list, shared by every sheet and consumed from the front, so no
+    two figures claim the same entry.
+
     The file is a four byte header (width, height, and two spare) followed by
     the pixels *column by column*, which is the order the renderer draws them
     in: the framebuffer is laid out in column strips, so a vertical run of
@@ -242,7 +259,7 @@ def to_sprite(path, rgb_palette, used, reserved):
     """
     sheet = np.asarray(Image.open(path).convert("RGB")).astype(int)
     crop, mask = cut_figure(sheet_cell(sheet, SPRITE_POSE))
-    rgb, opaque = shrink_figure(crop, mask, SPRITE_H)
+    rgb, opaque = shrink_figure(crop, mask, SPRITE_MAX)
     height, width = opaque.shape
 
     # Median cut over the figure's pixels alone: quantising the whole grid
@@ -251,18 +268,23 @@ def to_sprite(path, rgb_palette, used, reserved):
     q = Image.fromarray(flat).quantize(colors=SPRITE_COLOURS, method=Image.MEDIANCUT)
     quantised = q.getpalette()[:SPRITE_COLOURS * 3]
 
-    free = [i for i in range(1, SKY_BASE) if i not in used and i not in reserved]
-    if len(free) < SPRITE_COLOURS:
-        sys.exit(f"only {len(free)} free palette entries for {SPRITE_COLOURS} "
-                 "sprite colours")
-    for n in range(SPRITE_COLOURS):
-        rgb_palette[free[n]] = tuple(quantised[n * 3:n * 3 + 3])
+    if len(pool) < SPRITE_COLOURS:
+        sys.exit(f"only {len(pool)} free palette entries left for {path}, "
+                 f"which needs {SPRITE_COLOURS}")
+    mine = [pool.pop(0) for _ in range(SPRITE_COLOURS)]
+    for n, entry in enumerate(mine):
+        rgb_palette[entry] = tuple(quantised[n * 3:n * 3 + 3])
 
     pixels = np.zeros((height, width), np.uint8)  # 0 is transparent
-    pixels[opaque] = [free[i] for i in np.asarray(q).reshape(-1)]
+    pixels[opaque] = [mine[i] for i in np.asarray(q).reshape(-1)]
 
     return (bytes((width, height, 0, 0)) + pixels.T.tobytes(),
-            width, height, free[:SPRITE_COLOURS])
+            width, height, mine)
+
+
+def sprite_suffix(n):
+    """Figure 0 keeps the original .spr; the rest are numbered from two."""
+    return ".spr" if n == 0 else f".sp{n + 1}"
 
 
 def nybswap(v):
@@ -352,7 +374,8 @@ def reserve(indices, rgb, entry, used, reserved):
 def main():
     if not 5 <= len(sys.argv) <= 7:
         sys.exit(__doc__)
-    height_png, colour_png, sprite_png, prefix = sys.argv[1:5]
+    height_png, colour_png, sprite_pngs, prefix = sys.argv[1:5]
+    sprite_pngs = sprite_pngs.split(",")
     hgt_size = int(sys.argv[5]) if len(sys.argv) > 5 else DEFAULT_HGT_SIZE
     col_size = int(sys.argv[6]) if len(sys.argv) > 6 else DEFAULT_COL_SIZE
 
@@ -378,29 +401,34 @@ def main():
         used = reserve(indices, rgb, entry, used, reserved)
         rgb[entry] = colour
 
-    # After the reservations, so the sprite only claims entries that are still
-    # genuinely spare -- and before the palette is packed, since it writes into
-    # it.
-    sprite, spr_w, spr_h, spr_entries = to_sprite(sprite_png, rgb, used, reserved)
+    # After the reservations, so the sprites only claim entries that are still
+    # genuinely spare -- and before the palette is packed, since they write
+    # into it. One pool across all of them: there is a single palette on
+    # screen, and every figure in the game has to fit in it at once.
+    pool = [i for i in range(1, SKY_BASE) if i not in used and i not in reserved]
+    sprites = [to_sprite(png, rgb, pool) for png in sprite_pngs]
 
     # Three 256-byte planes matching the $D100/$D200/$D300 register banks, so
     # uploading is three straight copies.
     palette = bytes(nybswap(c[channel]) for channel in range(3) for c in rgb)
 
+    # The first figure is .spr and the rest are .sp2, .sp3 ...; src/sprite.c
+    # names them in the same order and numbers them from zero.
+    sprite_files = [(sprite_suffix(n), s[0]) for n, s in enumerate(sprites)]
+
     exomizer = find_exomizer()
     raw_sizes = {}
-    for suffix, payload in (
+    for suffix, payload in [
         (".hgt", to_planes(heights)),
         (".col", to_planes(indices)),
         (".pal", palette),
         (".ovr", to_overview(indices)),
-        (".spr", sprite),
-    ):
+    ] + sprite_files:
         raw_sizes[suffix] = len(payload)
         # The palette is 768 bytes and is read straight into a buffer before
         # the display is up; crunching it would buy nothing and cost a special
         # case in the loader.
-        if suffix not in (".pal", ".ovr", ".spr"):
+        if suffix in (".hgt", ".col"):
             payload = crunch(exomizer, payload)
         with open(prefix + suffix, "wb") as f:
             f.write(payload)
@@ -420,8 +448,11 @@ def main():
     print("  " + report(".col", "col"))
     print(f"  overview: {OVERVIEW_PX}x{OVERVIEW_PX} in "
           f"{OVERVIEW_CHARS ** 2} characters, {raw_sizes['.ovr']} bytes")
-    print(f"  sprite: {spr_w}x{spr_h}, {raw_sizes['.spr']} bytes, palette "
-          f"{spr_entries[0]}..{spr_entries[-1]}")
+    for n, (_, w, h, entries) in enumerate(sprites):
+        print(f"  sprite {n} ({os.path.basename(sprite_pngs[n])}): {w}x{h}, "
+              f"{raw_sizes[sprite_suffix(n)]} bytes, palette "
+              f"{min(entries)}..{max(entries)}")
+    print(f"  {len(pool)} palette entries still free")
 
 
 if __name__ == "__main__":

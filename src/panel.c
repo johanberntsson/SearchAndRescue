@@ -9,6 +9,11 @@
 #define ROW_FLIGHT  2
 #define ROW_POS     3
 #define ROW_STATUS  4
+#define ROW_CARGO   5
+
+// The longest thing the bay can be asked to hold. The cargo line is rewritten
+// when the load is released, so it has to blank whatever the last one left.
+#define CARGO_WIDTH 12
 
 #define ALT_COL 4
 #define HDG_COL 13
@@ -88,6 +93,8 @@ void panel_init(void)
 
   panel_puts(10, ROW_STATUS, "SPD", PANEL_LABEL);
 
+  panel_puts(0, ROW_CARGO, "CARGO", PANEL_LABEL);
+
   // The overview map: full-colour tiles dropped straight into panel cells.
   // Their pixels came off the disk already in character order, so there is
   // nothing to do here but name them.
@@ -108,6 +115,15 @@ void panel_speed(uint8_t mode)
   static const char *const names[] = {"SLO", "NRM", "SPT"};
 
   panel_puts(14, ROW_STATUS, names[mode > 2 ? 2 : mode], PANEL_INK);
+}
+
+void panel_cargo(const char *what)
+{
+  uint8_t col;
+
+  for (col = 0; col < CARGO_WIDTH; col++)
+    vic4_panel_char((uint8_t)(6 + col), ROW_CARGO, ' ', PANEL_INK);
+  panel_puts(6, ROW_CARGO, what, PANEL_INK);
 }
 
 void panel_message(const char *s)

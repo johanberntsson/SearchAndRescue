@@ -6,13 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A MEGA65 heightfield voxel flight simulator / drone search-and-rescue game, written in C (Calypsi) with the rendering inner loop in 45GS02 assembly. `documentation/vision.md` holds the full technical and gameplay design; `todo.md` is the authoritative "what's next" and should be updated as work lands.
 
-Currently: mission one, end to end. A title screen, a mission list, a
-briefing, a flight, and a debrief when the pilot finds the survivor on the
-pyramid at 46.713N 8.110E and files a report on them. Underneath is the voxel
-engine at about 12.5 fps — a 320x152 3D view over a six-row 40-column text
-panel, with 512x512 height and 1024x1024 colour maps unpacked into attic RAM
-at boot, marching 160 rays and writing each to two neighbouring pixels; see
-Performance.
+Currently: two missions, end to end. A title screen, a mission list, a
+briefing, a flight, and a debrief — the survivor on the pyramid at 46.713N
+8.110E to be found and reported, and an EpiPen to be dropped to a pair of
+hikers by the lake at 46.597N 8.227E. Underneath is the voxel engine at about
+12.5 fps — a 320x152 3D view over a six-row 40-column text panel, with 512x512
+height and 1024x1024 colour maps unpacked into attic RAM at boot, marching 160
+rays and writing each to two neighbouring pixels; see Performance.
 
 ## Build and run
 
@@ -73,6 +73,7 @@ Only banks 1, 4 and 5 are free: `$20000-$3FFFF` holds the C65 ROM, and **colour 
 | `$1C000` | 1216 | One column strip of sky, DMAd across the buffer each frame |
 | `$1D000` | 1024 | Overview map: 16 full-colour characters, 64-byte aligned |
 | `$1D800` | 1024 | Pristine copy of it, for lifting the crosshair |
+| `$1DC00` | 1028 each | Every billboard, one 32x32 slot per figure |
 | `$1F800-$1FFFF` | 2 KB | Colour RAM alias — **do not write** |
 | `$40000-$4FFFF` | 64 KB | Heightmap, only when it is 256x256 |
 | `$8000000-$80FFFFF` | 1 MB | Colourmap planes, attic RAM |
@@ -94,9 +95,25 @@ room came from, in the order it was taken:
   can read, and bank 5 above framebuffer B is 16K of nothing. Everything that
   writes it is cold: the panel's handful of characters a frame, and building
   the tables once.
+- **the second billboard never came near it.** Figures live at `SPRITE_STORE`
+  in bank 1, a 1028-byte slot each, and `sprite_select` DMAs the flight's own
+  down into the single near buffer that was already there. Adding a figure
+  costs a kilobyte of bank 1 and nothing of the 32K.
+- **the renderer's three per-ray tables to `$1600-$1EFF`** (800 bytes at 160
+  rays, 1600 at 320). See the free space note below.
 
 Next after that would be the 512-byte bounce buffer itself, or the sprite's
 1028.
+
+**`$1600-$1EFF` is 2304 bytes of ordinary chip RAM the linker rules hand to a
+section called `zpsave`, which nothing in this program uses** — the map says
+0.0% before `tan_tab`, `col_top` and `voxel_yclip` were put there with
+`__attribute__((section("zpsave")))`. It is near-addressable, so the move costs
+nothing per pixel, and without it `WIDE=1` no longer links: mission two's code
+and strings took the 32K past what the doubled tables need. Only things the
+*renderer* owns belong there. It is below `$2001`, where the C65 ROM keeps its
+own buffers, so nothing that has to survive a Kernal disk call may live in it —
+these tables are first written by `voxel_init`, long after the last one.
 
 The framebuffer is 320 wide whatever `WIDE` is set to, so a buffer is 48640
 bytes and B lives in bank 5. Bank 4 is free too whenever the heightmap is
@@ -164,7 +181,10 @@ wants one. Two things learned on the way:
 ## The panel
 
 The display is 25 character rows; the framebuffer covers the top 19 and the
-bottom six are the information panel. That split is free, because full colour
+bottom six are the information panel: a message line, ALT/HDG, LAT/LON,
+FPS/SPD, and the cargo bay on the last row, with the overview map filling the
+right-hand four columns of rows 1 to 4. The cargo line reads `CARGO EMPTY` for
+the whole of a mission flown with the camera alone. That split is free, because full colour
 is per character *number*: `FCLRHI` is set and `FCLRLO` is not, so numbers
 above `$FF` are 64-byte full-colour characters (the framebuffer) and numbers
 below are ordinary 8x8 text from `CHARPTR`. The panel costs 480 bytes of
@@ -227,8 +247,30 @@ of the 256 entries will do.
 
 `src/main.c` is a state machine over four full-screen pages and a flight:
 title, mission list, briefing, fly, debrief, back to the list. `src/screens.c`
-draws the pages, `src/mission.c` holds what there is to be sent on — one
-entry, and the table is there so the second one is data rather than a rewrite.
+draws the pages, `src/mission.c` holds what there is to be sent on.
+
+**The two missions are the same flight with different words on it**, and that
+is deliberate: fly to a figure standing at a fix and press a key. The mission
+table is what differs, and the one field the rest hangs off is `cargo`:
+
+- **empty bay** — the job is to look. `SPACE` files a report, it needs the
+  figure *on screen* and within ten cells, and getting it wrong costs nothing
+  but the time to go round again.
+- **something in it** — the job is to deliver. `RETURN` opens the bay, it needs
+  only to be within five cells (`sprite_in_range`, which does not care where
+  the camera points — you deliver a parcel by flying to the spot, not by
+  looking at it), and there is one of whatever it is, so releasing it anywhere
+  else ends the flight.
+
+`mission_action_key`, `mission_action_name` and `mission_action_verb` all
+derive from that field rather than being stored beside it, so a mission cannot
+say one thing in the briefing and do another in the air. The three endings —
+done, cargo lost, abandoned — are one `screens_debrief` page with different
+strings, for the same reason.
+
+Adding a third mission is a table entry, a sprite sheet in the Makefile's
+`SPRITES`, and nothing else — but see Resources for the palette budget, which
+is what actually limits how many figures there can be.
 
 **The pages cost no pixels.** The display picks text or full colour per
 character *number*, so writing numbers below `$100` into the rows the 3D view
@@ -258,9 +300,14 @@ failures through `loader_error()` instead.
 Controls, which follow a real drone's (see `documentation/real-drones/`):
 `W`/`S` forward and back, `A`/`D` yaw, `R`/`F` climb and descend, `Q`/`E`
 gimbal up and down, `1`/`2`/`3` the speed limiter (cinematic, normal, sport),
-`SPACE` to file a report. `src/input.c` scans three matrix rows now and
-returns held keys and fresh presses from one scan — an edge only means
-anything against the scan before it, so two scans in a frame would see none.
+`SPACE` to file a report, `RETURN` to release the cargo, `RUN/STOP` to abandon
+the mission. `src/input.c` scans four matrix rows now — row 0 for `RETURN`,
+row 7 bit 7 for `RUN/STOP` — and returns held keys and fresh presses from one
+scan, because an edge only means anything against the scan before it and two
+scans in a frame would see none.
+
+`RUN/STOP` reads the same on the briefing and in the mission list as it does
+in the air: this is not the job, take me back.
 
 **The gimbal is free.** `cam->horizon` was always a field the renderer
 rebuilt its per-step horizon table from whenever it moved; tilting is a
@@ -271,26 +318,41 @@ drawn** and within ten map cells (`sprite_reportable`). On screen is half the
 test on purpose: a report should mean you looked at them, not that you flew
 past with the camera pointed somewhere else.
 
-## The survivor billboard
+## The billboards
 
 `src/sprite.c` draws one world-anchored 2D figure into the framebuffer after
 the terrain, scaled by distance and clipped against the heightfield. It is the
 software sprite `documentation/vision.md` asks for, and the mechanism is meant
 to carry the rest of them — campfires, crates, hazards.
 
-**The picture comes off the sprite sheet through `tools/convmap.py`, not a
-tool of its own**, because there is only one palette on screen: the figure's
-colours have to go in slots the colourmap left free, and which those are is
-not knowable without the colourmap. It takes the front pose out of the sheet's
-grid, cuts the figure off its checkerboard (the background is light and grey
-and the pose labels are black, so the *saturated* pixels find the figure and
-neither of those; the black outline needs a few pixels of padding and the grey
-insides come back by filling whatever the outside cannot reach), box-averages
-it down to 32 rows — the sheet is a lossy render, so every flat area of the
-pixel art is a cloud of near-identical colours and point sampling samples the
-noise — and median cuts it to fifteen entries. `terrain.spr` is a four byte
-header and then the pixels **column by column**, which is the order they are
-drawn in. Pixel value 0 is transparent, so the test is `if (v)`.
+There are two figures now and the flight draws one of them. **Every figure is
+parked in bank 1 at load time and `sprite_select` DMAs the mission's own down
+into the one near buffer**, because the 32K has room for a kilobyte of pixels
+and not for two — and a kilobyte of DMA once a flight is nothing, while a far
+pointer in the drawing loop would be paid per pixel forever. Adding a figure
+means a sheet in the Makefile's `SPRITES`, an entry in `spr_files`, and
+`SPRITE_FIGURES`.
+
+**The pictures come off the sprite sheets through `tools/convmap.py`, not a
+tool of their own**, because there is only one palette on screen: their
+colours have to go in slots the colourmap left free, which is not knowable
+without the colourmap — and every sheet has to draw from that same pool, so
+they are converted together and consume one shared free list. It takes the
+front pose out of each sheet's grid, cuts the figure off its checkerboard (the
+background is light and grey and the pose labels are black, so the *saturated*
+pixels find the figure and neither of those; the black outline needs a few
+pixels of padding and the grey insides come back by filling whatever the
+outside cannot reach), box-averages it into a 32x32 box — the sheet is a lossy
+render, so every flat area of the pixel art is a cloud of near-identical
+colours and point sampling samples the noise — and median cuts it to fifteen
+entries. Each file is a four byte header and then the pixels **column by
+column**, which is the order they are drawn in. Pixel value 0 is transparent,
+so the test is `if (v)`.
+
+**It is the longest side that is scaled to 32, not the height.** A lone
+standing hiker is taller than it is wide and comes out 29x32; the pair by the
+lake is wider than it is tall and would have come out 33x32, a column past the
+buffer. Both dimensions are in the header and the renderer scales from them.
 
 The projection is the renderer's own, and has to be: `TAN_HALF_FOV` and the
 `inv_z` scale moved into `voxel.h` so that both use one set of numbers.
@@ -343,10 +405,20 @@ flying right up to somebody makes it visible in the frame time.
 
 ## Resources
 
-`tools/convmap.py` turns the 1024x1024 VoxelSpace PNGs in `resources/` into `terrain.hgt`, `terrain.col`, `terrain.pal`, `terrain.ovr` and `terrain.spr` — the two maps crunched, the palette raw, and the survivor cut out of `survivor-sprite.png` (see The survivor billboard). The sources need no quantisation: the heightmap is 8-bit greyscale and the colourmap is already a palette image. Palette bytes are nybble-swapped for the `$D100`/`$D200`/`$D300` registers, and the sky gradient goes in indices 224-239, which the colourmap never uses.
+`tools/convmap.py` turns the 1024x1024 VoxelSpace PNGs in `resources/` into `terrain.hgt`, `terrain.col`, `terrain.pal`, `terrain.ovr` and one billboard file per sprite sheet — the two maps crunched, the palette raw, and the figures cut out of the sheets (see The billboards). The sources need no quantisation: the heightmap is 8-bit greyscale and the colourmap is already a palette image. Palette bytes are nybble-swapped for the `$D100`/`$D200`/`$D300` registers, and the sky gradient goes in indices 224-239, which the colourmap never uses.
 
 `convmap.py` takes the two map sizes as arguments; the Makefile passes
-`HGT_SIZE` and `COL_SIZE`.
+`HGT_SIZE` and `COL_SIZE`. The sprite sheets are one **comma-separated**
+argument, from the Makefile's `SPRITES`, and the first one's output keeps the
+original name `terrain.spr` while the rest are `terrain.sp2`, `.sp3` and so
+on — the order `src/sprite.c` numbers its figures in.
+
+**The palette is what limits how many figures there can be.** The colourmap
+uses about 170 of the 224 indices below the sky, the panel and HUD reserve
+four more, and each figure claims fifteen: two of them leave **12 entries
+free**, which `convmap.py` prints at the end of every run. A third figure
+needs fewer colours each, or shared colours between them, and the converter
+will say so rather than quietly painting terrain in a sprite colour.
 
 Height units are a quarter of a map cell — the source is 4x the renderer's 256-cell grid and the heights were not rescaled — and `SCALE_H` in `src/voxel.c` folds that in. `HGT_SIZE` does not change this: a finer heightmap subdivides each cell rather than widening the world, so the world stays 256 cells across whatever the map resolution.
 

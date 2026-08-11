@@ -12,8 +12,13 @@ aftershocks that reshape the landscape mid-flight. `documentation/vision.md` has
 
 ## Status
 
-Mission one exists, end to end: a title screen, a mission list, a briefing, a
-flight, and a debrief when you find a lost person and file a report on them.
+Two missions exist, end to end: a title screen, a mission list, a briefing, a
+flight, and a debrief. They are deliberately the same flight with different
+words on it — fly to somebody and press a key — because that is where the
+engine is: **The Lost Hiker** wants a report filed on a person waving from a
+summit, and **First Aid** wants an EpiPen dropped to a pair of hikers by a
+lake, with only one EpiPen aboard and a failed mission if it goes down in the
+wrong place.
 
 - 320x152 full-colour 3D view, double buffered, over a six-row 40-column text panel
 - 512x512 height and 1024x1024 colour maps, exomizer-crunched on the disk and
@@ -25,8 +30,9 @@ flight, and a debrief when you find a lost person and file a report on them.
   renderer was all C; a real MEGA65 runs a few percent slower than the emulator
 - Altitude, heading, GPS coordinates and frame rate in the panel, with an overview
   map of the whole world and a crosshair showing where you are
-- One lost person, waving from the top of the pyramid at 46.713N 8.110E. A software
-  billboard drawn over the finished terrain: scaled by distance, and clipped
+- Two software billboards — a lost person waving from the top of the pyramid at
+  46.713N 8.110E, and a casualty and their friend on the lake shore at 46.597N
+  8.227E — drawn over the finished terrain: scaled by distance, and clipped
   against the heightfield with the same y-buffer the ray march already keeps, so
   a ridge in front of them hides their feet
 - Drone controls modelled on a real one: yaw, climb, camera gimbal and a
@@ -74,9 +80,13 @@ After the title screen and the briefing, `SPACE` launches the flight.
 | `Q` / `E` | camera gimbal up, down |
 | `1` / `2` / `3` | speed limiter: cinematic, normal, sport |
 | `SPACE` | file a report, and go on from any screen |
+| `RETURN` | release the cargo |
+| `RUN/STOP` | abandon the mission, and back out of the list or a briefing |
 
 A report only counts with the lost person on screen and within about ten map
-cells — near enough to have actually seen them.
+cells — near enough to have actually seen them. A cargo drop does not care
+where the camera is pointing but wants you within five, and there is only one
+of whatever is in the bay: release it anywhere else and the mission is lost.
 
 ## Layout
 

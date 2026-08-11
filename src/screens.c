@@ -123,7 +123,7 @@ void screens_missions(uint8_t selected)
     vic4_puts(11, row, missions[i].name, ink);
   }
 
-  centre(PROMPT_ROW, "SPACE   BRIEF", PANEL_LABEL);
+  centre(PROMPT_ROW, "W S   CHOOSE      SPACE   BRIEF", PANEL_LABEL);
 }
 
 void screens_briefing(uint8_t mission_no)
@@ -139,11 +139,13 @@ void screens_briefing(uint8_t mission_no)
   for (i = 0; i < BRIEF_LINES; i++)
     vic4_puts(2, (uint8_t)(4 + i), m->brief[i], PANEL_INK);
 
-  vic4_puts(2, 9, "LAST KNOWN POSITION", PANEL_LABEL);
-  put_position(22, 9, m, PANEL_INK);
+  vic4_puts(2, 8, "LAST KNOWN POSITION", PANEL_LABEL);
+  put_position(22, 8, m, PANEL_INK);
+  vic4_puts(2, 9, "CARGO", PANEL_LABEL);
+  vic4_puts(22, 9, mission_cargo_name(m), PANEL_INK);
 
   vic4_puts(2, 11, "OBJECTIVE", PANEL_LABEL);
-  vic4_puts(4, 12, "FLY TO THEM AND FILE A REPORT", PANEL_INK);
+  vic4_puts(4, 12, m->objective, PANEL_INK);
 
   vic4_puts(2, 14, "CONTROLS", PANEL_LABEL);
   vic4_puts(4, 15, "W S     FORWARD    BACK", PANEL_INK);
@@ -151,18 +153,37 @@ void screens_briefing(uint8_t mission_no)
   vic4_puts(4, 17, "R F     CLIMB      DESCEND", PANEL_INK);
   vic4_puts(4, 18, "Q E     CAMERA UP  DOWN", PANEL_INK);
   vic4_puts(4, 19, "1 2 3   SPEED  SLOW NORMAL SPORT", PANEL_INK);
-  vic4_puts(4, 20, "SPACE   FILE REPORT", PANEL_INK);
+  // The one line that differs between the two kinds of mission, and it comes
+  // out of the mission's cargo bay rather than out of a branch here.
+  vic4_puts(4, 20, mission_action_name(m), PANEL_INK);
+  vic4_puts(12, 20, mission_action_verb(m), PANEL_INK);
+  // Split so that the verb starts at column 12 like every row above it:
+  // RUN/STOP is exactly as wide as the key column.
+  vic4_puts(4, 21, "RUN/STOP", PANEL_INK);
+  vic4_puts(12, 21, "ABANDON MISSION", PANEL_INK);
 
   centre(PROMPT_ROW, "SPACE   LAUNCH", PANEL_LABEL);
 }
 
-void screens_accomplished(uint8_t mission_no, uint16_t seconds)
+void screens_debrief(uint8_t mission_no, flight_outcome how, uint16_t seconds)
 {
   const mission *m = &missions[mission_no];
+  const char *heading = "MISSION ACCOMPLISHED";
+  const char *what = m->done;
+
+  if (how == FLIGHT_LOST) {
+    heading = "MISSION FAILED";
+    // Only a mission with something in the bay can lose it, so `lost` is
+    // always there; the fallback is for a table entry that forgot it.
+    what = m->lost ? m->lost : "THE CARGO WENT DOWN IN THE WRONG PLACE";
+  } else if (how == FLIGHT_ABORTED) {
+    heading = "MISSION ABANDONED";
+    what = "THE DRONE CAME HOME EMPTY HANDED";
+  }
 
   vic4_text_mode();
-  centre(6, "MISSION ACCOMPLISHED", PANEL_INK);
-  centre(9, m->found, PANEL_LABEL);
+  centre(6, heading, PANEL_INK);
+  centre(9, what, PANEL_LABEL);
   put_position(12, 11, m, PANEL_INK);
 
   vic4_puts(12, 13, "FLIGHT TIME", PANEL_LABEL);
