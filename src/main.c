@@ -43,6 +43,77 @@ static const int16_t speed_limit[SPEED_MODES] = {40, 96, 176};
 
 static uint8_t speed_mode = SPEED_DEFAULT;
 
+// The wind: the one thing in the flight model that is not the pilot's. It
+// blows the drone about whatever it is doing, including a hover, and it veers
+// every few seconds so that trimming for it once is not enough.
+//
+// Strength is 8.8 map cells a frame, the same units as speed_limit above, so
+// the range here is between a tenth and a third of cinematic speed -- enough
+// to carry you off a mark while you line up a shot, not enough to fight.
+#define WIND_MIN   3
+#define WIND_SPAN  8  // a power of two, so picking one is a mask rather than
+                      // a call into the 16-bit modulo routine
+#define WIND_MAX  (WIND_MIN + WIND_SPAN - 1)
+#define WIND_GUST 96  // frames between shifts, about eight seconds
+
+// Cells a frame as the panel reports it. Nothing in this world is to scale --
+// sport is 176 cells a frame, which at a hundred metres a cell would be
+// several hundred metres a second -- so rather than convert honestly and
+// print a hurricane, this is simply a scale on which a wind reads like one:
+// WIND_MIN..WIND_MAX becomes 1..5 m/s, a light air to a gentle breeze.
+#define WIND_MPS(s) ((uint8_t)((s) / 2))
+
+// The direction it comes FROM, which is how a weather report, an airfield and
+// a drone controller all name a wind -- so 270 is a westerly and it pushes you
+// east.
+static uint8_t wind_from;
+static int16_t wind_speed;
+static uint16_t wind_next;  // frames until it shifts again
+
+// xorshift16, seeded off the profiler's free-running clock when a flight
+// launches so that no two get the same weather. The state must never be zero,
+// which is the one value this generator cannot leave.
+static uint16_t rng_state = 1;
+
+static uint16_t rnd(void)
+{
+  uint16_t x = rng_state;
+
+  x ^= (uint16_t)(x << 7);
+  x ^= x >> 9;
+  x ^= (uint16_t)(x << 8);
+  rng_state = x;
+  return x;
+}
+
+static void wind_start(void)
+{
+  rng_state = (uint16_t)profile_now32() | 1;
+  wind_from = (uint8_t)rnd();
+  wind_speed = WIND_MIN + (int16_t)(rnd() & (WIND_SPAN - 1));
+  wind_next = WIND_GUST;
+  panel_wind(wind_from, WIND_MPS(wind_speed));
+}
+
+// A small shift every few seconds: about eleven degrees of veer either way and
+// a step of speed. Small on purpose -- the wind is meant to be something the
+// pilot corrects for continuously, not an event that happens to them.
+static void wind_drift(void)
+{
+  if (--wind_next)
+    return;
+
+  wind_from = (uint8_t)(wind_from + (rnd() & 15) - 8);
+  wind_speed += (rnd() & 1) ? 1 : -1;
+  if (wind_speed < WIND_MIN)
+    wind_speed = WIND_MIN;
+  else if (wind_speed > WIND_MAX)
+    wind_speed = WIND_MAX;
+
+  wind_next = WIND_GUST;
+  panel_wind(wind_from, WIND_MPS(wind_speed));
+}
+
 // Fly one frame. Returns non-zero if the drone has hit the hillside, which
 // only sport mode lets happen.
 static uint8_t fly(camera *cam, uint16_t held)
@@ -82,6 +153,21 @@ static uint8_t fly(camera *cam, uint16_t held)
     cam->horizon = TILT_MAX;
   if (cam->horizon < TILT_MIN)
     cam->horizon = TILT_MIN;
+
+  // The wind, on top of wherever the pilot has got to, and before the ground
+  // check so that being blown into a hillside counts exactly as flying into
+  // one. It blows towards wind_from + 128, half a turn from the direction it
+  // is named for.
+  //
+  // voxel_mul_shift8 rather than the C multiply the pilot's own motion uses,
+  // because this happens every frame whether the drone is moving or not: 85
+  // cycles on the hardware multiplier against the compiler's 2203.
+  {
+    uint8_t to = (uint8_t)(wind_from + 128);
+
+    cam->x += voxel_mul_shift8(voxel_sin((uint8_t)(to + 64)), wind_speed);
+    cam->y += voxel_mul_shift8(voxel_sin(to), wind_speed);
+  }
 
   // The same test does both jobs: below the gap you are in the hill. In the
   // two slower modes the drone simply refuses to go there, which is what the
@@ -199,6 +285,7 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
   panel_message(STANDBY);
   panel_speed(speed_mode);
   panel_cargo(mission_cargo_name(m));
+  wind_start();  // after panel_init, which would otherwise blank the readout
 
   cam.x = 128 << 8;  // middle of the map
   cam.y = 128 << 8;
@@ -216,6 +303,7 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
     uint8_t hit;
 
     input_scan(&held, &pressed);
+    wind_drift();
     hit = fly(&cam, held);
     if (set_speed(held)) {
       panel_message("SPORT: NO TERRAIN FOLLOWING");

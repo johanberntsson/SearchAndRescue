@@ -331,6 +331,36 @@ would see none.
 `RUN/STOP` reads the same on the briefing and in the mission list as it does
 in the air: this is not the job, take me back.
 
+**The wind is the one thing in the flight model that is not the pilot's.**
+`wind_start` picks a direction and a strength at launch from a 16-bit
+xorshift seeded off the profiler's clock, `fly` adds the vector every frame
+whether the drone is moving or not, and `wind_drift` veers it about eleven
+degrees and a step of speed every 96 frames. Three things about it:
+
+- **it is named for where it comes from**, as a weather report and a drone
+  controller both are, so the drift is towards `wind_from + 128`. Fly the
+  heading the panel says the wind is on and you have a headwind.
+- **the m/s readout is a scale, not a conversion.** Sport is 176 cells a frame
+  and a cell is a hundred metres, so an honest conversion would print several
+  hundred metres a second; `WIND_MPS` maps the internal 3..10 onto 1..5 m/s
+  instead. Nothing in this world is to scale — see `SPR_WORLD_H` for the same
+  decision about how tall a person is.
+- it is applied **before** the ground check, so being blown into a hillside in
+  sport mode crashes you exactly as flying into one does.
+
+`voxel_mul_shift8` rather than the C 32-bit multiply the pilot's own motion
+uses, because the wind is applied every frame and the compiler's version is
+2203 cycles against 85.
+
+**The heading readout is 90 degrees out, and the wind inherits it.** Angle 0
+moves the drone along +x, which is east, and `DEGREES` prints it as 000 — but
+the overview map is north up, so a compass 000 ought to be north. Displayed
+270 is north, 000 is east. The two readouts are consistent with *each other*,
+which is what a pilot flying a headwind needs, so this is cosmetic rather than
+broken; the fix is `DEGREES(heading + 64)` in `panel_status` and the same in
+`panel_wind`'s caller. Not done, because it changes a readout that has been
+there since the panel was built.
+
 **The gimbal is free.** `cam->horizon` was always a field the renderer
 rebuilt its per-step horizon table from whenever it moved; tilting is a
 frame's worth of table and nothing per pixel.

@@ -15,6 +15,10 @@
 // when the load is released, so it has to blank whatever the last one left.
 #define CARGO_WIDTH 12
 
+// The wind shares the bottom row with the cargo bay, to the right of it and
+// clear of the overview map, which only reaches down to the row above.
+#define WIND_COL 20
+
 #define ALT_COL 4
 #define HDG_COL 13
 #define LAT_COL 4
@@ -95,6 +99,12 @@ void panel_init(void)
 
   panel_puts(0, ROW_CARGO, "CARGO", PANEL_LABEL);
 
+  // Only the two numbers are rewritten when the wind shifts; the units are
+  // part of the furniture, like every other label here.
+  panel_puts(WIND_COL, ROW_CARGO, "WIND", PANEL_LABEL);
+  panel_puts(WIND_COL + 8, ROW_CARGO, "DEG", PANEL_LABEL);
+  panel_puts(WIND_COL + 14, ROW_CARGO, "M/S", PANEL_LABEL);
+
   // The overview map: full-colour tiles dropped straight into panel cells.
   // Their pixels came off the disk already in character order, so there is
   // nothing to do here but name them.
@@ -124,6 +134,15 @@ void panel_cargo(const char *what)
   for (col = 0; col < CARGO_WIDTH; col++)
     vic4_panel_char((uint8_t)(6 + col), ROW_CARGO, ' ', PANEL_INK);
   panel_puts(6, ROW_CARGO, what, PANEL_INK);
+}
+
+void panel_wind(uint8_t from, uint8_t mps)
+{
+  // A bearing is read with its leading zeros -- 045, not 45 -- so this gets
+  // the zero-padded field the coordinates use rather than the space-padded
+  // one the altitude does. Same units as the heading beside it.
+  put_frac(WIND_COL + 5, ROW_CARGO, DEGREES(from), 3, PANEL_INK);
+  put_number(WIND_COL + 11, ROW_CARGO, mps, 2, PANEL_INK);
 }
 
 void panel_message(const char *s)

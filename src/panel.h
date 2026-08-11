@@ -37,6 +37,11 @@ void panel_speed(uint8_t mode);
 // mission flown with the camera alone shows for the whole flight.
 void panel_cargo(const char *what);
 
+// The wind. `from` is the direction it blows FROM in 256ths of a turn, the
+// same units as the heading, shown in degrees beside it; `mps` is its speed.
+// Only called when the wind actually shifts, not every frame.
+void panel_wind(uint8_t from, uint8_t mps);
+
 // Refresh the flight readouts. x and y are the camera's 8.8 map position,
 // fps10 is frames per second times ten.
 void panel_status(int16_t altitude, uint8_t heading, uint16_t x, uint16_t y,

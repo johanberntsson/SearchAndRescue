@@ -37,6 +37,9 @@ wrong place.
   a ridge in front of them hides their feet
 - Drone controls modelled on a real one: yaw, climb, camera gimbal and a
   three-position speed limiter (see Controls below)
+- A wind, randomised at launch and veering every few seconds, that blows the
+  drone about whatever it is doing — including a hover. The panel names it the
+  way a weather report does, by the direction it comes from
 
 Getting there meant building a profiler first (`src/profile.c`, read with
 `tools/profread.py`) rather than guessing. The compiler's 32-bit multiply turned out

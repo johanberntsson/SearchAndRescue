@@ -116,6 +116,10 @@ Do not re-litigate these without new measurements.
   long before straight down.
 - The panel layout is still mostly empty: ALT/HDG, LAT/LON and FPS use the
   left half of three rows out of six.
+- **The heading readout is 90 degrees out.** Angle 0 flies east and prints as
+  000, but the overview map is north up, so 270 is north. The wind readout uses
+  the same units and is consistent with it, so a headwind still reads as one;
+  it is only wrong against the map. `DEGREES(heading + 64)` fixes both.
 - No HUD over the 3D view. `vision.md` wants an artificial horizon, battery,
   GPS and signal strength. Palette 240/241 are reserved for it; `hud.c` did
   exactly this kind of pixel drawing and is in git history if wanted back.
@@ -176,6 +180,10 @@ Do not re-litigate these without new measurements.
   bytes to 512. **Watch out:** reading the palette with `load_far` hangs the
   machine and no run explained why — see `CLAUDE.md` before touching
   `src/loader.c`.
+- **Wind.** A direction and strength picked at launch from a 16-bit xorshift,
+  added to the position every frame, veering a little every eight seconds, and
+  reported on the panel by the direction it comes from. It is applied before
+  the ground check, so it can blow you into a hill.
 - **Crashing.** Sport mode has no terrain following: the ground clamp in `fly`
   now also reports contact, and in mode 3 that ends the flight with the drone
   destroyed. Modes 1 and 2 hold you off the hill as they always did. Arming
