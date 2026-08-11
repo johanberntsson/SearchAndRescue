@@ -23,8 +23,16 @@ make PROFILE=0    # without the per-column instrumentation; use this for timing
 make WIDE=1       # march 320 rays instead of doubling 160 pixels
 make FLYNOW=1     # skip the title and menus, launch straight into the flight
 make HGT_SIZE=1024 COL_SIZE=512     # map resolutions, 256..1024
+make release      # PROFILE=0 disk, copied to release/sar-latest.d81
 make clean
 ```
+
+`make release` spells `PROFILE=0 WIDE=0 FLYNOW=0` out in a sub-make rather
+than leaning on the defaults, so the handed-out disk is the same one however
+the tree was last built; the map sizes are left to the defaults, because those
+*are* the shipping resolution. It shares `build/`, so it and an interactive
+build force a rebuild of each other through the config stamp — that is the
+stamp working, not waste.
 
 `make run` launches `xemu-xmega65`, a GUI emulator that blocks until closed. For automated checks, run it headless and screenshot on exit:
 
@@ -301,10 +309,24 @@ Controls, which follow a real drone's (see `documentation/real-drones/`):
 `W`/`S` forward and back, `A`/`D` yaw, `R`/`F` climb and descend, `Q`/`E`
 gimbal up and down, `1`/`2`/`3` the speed limiter (cinematic, normal, sport),
 `SPACE` to file a report, `RETURN` to release the cargo, `RUN/STOP` to abandon
-the mission. `src/input.c` scans four matrix rows now — row 0 for `RETURN`,
-row 7 bit 7 for `RUN/STOP` — and returns held keys and fresh presses from one
-scan, because an edge only means anything against the scan before it and two
-scans in a frame would see none.
+the mission.
+
+**Sport mode has no terrain following, and that is the third way to fail.**
+`fly` has always clamped the camera to `GROUND_GAP` above the ground; now the
+same test also reports contact, and in sport the flight ends there
+(`FLIGHT_CRASHED`). A real drone turns its obstacle sensors off in sport too,
+so the fastest mode is the one that will fly you into a hill. The clamp is
+still applied on the crash frame, so the last picture is the hillside rather
+than a view from inside it, and the check is read at the *bottom* of the loop
+with the other exits so that frame reaches the screen first. Arming sport puts
+`SPORT: NO TERRAIN FOLLOWING` on the panel, which is the warning — the briefing
+deliberately does not carry one, because the page has no spare row and the
+panel says it at the moment the pilot chooses.
+
+`src/input.c` scans four matrix rows now — row 0 for `RETURN`, row 7 bit 7 for
+`RUN/STOP` — and returns held keys and fresh presses from one scan, because an
+edge only means anything against the scan before it and two scans in a frame
+would see none.
 
 `RUN/STOP` reads the same on the briefing and in the mission list as it does
 in the air: this is not the job, take me back.

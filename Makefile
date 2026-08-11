@@ -97,7 +97,26 @@ $(D81): $(PRG) $(RES)
 	    -writeprg -copyf1 $(PRG) \
 	    -writeseq -copyf1 $(RES)
 
+# The disk to hand out. PROFILE=0 drops the per-column instrumentation, which
+# is about 7% of a frame; WIDE=0 keeps the 160-ray march, which is twice the
+# speed of 320 for a picture that barely differs; FLYNOW=0 puts the menus back.
+# All three are spelled out rather than left to the defaults above, so that a
+# release is the same disk however this was last invoked -- but the map sizes
+# are not, because those defaults *are* the shipping resolution and pinning
+# them here would be two places to change it.
+#
+# A sub-make, because these flags belong to the config stamp: the release
+# build and an interactive one share $(BUILD) and each forces a rebuild of the
+# other. That is the stamp doing its job, not waste to work around.
+RELEASE = release/sar-latest.d81
+
+release:
+	$(MAKE) PROFILE=0 WIDE=0 FLYNOW=0 $(D81)
+	mkdir -p $(dir $(RELEASE))
+	cp $(D81) $(RELEASE)
+	@echo "release: $(RELEASE)"
+
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all run prg clean
+.PHONY: all run prg release clean

@@ -26,6 +26,9 @@
 #define SPEED_MODES 3
 static const int16_t speed_limit[SPEED_MODES] = {40, 96, 176};
 #define SPEED_DEFAULT 1
+// Sport is the mode a real drone turns its obstacle sensors off in, and this
+// one does the same: the terrain following below only holds in the other two.
+#define SPEED_SPORT 2
 
 // How long the startup benchmark report stays up if nobody presses a key.
 // Long enough to read or photograph, short enough that an unattended run
@@ -40,7 +43,9 @@ static const int16_t speed_limit[SPEED_MODES] = {40, 96, 176};
 
 static uint8_t speed_mode = SPEED_DEFAULT;
 
-static void fly(camera *cam, uint16_t held)
+// Fly one frame. Returns non-zero if the drone has hit the hillside, which
+// only sport mode lets happen.
+static uint8_t fly(camera *cam, uint16_t held)
 {
   int16_t speed = 0;
   uint8_t ground;
@@ -78,14 +83,27 @@ static void fly(camera *cam, uint16_t held)
   if (cam->horizon < TILT_MIN)
     cam->horizon = TILT_MIN;
 
+  // The same test does both jobs: below the gap you are in the hill. In the
+  // two slower modes the drone simply refuses to go there, which is what the
+  // terrain following has always done; in sport there is nothing holding it
+  // off and the flight is over.
+  //
+  // The camera is put back on top of the terrain either way, so the last
+  // frame the pilot sees is the hillside they flew into rather than a picture
+  // taken from inside it.
   ground = voxel_ground(cam->x, cam->y);
-  if (cam->height < (int16_t)ground + GROUND_GAP)
+  if (cam->height < (int16_t)ground + GROUND_GAP) {
     cam->height = (int16_t)ground + GROUND_GAP;
+    return speed_mode == SPEED_SPORT;
+  }
+  return 0;
 }
 
 // 1, 2 and 3 pick the speed limiter. Held rather than edge-triggered: there
 // is nothing to repeat, so pressing it twice is the same as pressing it once.
-static void set_speed(uint16_t held)
+// Returns non-zero when the pilot has just armed sport mode, which is worth
+// saying out loud because it takes the terrain following away.
+static uint8_t set_speed(uint16_t held)
 {
   uint8_t mode = speed_mode;
 
@@ -94,12 +112,13 @@ static void set_speed(uint16_t held)
   if (held & KEY_2)
     mode = 1;
   if (held & KEY_3)
-    mode = 2;
+    mode = SPEED_SPORT;
 
-  if (mode != speed_mode) {
-    speed_mode = mode;
-    panel_speed(mode);
-  }
+  if (mode == speed_mode)
+    return 0;
+  speed_mode = mode;
+  panel_speed(mode);
+  return mode == SPEED_SPORT;
 }
 
 // Seconds since a profiler timestamp. The subtraction is on a line of its own
@@ -194,10 +213,14 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
     uint32_t frame_start = profile_now32();
     uint16_t t0 = PROF_NOW();
     uint16_t held, pressed;
+    uint8_t hit;
 
     input_scan(&held, &pressed);
-    fly(&cam, held);
-    set_speed(held);
+    hit = fly(&cam, held);
+    if (set_speed(held)) {
+      panel_message("SPORT: NO TERRAIN FOLLOWING");
+      message_left = MESSAGE_FRAMES;
+    }
     PROF_ADD(P_OTHER, t0);
 
     voxel_render(vic4_base(back), &cam);
@@ -216,6 +239,14 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
 
     // Every way out of the loop reports the flight that actually happened, so
     // the debrief times an abandoned one too.
+    //
+    // The crash is tested down here rather than where `fly` reports it, so
+    // that the frame showing what was flown into is on the screen before the
+    // debrief replaces it.
+    if (hit) {
+      *seconds = elapsed(launched);
+      return FLIGHT_CRASHED;
+    }
     if (pressed & KEY_STOP) {
       *seconds = elapsed(launched);
       return FLIGHT_ABORTED;

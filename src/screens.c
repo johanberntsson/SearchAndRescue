@@ -148,19 +148,20 @@ void screens_briefing(uint8_t mission_no)
   vic4_puts(4, 12, m->objective, PANEL_INK);
 
   vic4_puts(2, 14, "CONTROLS", PANEL_LABEL);
-  vic4_puts(4, 15, "W S     FORWARD    BACK", PANEL_INK);
-  vic4_puts(4, 16, "A D     TURN LEFT  RIGHT", PANEL_INK);
-  vic4_puts(4, 17, "R F     CLIMB      DESCEND", PANEL_INK);
-  vic4_puts(4, 18, "Q E     CAMERA UP  DOWN", PANEL_INK);
-  vic4_puts(4, 19, "1 2 3   SPEED  SLOW NORMAL SPORT", PANEL_INK);
+  vic4_puts(4, 15, "W S      FORWARD    BACK", PANEL_INK);
+  vic4_puts(4, 16, "A D      TURN LEFT  RIGHT", PANEL_INK);
+  vic4_puts(4, 17, "R F      CLIMB      DESCEND", PANEL_INK);
+  vic4_puts(4, 18, "Q E      CAMERA UP  DOWN", PANEL_INK);
+  vic4_puts(4, 19, "1 2 3    SPEED  SLOW NORMAL SPORT", PANEL_INK);
   // The one line that differs between the two kinds of mission, and it comes
   // out of the mission's cargo bay rather than out of a branch here.
   vic4_puts(4, 20, mission_action_name(m), PANEL_INK);
-  vic4_puts(12, 20, mission_action_verb(m), PANEL_INK);
-  // Split so that the verb starts at column 12 like every row above it:
-  // RUN/STOP is exactly as wide as the key column.
+  vic4_puts(13, 20, mission_action_verb(m), PANEL_INK);
+  // Split rather than one string, so the verb lines up with every row above
+  // it. The key column is nine wide because RUN/STOP is eight and would
+  // otherwise touch its verb.
   vic4_puts(4, 21, "RUN/STOP", PANEL_INK);
-  vic4_puts(12, 21, "ABANDON MISSION", PANEL_INK);
+  vic4_puts(13, 21, "ABANDON MISSION", PANEL_INK);
 
   centre(PROMPT_ROW, "SPACE   LAUNCH", PANEL_LABEL);
 }
@@ -176,6 +177,9 @@ void screens_debrief(uint8_t mission_no, flight_outcome how, uint16_t seconds)
     // Only a mission with something in the bay can lose it, so `lost` is
     // always there; the fallback is for a table entry that forgot it.
     what = m->lost ? m->lost : "THE CARGO WENT DOWN IN THE WRONG PLACE";
+  } else if (how == FLIGHT_CRASHED) {
+    heading = "DRONE DESTROYED";
+    what = "SPORT MODE HAS NO TERRAIN FOLLOWING";
   } else if (how == FLIGHT_ABORTED) {
     heading = "MISSION ABANDONED";
     what = "THE DRONE CAME HOME EMPTY HANDED";

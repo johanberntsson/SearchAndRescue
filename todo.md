@@ -7,8 +7,9 @@ Mission one finds the survivor on the pyramid at 46.713N 8.110E — get within
 ten cells with them on screen and press `SPACE`. Mission two drops an EpiPen to
 a pair of hikers on the lake shore at 46.597N 8.227E — get within five cells
 and press `RETURN`, and it fails if the one EpiPen goes down anywhere else.
-`RUN/STOP` abandons a flight. The briefing gives the fix and the panel gives
-your own.
+`RUN/STOP` abandons a flight, and sport mode (`3`) has no terrain following, so
+the third way to fail is to fly into a hill. The briefing gives the fix and the
+panel gives your own.
 
 Underneath: a 320x152 3D view over a six-row 40-column text panel with an
 overview map, 12.5 fps (`PROFILE=0`, default map sizes). The march is 160
@@ -22,6 +23,7 @@ Build knobs, all in the Makefile:
 | `WIDE=1` | march 320 rays instead of doubling 160 pixels |
 | `FLYNOW=1` | skip the menus; a headless run needs it to render anything at all, since it cannot press a key |
 | `HGT_SIZE`, `COL_SIZE` | map resolutions, powers of two from 256 to 1024 |
+| `make release` | not a knob but a target: the `PROFILE=0` disk, into `release/sar-latest.d81` |
 
 Where a frame goes (the older 160-pixel framebuffer, h256 c512, 64.7 ms; the
 shape is the same at other settings):
@@ -174,6 +176,13 @@ Do not re-litigate these without new measurements.
   bytes to 512. **Watch out:** reading the palette with `load_far` hangs the
   machine and no run explained why — see `CLAUDE.md` before touching
   `src/loader.c`.
+- **Crashing.** Sport mode has no terrain following: the ground clamp in `fly`
+  now also reports contact, and in mode 3 that ends the flight with the drone
+  destroyed. Modes 1 and 2 hold you off the hill as they always did. Arming
+  sport says so on the panel.
+- **`make release`**: a `PROFILE=0 WIDE=0 FLYNOW=0` disk copied to
+  `release/sar-latest.d81`, so a handout is one command and always the same
+  build.
 - **Mission two, "First Aid"**, and with it the shape the rest of the missions
   take: they are the same flight with different words on it. The mission table
   carries a `cargo` field and everything else follows from it — an empty bay

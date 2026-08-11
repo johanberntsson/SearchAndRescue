@@ -50,7 +50,7 @@ uint16_t mission_action_key(const mission *m)
 
 const char *mission_action_name(const mission *m)
 {
-  return m->cargo ? "RETURN" : "SPACE ";
+  return m->cargo ? "RETURN" : "SPACE";
 }
 
 const char *mission_action_verb(const mission *m)

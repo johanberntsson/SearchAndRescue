@@ -62,6 +62,7 @@ make run                         # build build/sar.d81 and boot it in the emulat
 make PROFILE=0                   # without the instrumentation; use this for timing
 make FLYNOW=1                    # skip the menus and launch straight into a flight
 make HGT_SIZE=1024 COL_SIZE=512  # map resolutions, powers of two from 256 to 1024
+make release                     # the disk to hand out, into release/sar-latest.d81
 make clean
 ```
 
@@ -82,6 +83,12 @@ After the title screen and the briefing, `SPACE` launches the flight.
 | `SPACE` | file a report, and go on from any screen |
 | `RETURN` | release the cargo |
 | `RUN/STOP` | abandon the mission, and back out of the list or a briefing |
+
+**Sport mode has no terrain following.** In the two slower modes the drone
+refuses to fly closer to the ground than it should, exactly as before; in sport
+it does not, and touching the hillside destroys it. Real drones turn their
+obstacle sensors off in sport too, so the fastest mode is the one that will fly
+you into a mountain.
 
 A report only counts with the lost person on screen and within about ten map
 cells — near enough to have actually seen them. A cargo drop does not care
