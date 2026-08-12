@@ -67,12 +67,13 @@ scarce now is not ideas but *memory*: about 800 bytes of the 32K and 80 of the
 low free RAM, with the easy reclaims already spent. Read the Open note on
 `cstack` before starting anything large.
 
-- **Flight feel.** The keys are all there now, but thrust is still a per-frame
-  constant that jumps to full speed and back. Wanted: long push → big speed
-  change, short push → small, accelerating towards a target rather than
-  snapping to it, and scaled by the measured frame time, because between 7 and
-  15 fps a per-frame constant does not feel the same twice. Joystick too.
-- Then more of the game. `documentation/vision.md` has the design; the two
+- **The controls are finished.** Called on 13 Aug 2026, flying them: WASD, RF,
+  QE and the three speed modes are the drone's and they feel right. An earlier
+  entry here wanted a rethink — long push against short push, thrust scaled by
+  frame time, a joystick — and that is **withdrawn**, not deferred. The one
+  thing left is in Open and is low priority: speed changes snap, and could
+  accelerate and brake instead.
+- More of the game. `documentation/vision.md` has the design; the two
   missions are the first pieces of it. A third is a table entry and a sprite
   sheet, and there is now room for it: generated maps under `--shared` leave
   **32 palette entries** free where the hand-drawn one left 12, so two more
@@ -156,6 +157,11 @@ Do not re-litigate these without new measurements.
 
 - The far edge of each z band pops as you fly. Either blend the bands or
   shorten the step growth.
+- **Speed changes snap.** Picking a speed mode, or pushing and releasing `W`,
+  moves the drone to that speed the same frame. Ramping towards the new speed
+  and braking off the old would read better — a real drone leans into a
+  change. Low priority: the controls themselves are settled, this is polish on
+  one number.
 - The gimbal shears the picture rather than rotating it, because moving
   `cam->horizon` is a shear. Fine at the tilts flying uses; it will look wrong
   long before straight down.
