@@ -556,7 +556,7 @@ needs fewer colours each, or shared colours between them, and the converter
 will say so rather than quietly painting terrain in a sprite colour.
 
 **Maps can also be generated rather than drawn.** `tools/genmap.py` turns a
-mission YAML in `maps/` into `hmapNN.png`/`cmapNN.png` — the same two shapes
+map file in `maps/` into `hmapNN.png`/`cmapNN.png` — the same two shapes
 `convmap.py` reads — from one seeded xorshift stream, so a seed and a YAML file
 reproduce a map byte for byte.
 
@@ -603,8 +603,14 @@ dropped, and the previewer pins only the ones it does not build.
 `genmap.py` and then `convmap.py` into `build/map0.*` and `build/map1.*`, and
 `src/mission.c` says which slot a mission is flown over. The hand-drawn pair in
 `resources/` is no longer built into anything — it stays as the reference the
-sun was measured against and the pyramid copied from. `mission.bin` is still
-not written.
+sun was measured against and the pyramid copied from.
+
+**A map file describes a world and nothing else** — `maps/island.yaml` is its
+seed, its shape and the things built into its terrain. What is flown over it is
+a *mission*, which has a map and is not one: two rescues could be flown over
+the same island. The game holds its missions as a C table in `src/mission.c`;
+neither `map.bin` (that table's map-side counterpart, and what an on-device
+generator would read) nor `mission.bin` is written yet.
 
 **Several maps fit only because they are generated.** Two of them are 487 KB
 crunched against 661 KB for the one hand-drawn pair, so a disk that used to
@@ -682,7 +688,7 @@ it:
   breaking each on purpose.
 - it runs at **12.5 fps on purpose** — every rate in the flight model is per
   frame, so a faster preview is a faster drone. No wind and no crash: it is an
-  inspection tool, and `M` marks a position in the form the mission YAML wants.
+  inspection tool, and `M` marks a position in the form the map file wants.
 
 Height units are a quarter of a map cell — the source is 4x the renderer's 256-cell grid and the heights were not rescaled — and `SCALE_H` in `src/voxel.c` folds that in. `HGT_SIZE` does not change this: a finer heightmap subdivides each cell rather than widening the world, so the world stays 256 cells across whatever the map resolution.
 

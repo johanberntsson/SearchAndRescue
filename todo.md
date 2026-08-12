@@ -100,10 +100,11 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   to beat, and the traps the rewrite turned up.
 - **Procedural maps, stage three.** The generator and the previewer are both
   done, and the items that are terrain are built (see Done). Next is
-  `mission.bin` — the pre-parsed struct the game reads instead of hardcoded
-  coordinates, and the home of the items that are *not* terrain, which is what
-  the previewer's `M` key exists to fill in — and then a Makefile knob for
-  which map pair the disk is built from. `documentation/procedural-maps.md` has the order and the open
+  **`mission.bin`, and it is a different file from `map.bin`** — a mission has
+  a map and is not one, so the map side (seed, shape, terrain items) is what
+  the generator reads and the mission side (which map, the target, the figure,
+  the cargo, the words) is what the game reads instead of the hardcoded table
+  in `src/mission.c`. The previewer's `M` key fills in positions for either. `documentation/procedural-maps.md` has the order and the open
   question about sprite palette indices below 16.
 
 ## Decisions already settled
@@ -185,7 +186,7 @@ Do not re-litigate these without new measurements.
   same camera, **every one of the 48336 palette indices is identical**, and
   `tools/checkview.py` is that check as a four-second command with no emulator
   in it — **run it after touching the renderer**. `M` marks a position in the form
-  the mission YAML wants, which is where item coordinates will come from; items
+  the map file wants, which is where item coordinates will come from; items
   already in the file are drawn as pins clipped against the march's own y
   buffer. tkinter and Pillow, no new dependency. Nothing in `src/` changed.
 - **Landmarks are terrain.** A `pyramid` in a mission's `items` is terraformed

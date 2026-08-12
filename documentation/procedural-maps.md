@@ -1,6 +1,6 @@
 # Procedural map generation — design summary
 
-Status: **built, and shipping.** `tools/genmap.py` turns a mission YAML into a
+Status: **built, and shipping.** `tools/genmap.py` turns a map file into a
 height/colour map pair, `tools/preview.py` flies it on the PC with the game's
 own renderer, and **the disk carries two of them** — mission one over
 `maps/island.yaml` and mission two over `maps/plains.yaml`, both resident in
@@ -18,14 +18,14 @@ below.
 ## Problem
 
 Height/colour maps are large; even compressed, a d81 realistically fits one
-map pair. That gives no mission variety. Hand-authoring more maps doesn't
+map pair. That gives no variety of country. Hand-authoring more maps doesn't
 scale. Solution: generate maps from a small YAML description instead of
 drawing/sourcing them.
 
 ## Pipeline
 
 ```
-mission.yaml → tools/genmap.py → height map (indices), colour map (indices), mission.bin
+map.yaml → tools/genmap.py → height map (indices), colour map (indices), map.bin
                                         │
                               (same file, dev mode)
                                         ▼
@@ -47,7 +47,7 @@ build) is unchanged — the generator just needs to emit the same map shapes
 
 ## Iteration workflow
 
-1. Edit `mission.yaml` (id, seed, type, climate, ruggedness,
+1. Edit the map file (id, seed, type, climate, ruggedness,
    rivers/hills/lakes and their size variants).
 2. Run `genmap.py` → regenerates maps, previewer picks them up.
 3. Fly around in the Python previewer, keep or reroll the seed.
@@ -112,9 +112,11 @@ An item is one of two things, and the type says which:
   heights to roof height, colours to dressed stone — and the renderer never
   learns that anything unusual is there. Nothing else in the pipeline has to
   change, and it costs no frame time at all.
-- **carried to `mission.bin`.** A survivor, a landing site: a position the
-  game reads. None of these exist yet, so `genmap.py` refuses an item type
-  it does not know how to build rather than silently dropping it.
+- **belonging to a mission.** A survivor, a landing site: a position the game
+  reads, which has no business in a file that describes a *world* -- two
+  missions could stand different people on the same island. These live in
+  `src/mission.c` today and will move to `mission.bin`; `genmap.py` refuses an
+  item type it does not know how to build rather than silently dropping it.
 
 The previewer draws a pin for the second kind only. A pin on a pyramid would
 hide the thing it was pointing at, and "can this be spotted from the air" is
@@ -122,7 +124,7 @@ a question the structure answers for itself.
 
 ### `id` — required
 
-Every `mission.yaml` declares its own map index (e.g. `id: 3`). This one
+Every map file declares its own index (e.g. `id: 3`). This one
 field does three jobs at once:
 
 - **File naming.** `genmap.py` names its output from `id` —
@@ -140,7 +142,7 @@ field does three jobs at once:
   the largest map layout you expect) so the arithmetic stays this simple
   even before every slot is used.
 
-Validate at generation time that `id` is unique across all mission YAMLs
+Validate at generation time that `id` is unique across all map files
 in the project — a collision would silently overwrite another map's files
 and attic RAM slot.
 
@@ -223,24 +225,53 @@ and attic RAM slot.
   for climate switching touches the same territory — test this path
   early rather than assuming it's fine.
 
-## mission.bin — pre-parsed struct
+## map.bin and mission.bin — two files, because they are two things
 
-Alongside the height/colour maps, `genmap.py` emits a small fixed-width
-binary file the game reads instead of hardcoded constants:
+**A mission has a map; it is not one.** The two were one section of this
+document for a while, and the blend showed: the struct described below was
+listed as holding a seed and a climate *and* a survivor's position, which is a
+generator's output stapled to a game's content. They separate cleanly, and the
+moment two rescues are flown over the same island the 1:1 that hid the seam is
+gone anyway.
+
+### `map.bin` — a world, pre-parsed
+
+Alongside the height/colour maps, `genmap.py` emits a small fixed-width binary
+of everything it was told:
 
 - seed
-- type / climate (enums)
-- item count, then `{item_type, x, y}` per item (actual placed
-  coordinates — these came straight from the YAML in this phase, since
-  placement is manual, not auto-snapped)
-- survivor position, player start position
+- type / climate / ruggedness / scale (enums)
+- the feature counts and sizes
+- item count, then `{item_type, size, x, y}` for the items that are **terrain**
+  — a pyramid is part of the world
 
-This is a real win now (data-driven missions instead of hardcoded
-coordinates like the current `46.713N 8.110E`), and it's deliberately the
-interface a future on-device generator would need to produce — if
-generation ever moves onto the MEGA65, only what *writes* `mission.bin`
-changes, not what reads it. The MEGA65 side never needs to know or care
-whether the struct came from a Python script or on-device generation.
+That is exactly what `maps/*.yaml` holds today, and nothing else: the files in
+`maps/` are *map files*, not mission files, and the tools call them that. It
+is also precisely the input an on-device generator needs, and the reason the
+interface is worth having: **if generation moves onto the MEGA65, only what
+*writes* the maps changes.** A stage-one generator reads `map.bin` and never
+needs to know that missions exist. See `documentation/on-device-maps.md`.
+
+### `mission.bin` — what is flown, and where
+
+Nothing of this exists yet; the game holds it as a C table in
+`src/mission.c`. What belongs in it:
+
+- which map slot the mission is flown over — the maps are all resident, and
+  `map_use()` switches between them for 512 bytes of plane table
+- the target's position and which figure stands there
+- the cargo, the weather, the briefing and debrief lines
+
+Two missions could share one map with different targets on it, which is the
+whole reason this is not the same file as the one above. Making it data rather
+than C is the win the old note was really after ("data-driven missions instead
+of hardcoded coordinates"), and it is unblocked: the map side is done.
+
+**Where an item lives is decided by which of the two it belongs to.** Terrain
+goes in the map file, because it is the world and the generator builds it; a
+survivor goes in the mission, because two missions could put different people
+on the same island. `genmap.py` refuses an item type it cannot build rather
+than passing it along, which is that seam showing.
 
 ## Keep in mind for future portability
 
@@ -271,17 +302,16 @@ to the generator from here.
 
 - **Two-stage boot for the on-device case.** If/when generation moves to
   the MEGA65, the natural shape is: `autoboot.c65` becomes a first-stage
-  generator program — reads `mission.bin`-style parameters, generates
+  generator program — reads `map.bin`-style parameters, generates
   height/colour/palette data into attic RAM, then loads and runs `game.prg`
   (which is most of what `autoboot.c65` is today). Because the generator
   and the game never need to be resident at the same time, the generator
   stage can afford to be a fairly large program without competing with the
   game binary for space — it does its job once, then gets replaced.
-  `mission.bin` already being the interface between "whatever produced the
-  maps" and "the game that reads them" (see above) means this later split
-  doesn't require rethinking that interface, only adding a program that
-  produces attic RAM contents directly instead of reading them from a
-  decrunched disk image.
+  `map.bin` already being the interface between "whatever produced the maps"
+  and "the game that reads them" (see above) means this later split doesn't
+  require rethinking that interface, only adding a program that produces attic
+  RAM contents directly instead of reading them from a decrunched disk image.
 
 ## Out of scope (this phase)
 
@@ -295,9 +325,12 @@ to the generator from here.
 - Live/interactive map editing inside the Python previewer.
 - Automatic item placement/snapping (flat-ground search, biome
   constraints) — items are placed manually by eye while flying.
-- Separating world/terrain definition from mission/item definition into
-  separate YAML files — starting with one `mission.yaml` per mission;
-  revisit only if that seam becomes annoying in practice.
+- ~~Separating world/terrain definition from mission/item definition into
+  separate YAML files~~ — **done, on the naming and the design if not yet in
+  a second file.** `maps/*.yaml` describe worlds and nothing else, the tools
+  call them map files, and what a mission is lives in `src/mission.c` until
+  `mission.bin` exists. A mission has a map and is not one; the seam became
+  annoying the moment the disk carried two maps.
 
 ## As built (stage one)
 
@@ -316,7 +349,8 @@ maps are build products and are not in git; the YAML and the palette are.
 Everything in the schema above is implemented as written, plus a `--size`
 (default 1024, powers of two) and a `--palette`. `items` are validated, and
 the ones that are terrain — a `pyramid`, so far — are built into the two maps;
-what the game will read out of `mission.bin` still goes nowhere.
+what the game will read out of `mission.bin` is still a C table in
+`src/mission.c`.
 
 ### What the numbers mean
 
@@ -518,7 +552,7 @@ Worth knowing:
   were writing it down; the ground clamp is there but sport mode's crash is
   not. This is an inspection tool.
 - `M` prints the position as a YAML item block and appends it to
-  `<mission>.marks.yaml`, so nothing is lost to a scrolled terminal. Item
+  `<map>.marks.yaml`, so nothing is lost to a scrolled terminal. Item
   coordinates are **map pixels at the generated size** — a quarter of a cell at
   1024, which converts to the game's 8.8 position exactly.
 - items already in the YAML are drawn as pins, projected with `sprite.c`'s own

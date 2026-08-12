@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check tools/preview.py still draws what the MEGA65 draws.
 
-    checkview.py [screenshot.png] [--mission maps/island.yaml] [--diff out.png]
+    checkview.py [screenshot.png] [--map maps/island.yaml] [--diff out.png]
 
 With no arguments it uses the reference screenshot in documentation/reference/,
 so the check needs no emulator and takes a couple of seconds:
@@ -34,9 +34,9 @@ save it as `<name>-x<cell>-y<cell>-a<angle>-h<height>.png` -- this reads the
 camera out of that name. The panel gives the cell and not the sub-cell, so the
 fraction is recovered here by search.
 
-The reference is of **map 0**, the island, which is what `--mission` defaults
+The reference is of **map 0**, the island, which is what `--map` defaults
 to. A second reference of the plains would want `FLYNOW=2` and
-`--mission maps/plains.yaml`; one is enough to catch a renderer that has
+`--map maps/plains.yaml`; one is enough to catch a renderer that has
 drifted, and the second map is checked by flying it.
 """
 
@@ -148,7 +148,7 @@ def search(march, cam, ref, cols, coarse):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("screenshot", nargs="?", default=REFERENCE)
-    ap.add_argument("--mission", default=os.path.join(
+    ap.add_argument("--map", dest="mapfile", default=os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "maps", "island.yaml"))
     ap.add_argument("--at", metavar="CELLX,CELLY,ANGLE,ALT",
@@ -166,8 +166,8 @@ def main():
     args = ap.parse_args()
 
     c = P.Constants(args.src)
-    spec, _ = P.read_mission(args.mission)
-    hgt, col = P.map_files(args.mission, spec)
+    spec, _ = P.read_map(args.mapfile)
+    hgt, col = P.map_files(args.mapfile, spec)
     maps = P.Maps(hgt, col, args.hgt_size, args.col_size)
     march = P.March(c, maps, P.Sine(c.sin_quarter))
 

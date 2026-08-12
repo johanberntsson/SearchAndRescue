@@ -51,12 +51,12 @@ SPRITES  = resources/survivor-sprite.png resources/medicalemergency-sprite.png
 # than drawn, which is what makes several of them fit -- two come to about 500
 # KB crunched against 661 KB for the one hand-drawn pair. Keep MAP_COUNT in
 # src/loader.h in step with this list.
-MAP_YAMLS = maps/island.yaml maps/plains.yaml
+MAP_YAMLS = maps/island.yaml maps/plains.yaml   # map files, not missions
 MAP_IDS   = 03 05
 MAP_NUMS  = 0 1   # slot numbers, one per map above
 
 # Generated maps are build products and are not in git; genmap.py names them
-# from each mission's `id`.
+# from each map's `id`.
 GEN_MAPS = $(foreach id,$(MAP_IDS),maps/hmap$(id).png maps/cmap$(id).png)
 MAP_RES  = $(foreach n,$(MAP_NUMS),$(BUILD)/map$(n).hgt $(BUILD)/map$(n).col \
                                     $(BUILD)/map$(n).pal $(BUILD)/map$(n).ovr)
@@ -106,9 +106,8 @@ comma := ,
 empty :=
 space := $(empty) $(empty)
 
-# The maps, from their mission files. One genmap run per mission; the id in
-# the filename is the mission's own, so these are spelled out rather than
-# pattern-matched.
+# The maps, from their map files. One genmap run each; the id in the filename
+# is the map's own, so these are spelled out rather than pattern-matched.
 maps/hmap03.png maps/cmap03.png &: maps/island.yaml maps/palette.yaml \
                                    tools/genmap.py tools/fixed.py
 	python3 tools/genmap.py maps/island.yaml

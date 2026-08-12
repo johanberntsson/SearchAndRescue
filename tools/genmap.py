@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Generate a height and colour map pair from a mission YAML.
+"""Generate a height and colour map pair from a map file.
 
-    genmap.py <mission.yaml> [-o outdir] [--size N] [--palette FILE]
+    genmap.py <map.yaml> [-o outdir] [--size N] [--palette FILE]
 
 writes hmapNN.png (8-bit greyscale heights) and cmapNN.png (a palette image of
 colour indices) beside the YAML, where NN is the `general.id` field.  Those are
@@ -9,9 +9,15 @@ exactly the two shapes tools/convmap.py already consumes, so nothing downstream
 of here changes: convmap.py samples them down, crunches them and the build puts
 them on the disk the same way it does the hand-drawn pair in resources/.
 
-See documentation/procedural-maps.md for the design and the YAML schema.  Items
-that are terrain -- a pyramid -- are built into the two maps here; the rest
-wait for mission.bin.
+See documentation/procedural-maps.md for the design and the YAML schema.
+
+**A map file describes a world and nothing else** -- its seed and shape, and
+the things built into its terrain.  Which mission is flown over it, and where
+anybody stands, is not in here: a mission *has* a map, and the two are not one
+to one, since two rescues could be flown over the same island.  The game's
+mission table is in src/mission.c and names the map slot it wants.  Items that
+are terrain -- a pyramid -- are built into the two maps here; a survivor is a
+mission object and will come from the mission side when that exists.
 
 Everything is drawn from one seeded xorshift stream, so the same YAML gives
 byte identical output on any machine, and the seed in the file is the whole of
@@ -684,9 +690,10 @@ TERRACE = 8              # pixels at DEFAULT_SIZE: two map cells
 RISER = 4                # of which this much is the riser's own band
 
 # The item types this file knows how to build, and the sizes each takes. An
-# item type that is only a mission object -- a survivor, a landing site -- will
-# come through here with no entry and go straight to mission.bin; there are
-# none of those yet, so an unknown type is a typo and is refused.
+# item type that is only a mission object -- a survivor, a landing site --
+# does not belong in a map file at all: it belongs to whatever flies here, and
+# the game holds it in src/mission.c today. So an unknown type is a typo and
+# is refused rather than passed along.
 ITEMS = {"pyramid": PYRAMID}
 
 
@@ -927,7 +934,7 @@ FIELDS = {
 }
 
 
-def read_mission(path):
+def read_map(path):
     with open(path) as f:
         doc = yaml.safe_load(f)
     if not isinstance(doc, dict) or "general" not in doc:
@@ -947,10 +954,10 @@ def read_mission(path):
             sys.exit(f"{path}: general.{key} is '{spec[key]}', "
                      f"expected one of {', '.join(sorted(allowed))}")
 
-    # Items are placed by hand in the previewer. The ones this file knows how
-    # to build are terraformed into the maps here; the rest are for
-    # mission.bin, which does not exist yet, and are checked anyway so a typo
-    # is caught now rather than in whatever writes that file.
+    # Items are placed by hand in the previewer, and every one of them is part
+    # of the *world*: a pyramid is terrain. Anything that belongs to a mission
+    # rather than to the map is refused above, so the check here is only that
+    # what is asked for can be built.
     for n, item in enumerate(doc.get("items") or []):
         if not isinstance(item, dict) or "type" not in item:
             sys.exit(f"{path}: item {n} has no type")
@@ -968,7 +975,7 @@ def read_mission(path):
 
 
 def check_id_unique(path, spec):
-    """No two mission YAMLs may claim the same id.
+    """No two map files may claim the same id.
 
     They would overwrite each other's map files, and once the maps are resident
     the id is also the attic RAM slot -- the whole point of it being one number
@@ -1005,8 +1012,8 @@ def write_maps(outdir, spec, heights, indices, rgb):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="generate a map pair from a mission YAML")
-    ap.add_argument("mission")
+    ap = argparse.ArgumentParser(description="generate a map pair from a map file")
+    ap.add_argument("mapfile", metavar="map.yaml")
     ap.add_argument("-o", "--outdir", help="where to write (default: beside the YAML)")
     ap.add_argument("--size", type=int, default=DEFAULT_SIZE)
     ap.add_argument("--palette", help="palette definition (default: palette.yaml "
@@ -1016,12 +1023,12 @@ def main():
     if args.size < CELLS or args.size & (args.size - 1):
         sys.exit(f"--size {args.size} is not a power of two of at least {CELLS}")
 
-    spec, items = read_mission(args.mission)
-    check_id_unique(args.mission, spec)
-    folder = os.path.dirname(os.path.abspath(args.mission))
+    spec, items = read_map(args.mapfile)
+    check_id_unique(args.mapfile, spec)
+    folder = os.path.dirname(os.path.abspath(args.mapfile))
     pal = load_palette(args.palette or os.path.join(folder, "palette.yaml"))
     if spec["climate"] not in pal["climates"]:
-        sys.exit(f"{args.mission}: general.climate is '{spec['climate']}', expected "
+        sys.exit(f"{args.mapfile}: general.climate is '{spec['climate']}', expected "
                  f"one of {', '.join(sorted(pal['climates']))}")
 
     size = args.size
@@ -1075,7 +1082,7 @@ def main():
         print(f"  item {n}: {item['size']} {item['type']} at "
               f"{item['x']},{item['y']} (cell {item['x'] * CELLS // DEFAULT_SIZE},"
               f"{item['y'] * CELLS // DEFAULT_SIZE}), {ground} high. Built into "
-              f"the maps; mission.bin is the next stage")
+              f"the maps")
 
 
 if __name__ == "__main__":

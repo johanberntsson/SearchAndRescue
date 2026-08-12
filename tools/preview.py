@@ -3,12 +3,12 @@
 
     preview.py [maps/island.yaml] [--scale 2] [--fps 12.5] [--shot out.png]
 
-Opens a window on the map `tools/genmap.py` wrote for that mission and flies it
+Opens a window on the map `tools/genmap.py` wrote from that map file and flies it
 with the game's controls, so terrain can be judged the way it will actually be
 seen -- from the air, at the draw distance the march really has -- instead of
 from a PNG viewed from above. It is also where item coordinates come from:
-fly to a spot, press `M`, and the position is printed in the form the mission
-YAML wants and appended to a marks file.
+fly to a spot, press `M`, and the position is printed in the form the map file
+wants and appended to a marks file.
 
 **This is the game's renderer, not a lookalike.** The march schedule, the
 projection, the map sampling, the sky, the flight model and the readouts are
@@ -450,9 +450,9 @@ def draw_markers(view, c, march, maps, cam, sine, items, size):
                     view[row, px] = convmap.HUD_PAPER
 
 
-# --- the mission file ---------------------------------------------------
+# --- the map file --------------------------------------------------------
 
-def read_mission(path):
+def read_map(path):
     with open(path) as f:
         doc = yaml.safe_load(f)
     if not isinstance(doc, dict) or "general" not in doc:
@@ -480,7 +480,7 @@ class Preview:
     def __init__(self, args):
         self.args = args
         self.c = Constants(args.src)
-        self.spec, self.items = read_mission(args.mission)
+        self.spec, self.items = read_map(args.mapfile)
         self.load_maps()
 
         self.sine = Sine(self.c.sin_quarter)
@@ -494,7 +494,7 @@ class Preview:
         self.fps = args.fps
 
     def load_maps(self):
-        hgt, col = map_files(self.args.mission, self.spec)
+        hgt, col = map_files(self.args.mapfile, self.spec)
         self.maps = Maps(hgt, col, self.args.hgt_size, self.args.col_size)
         self.size = Image.open(col).size[0]
 
@@ -587,14 +587,14 @@ class Preview:
                  f"      # {entry['lat']:.3f}N {entry['lon']:.3f}E, "
                  f"alt {entry['alt']}\n")
         print(block, end="", flush=True)
-        path = os.path.splitext(self.args.mission)[0] + MARK_SUFFIX
+        path = os.path.splitext(self.args.mapfile)[0] + MARK_SUFFIX
         with open(path, "a") as f:
             f.write(block)
         self.note = f"marked {entry['x']},{entry['y']} -> {os.path.basename(path)}"
 
     def reload(self):
         """Pick up a rerun of genmap.py without losing where you are."""
-        self.spec, self.items = read_mission(self.args.mission)
+        self.spec, self.items = read_map(self.args.mapfile)
         self.load_maps()
         self.march = March(self.c, self.maps, self.sine)
         self.thumb = self.maps.overview(self.c.FB_HEIGHT)
@@ -636,7 +636,7 @@ class Preview:
         import tkinter as tk
 
         self.root = tk.Tk()
-        self.root.title(f"{os.path.basename(self.args.mission)} — "
+        self.root.title(f"{os.path.basename(self.args.mapfile)} — "
                         f"map {self.spec['id']:02d}, {self.spec['type']}")
         self.root.configure(bg="black")
         self.thumb = self.maps.overview(self.c.FB_HEIGHT)
@@ -664,7 +664,8 @@ class Preview:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("mission", nargs="?", default="maps/island.yaml")
+    ap.add_argument("mapfile", metavar="map.yaml", nargs="?",
+                    default="maps/island.yaml")
     ap.add_argument("--scale", type=int, default=2, help="window pixels per pixel")
     ap.add_argument("--fps", type=float, default=DEFAULT_FPS,
                     help="frame rate; the default is the MEGA65's, and every "

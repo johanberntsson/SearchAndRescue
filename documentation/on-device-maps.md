@@ -35,9 +35,9 @@ So the honest table is:
 
 | | maps as files today | generated on device |
 |---|---|---|
-| disk per mission | 152-335 KB crunched | ~100 bytes of mission struct |
+| disk per map | 152-335 KB crunched | ~100 bytes of `map.bin` |
 | time before the flight | 20 s for the two on the disk, measured | 20-30 s per map at full size, estimated |
-| missions per d81 | **two, built and flown** — perhaps four | as many as you care to write |
+| maps per d81 | **two, built and flown** — perhaps four | as many as you care to write |
 | exomizer in the loop | yes | no |
 | `convmap.py` in the loop | yes | no — the generator writes the planes |
 
@@ -50,7 +50,7 @@ five" was optimistic and four is the honest ceiling.
 
 **Generation loses the time row and wins the disk row**, and the disk row is
 the one that was worth having in the first place: the whole point of the YAML
-pipeline is more missions than a disk can hold as pixels. Four is not many —
+pipeline is more country than a disk can hold as pixels. Four maps is not many —
 and note that the *game* already got most of this win without going on-device
 at all, since it is generation that shrank a map from 661 KB to 152. What
 on-device buys on top is the difference between four worlds and any number.
@@ -161,7 +161,7 @@ from numpy's PCG64. Neither can move to the 45GS02. Both have to be replaced
 kind `src/weather.c` already has — so that the previewer and the device are
 running the same arithmetic rather than two dialects of it. This is the bulk of
 the work and it is all of the risk: it re-rolls every existing map (the three
-example missions get new terrain from the same seeds), and it is the step where
+example maps get new terrain from the same seeds), and it is the step where
 "the same YAML gives the same map" quietly stops being true if it is done
 carelessly. Do it as its own change, with the tools still on the PC, and prove
 it there.
@@ -219,8 +219,11 @@ now has in hand is a few thousand cycles, not a file.
    week's.
 3. Then the rest in pipeline order, each with its checksum: stretch and mask,
    hills, water, colour, planes.
-4. `mission.bin` becomes the generator's input rather than the game's — the
-   game keeps reading the item block out of it.
+4. `map.bin` -- the map file pre-parsed into a struct -- becomes the
+   generator's input rather than a build product. A stage-one generator reads
+   it and never needs to know that missions exist; what the *game* reads is
+   `mission.bin`, which is a different file for a different thing. See
+   documentation/procedural-maps.md.
 
 ## Where the port has got to
 
@@ -264,7 +267,7 @@ measure, paint" three passes rather than ten.
   against the float version stage by stage, and then **swapped in**: the float
   path is gone and so is the second file, because two generators is not a
   state to keep. What the comparison said before the swap, over all three
-  example missions:
+  example maps:
   - **terrain**, given the same draws: worst **0.01-0.03 of one height unit in
     120**, and the island's coastline moving on 0.001% of its pixels.
   - **colour**, given the same terrain and water: 4-15% of land pixels land on
