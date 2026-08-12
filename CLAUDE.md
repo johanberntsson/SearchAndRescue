@@ -707,17 +707,36 @@ Measured on a real MEGA65 (chip / attic, cycles per operation):
 | map sample, scattered | 70 | 86 | +16 |
 | map read, sequential | 26 | 41 | +15 |
 | span pixel, one byte write | 30 | 33 | **+3** |
-| DMA copy chip to chip | 2.45 /byte | | |
-| DMA copy attic to chip | | 17.80 /byte | **7.3x** |
-| DMA fill | 1.22 /byte | | |
+| DMA copy chip to chip | 2.20 /byte | | |
+| DMA copy attic to chip | | 16.11 /byte | **7.3x** |
+| DMA copy chip to attic | | 9.54 /byte | **4.3x** |
+| DMA fill | 1.12 /byte | | |
 
 So a CPU access to attic RAM costs a flat ~15 cycles more than chip RAM,
 whether it is scattered or sequential — the 8-byte cache line buys nothing
 worth planning around. **Writes are posted and nearly free at +3.** And the
-DMA is the opposite of what everyone assumes: attic to chip runs at 2.3 MB/s
-against 16.5 MB/s chip to chip, which rules out any per-frame bulk move out
+DMA is the opposite of what everyone assumes: attic to chip runs at 2.5 MB/s
+against 18 MB/s chip to chip, which rules out any per-frame bulk move out
 of attic RAM. Keeping the sky template in chip RAM rather than attic is worth
 11 ms a frame on its own.
+
+**The attic bus is asymmetric, and in the useful direction.** Writing *into*
+attic RAM runs at 9.54 cycles a byte against 16.11 coming out — 1.7x faster —
+which is the same story the CPU figures tell, where a posted write costs +3
+and a read +15. Anything that produces a lot of data once and reads it back
+rarely is therefore much cheaper than the attic-to-chip figure suggests, which
+is exactly the shape of a map generator (see
+`documentation/on-device-maps.md`). Two consequences worth carrying:
+
+- **a DMA out of a chip RAM row buffer is not the cheap way to fill attic
+  RAM.** 9.54 cycles a byte is more than the +3 a posted CPU write costs in a
+  loop that is computing the value anyway, so a generator should write its
+  pixels straight up there and keep the DMA for moves it cannot fold into a
+  loop it is already running.
+- the three DMA rows above were re-measured with this one and came out about
+  10% faster than the figures recorded here before (2.45 / 17.80 / 1.22). The
+  ratios are unchanged to two figures, so nothing that was concluded from them
+  moves; treat the absolute numbers as ±10% between core versions.
 
 Both `profread` and the on-screen report print an addressing check
 (`$11223344`) alongside these — note that it needs `volatile` far pointers,

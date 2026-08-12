@@ -33,8 +33,12 @@ static const int16_t speed_limit[SPEED_MODES] = {40, 96, 176};
 
 // How long the startup benchmark report stays up if nobody presses a key.
 // Long enough to read or photograph, short enough that an unattended run
-// still spends most of its time rendering.
+// still spends most of its time rendering. `make REPORT=n` overrides it for a
+// session at the real machine, where the report is the only way to read the
+// attic RAM figures at all.
+#ifndef REPORT_SECONDS
 #define REPORT_SECONDS 20
+#endif
 
 // Frames a message from the game stays up before the standby line comes back.
 // About five seconds at the frame rates this runs at.

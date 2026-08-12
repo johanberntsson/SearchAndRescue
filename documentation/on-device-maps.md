@@ -71,7 +71,7 @@ estimate is.
 | lakes | — | 1-2 | priority flood, ~1000 cycles a cell taken |
 | rivers | — | 2 | the walk is cheap; the flow blur is a pass |
 | colourise | 250-350 | 7-9 | gradients, ramp, sun, two dithers, water |
-| write the planes to attic | — | 0.5 | 1.3 MB of DMA, once |
+| write the planes to attic | — | 0.32 | 1.31 MB of DMA, once, measured |
 | **total** | | **~20-30 s** | |
 
 **The noise is the term that decides it, and it has a factor of three in it.**
@@ -90,9 +90,17 @@ Three structural rules keep those numbers honest:
   accumulators is 2 KB. Done that way the field is touched in attic once per
   pixel, on the way out; done the naive way it is read and written once per
   octave and the attic penalty alone (+15 a read) costs more than the noise.
+- **write it up there with the CPU, not with a DMA.** Measured on the real
+  machine (below), a DMA into attic RAM costs 9.54 cycles a byte and a posted
+  CPU write costs +3 over a chip one — so a row buffer followed by a DMA is
+  three times the price of storing each pixel as it is computed, in a loop
+  that is running anyway. The DMA is for moves that cannot be folded into a
+  loop; producing a field is not one of them.
 - **stream by row, keep three rows.** Everything downstream of the field needs
   neighbours: the slope, the sun, the local minima. Three rows in chip RAM is
-  6 KB and makes those reads chip-speed.
+  6 KB and makes those reads chip-speed. Reads are the expensive direction —
+  16.11 cycles a byte out of attic against 9.54 in — so the asymmetry is
+  worth designing around: produce freely, re-read as little as possible.
 - **fold passes together.** The percentile apply, the ridged fold and the
   island mask are all per-pixel functions of one value; they are one pass with
   three lookups, not three passes.
@@ -206,13 +214,34 @@ now has in hand is a few thousand cycles, not a file.
 
 ## Where the port has got to
 
-**Step 0, the DMA measurement: instrumented, and xemu cannot answer it.**
-`P_DMA_TOATTIC` is a slot in `src/profile.h` now, timed beside the other two
-directions and printed by both `tools/profread.py` and the on-screen report.
-Under xemu all three read 2.59 cycles a byte and chip and attic RAM read alike,
-which is the emulator not modelling the attic bus exactly as `CLAUDE.md` warns
-— so **this one needs a run on the real machine**: boot any build, read
-`COPY CHIP-ATTIC` off the startup report. The line is there and rendering.
+**Step 0, the DMA measurement: done, on the real machine.** `P_DMA_TOATTIC` is
+a slot in `src/profile.h`, timed beside the other two directions and printed by
+both `tools/profread.py` and the on-screen report; `make REPORT=120` holds that
+report up long enough to read. Under xemu all three directions read 2.59 cycles
+a byte, the emulator not modelling the attic bus at all. On the MEGA65:
+
+| | cycles/byte | vs chip to chip |
+|---|---|---|
+| DMA copy chip to chip | 2.20 | |
+| DMA copy attic to chip | 16.11 | 7.3x |
+| **DMA copy chip to attic** | **9.54** | **4.3x** |
+| DMA fill, chip | 1.12 | |
+
+**The bus is asymmetric, and in the direction a generator wants**: writing into
+attic RAM is 1.7x faster than reading out of it, the same story the CPU figures
+tell with a posted write at +3 against a read at +15. Two things follow, and
+the second is a correction to the plan above:
+
+- **the planes are free to write.** The finished 1024x1024 colour map and
+  512x512 heightmap are 1.31 MB, which is 0.32 seconds of DMA. It stays a
+  rounding error in the estimate.
+- **do not buffer a row and DMA it out.** At 9.54 cycles a byte that is three
+  times what a posted CPU write costs in a loop that already has the value in
+  a register. Compute straight into attic RAM.
+
+Reads are the direction to be careful with: a full pass over a 2 MB working
+field is 0.83 seconds before any arithmetic, which is what makes "build,
+measure, paint" three passes rather than ten.
 
 **Step 1, fixed point: the arithmetic is in, the pipeline is half ported.**
 
@@ -254,9 +283,5 @@ Still float, in pipeline order: lakes, rivers, the pyramid, and the whole of
 `colourise` — which is the largest of them and the one with the two remaining
 transcendentals in it.
 
-And the one measurement that is still owed: **DMA from chip RAM to attic RAM
-on real hardware**. The benchmark is written and printed (step 0 above), but
-attic-to-chip is 17.8 cycles a byte on the real machine against 2.45
-chip-to-chip, and xemu reports all three the same. The "write the planes" line
-in the table assumes the reverse direction is not a third surprise, on a
-machine that has already been wrong about attic RAM twice.
+The measurement that was owed here -- DMA from chip RAM to attic RAM on real
+hardware -- is in, and it is the good kind of surprise: see step 0 above.
