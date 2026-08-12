@@ -146,12 +146,28 @@ proper is:
   of the terrain (`documentation/procedural-maps.md`, the canyon trap) — call
   it 5 MB peak against 8 MB. Tight enough to plan, not tight enough to redesign
   around.
-- **the 32 KB program is the real constraint.** Noise, flood, rivers, colour
-  and the plane writer in one 32 KB image, in a language whose 16-bit multiply
-  is a library call, is not obviously going to fit. The two-stage boot already
-  splits generator from game; if it comes to it, the generator splits again —
-  terrain, then colour, then chain to the game — because each stage's output is
-  in attic RAM and survives the load.
+- **the 32 KB program is the real constraint, and it is what forces the
+  two-stage boot.** The link map says the game already fills it: `program` is
+  **97.6% used, about 790 bytes free**, and the low RAM at `$1600` has 80 left.
+  Noise, a histogram stretch, an island mask, hills, a priority flood with a
+  heap, rivers with a blur field, colourise with its tables and a plane writer
+  do not go in 790 bytes — for scale, the renderer's whole C half is 2.2 KB and
+  the game's screens are 2.4 KB.
+
+  It is worth being clear about what today's single program does, because it
+  looks like the same job: it *loads*, it does not generate. Reading the
+  crunched maps and unpacking them into attic RAM is `loader.o` plus the
+  exomizer decruncher, about **2.2 KB** all in, which is why it fits beside the
+  game at all.
+
+  The split costs nothing, because the two are never live at the same moment
+  and **attic RAM survives a program load** — stage one fills it, the game is
+  loaded over stage one's code, and the maps are simply still there. It pays
+  twice, in fact: as stage one the generator owns the whole 32 KB *and* banks
+  1, 4 and 5, since no framebuffer or screen table exists yet; and the game
+  loses the loader and the decruncher, which is nearly three times the
+  headroom it has today. If even that is not enough, the generator splits
+  again — terrain, then colour, then chain to the game — for the same reason.
 
 ## The four things that are actually hard
 
