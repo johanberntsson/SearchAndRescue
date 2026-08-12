@@ -74,11 +74,13 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   15 fps a per-frame constant does not feel the same twice. Joystick too.
 - Then more of the game. `documentation/vision.md` has the design; the two
   missions are the first pieces of it. A third is a table entry and a sprite
-  sheet — but only **12 palette entries** are left, so the next figure needs
-  fewer than fifteen colours or has to share with one that exists.
-- Both missions still start the drone in the middle of the map, which for the
-  lake is a hundred cells away and past the draw distance. A launch point per
-  mission, or a heading cue, would save a lot of flying on a compass.
+  sheet, and there is now room for it: generated maps under `--shared` leave
+  **32 palette entries** free where the hand-drawn one left 12, so two more
+  figures fit at fifteen colours each.
+- Both missions still start the drone in the middle of the map, which on the
+  plains is a long way from the lake and past the draw distance. A launch
+  point per mission, or a heading cue, would save a lot of flying on a
+  compass — and it is a `mission.bin` field when that exists.
 - The sprite draw is C at ~170 cycles a pixel. Harmless at any distance you
   would search from, 9% of a frame nose to nose. Assembly when there is a
   reason, not before.
@@ -104,8 +106,10 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   a map and is not one, so the map side (seed, shape, terrain items) is what
   the generator reads and the mission side (which map, the target, the figure,
   the cargo, the words) is what the game reads instead of the hardcoded table
-  in `src/mission.c`. The previewer's `M` key fills in positions for either. `documentation/procedural-maps.md` has the order and the open
-  question about sprite palette indices below 16.
+  in `src/mission.c`. The previewer's `M` key fills in positions for either,
+  and `documentation/procedural-maps.md` has both structs written out. The old
+  open question there — sprites taking palette indices below 16 — is settled:
+  `convmap.py --shared` reserves them.
 
 ## Decisions already settled
 
@@ -178,6 +182,28 @@ Do not re-litigate these without new measurements.
 
 ## Done
 
+- **Two maps on one disk, one per mission.** Mission one is flown over
+  `maps/island.yaml` and mission two over `maps/plains.yaml`, both generated,
+  both resident in attic RAM at once. **This was impossible with a drawn map**:
+  the hand-drawn pair is 661 KB crunched and two generated maps are 487 KB, so
+  a disk that held one world now holds two with 270 KB spare — and loading
+  both takes about twenty seconds, less than the one drawn map took. Switching
+  is 512 bytes of plane table, because that is where a map's location lives;
+  `map_use()` adds the palette its climate wants and the panel's overview.
+  `convmap.py --shared` is what makes it work at all: without it each map hands
+  the sprites different palette entries and a figure changes colour with the
+  mission. The hand-drawn pair is no longer built into anything.
+- **The generator is written in the machine's own arithmetic.** Q0.16 integers,
+  reciprocals for divides, tables for sqrt/tanh/gamma, histograms instead of
+  sorts, xorshift instead of numpy — `tools/fixed.py`, whose self-test prices
+  each routine against the float it replaced (worst 0.007 of a height unit).
+  Step 1 of the on-device port, done where a mistake is cheap; the float
+  version agreed with it to 0.03 of a height unit and one ramp step. Every map
+  re-rolled as a result, so the fixes and the reference screenshot moved.
+- **A mission has a map and is not one.** The map files in `maps/` describe
+  worlds and nothing else; what is flown over them is the C table in
+  `src/mission.c`, and the two will become `map.bin` and `mission.bin` rather
+  than the one file the design used to describe.
 - **The previewer, `tools/preview.py`.** Flies a generated map on the PC with
   the game's own renderer — the same march, projection, map sampling, sky and
   flight model, at the same 12.5 fps, because every rate in the flight model is

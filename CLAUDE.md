@@ -6,15 +6,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A MEGA65 heightfield voxel flight simulator / drone search-and-rescue game, written in C (Calypsi) with the rendering inner loop in 45GS02 assembly. `documentation/vision.md` holds the full technical and gameplay design; `todo.md` is the authoritative "what's next" and should be updated as work lands.
 
-Currently: two missions, end to end. A title screen, a mission list, a
-briefing, a flight, and a debrief — the lost hiker on the pyramid at 46.713N
-8.110E to be found and reported, and an EpiPen to be dropped to a pair of
-hikers by the lake at 46.597N 8.227E. A flight also carries a wind that blows
-the drone about, a battery that runs it out, and per-mission weather; it can
-end four ways, all of them the same debrief page with different words on it.
-Underneath is the voxel engine at about 12.5 fps — a 320x152 3D view over a six-row 40-column text panel, with 512x512
-height and 1024x1024 colour maps unpacked into attic RAM at boot, marching 160
-rays and writing each to two neighbouring pixels; see Performance.
+Currently: two missions, end to end, **each over its own generated world**. A
+title screen, a mission list, a briefing, a flight, and a debrief — the lost
+hiker on the step pyramid of the island at 46.687N 8.106E to be found and
+reported, and an EpiPen to be dropped to a pair of hikers by a lake on the
+plains at 46.522N 8.081E. A flight also carries a wind that blows the drone
+about, a battery that runs it out, and per-mission weather; it can end four
+ways, all of them the same debrief page with different words on it.
+
+**Both maps are generated from a paragraph of YAML and both are resident at
+once**, which one hand-drawn map pair could never be: two generated maps are
+487 KB crunched against 661 KB for one drawn one, and switching between them
+costs 512 bytes of plane table. See Resources.
+
+Underneath is the voxel engine at about 12.5 fps — a 320x152 3D view over a
+six-row 40-column text panel, with 512x512 height and 1024x1024 colour maps
+unpacked into attic RAM at boot, marching 160 rays and writing each to two
+neighbouring pixels; see Performance.
 
 ## Build and run
 
@@ -92,6 +100,7 @@ Only banks 1, 4 and 5 are free: `$20000-$3FFFF` holds the C65 ROM, and **colour 
 | `$1D000` | 1024 | Overview map: 16 full-colour characters, 64-byte aligned |
 | `$1D800` | 1024 | Pristine copy of it, for lifting the crosshair |
 | `$1DC00` | 1028 each | Every billboard, one 32x32 slot per figure |
+| `$1E800` | 1024 each | Every map's overview tile set; the flight's is DMAd to `$1D000` |
 | `$1F800-$1FFFF` | 2 KB | Colour RAM alias — **do not write** |
 | `$40000-$4FFFF` | 64 KB | Heightmap, only when it is 256x256 |
 | `$8000000-$81FFFFF` | 2 MB | Map slot 0: colourmap planes, then heightmap |
@@ -548,12 +557,14 @@ argument, from the Makefile's `SPRITES`, and the first one's output is
 copy of them and they are identical under `--shared`, so the Makefile takes
 slot 0's and puts them on the disk as `terrain.spr`/`terrain.sp2`.
 
-**The palette is what limits how many figures there can be.** The colourmap
-uses about 170 of the 224 indices below the sky, the panel and HUD reserve
-four more, and each figure claims fifteen: two of them leave **12 entries
-free**, which `convmap.py` prints at the end of every run. A third figure
-needs fewer colours each, or shared colours between them, and the converter
-will say so rather than quietly painting terrain in a sprite colour.
+**The palette is what limits how many figures there can be**, and generating
+the maps loosened it. Each figure claims fifteen entries, and what is left
+over depends on the colourmap: the hand-drawn one uses about 170 of the 224
+indices below the sky and left **12 free** after two figures, while a
+generated map under `--shared` reserves the ramp's 150 and the system's low
+sixteen and leaves **32** — two more figures' worth. `convmap.py` prints the
+figure at the end of every run, and refuses rather than quietly painting
+terrain in a sprite colour.
 
 **Maps can also be generated rather than drawn.** `tools/genmap.py` turns a
 map file in `maps/` into `hmapNN.png`/`cmapNN.png` — the same two shapes

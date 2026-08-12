@@ -23,7 +23,8 @@ generated worlds, both on the one disk**.
 
 - 320x152 full-colour 3D view, double buffered, over a six-row 40-column text panel
 - 512x512 height and 1024x1024 colour maps, exomizer-crunched on the disk and
-  unpacked into attic RAM at boot
+  unpacked into attic RAM at boot — two of them, one per mission, resident at
+  once and switched between for 512 bytes of table
 - Front-to-back ray march with a y-buffer, fixed point throughout, inner loop in
   assembly. It marches 160 rays and each fills the two pixels it owns, which keeps
   the panel's characters a readable 8 pixels wide without paying for twice the march
@@ -83,7 +84,12 @@ Getting there meant building a profiler first (`src/profile.c`, read with
 to be 64% of the frame at 2203 cycles a go, against 85 on the hardware multiplier.
 See `todo.md` for what is next.
 
-![Mission 2: the EpiPen delivery, in the rain by the lake](screenshots/screenshot-260812.png)
+![Mission 2 over the generated plains: the EpiPen delivery, in the rain](screenshots/screenshot-260812-plains.png)
+
+*Mission two, over `maps/plains.yaml` — hot, flat country in the rain, with a
+lake on the horizon. The disk carries this and the island both. The two shots
+above it are of the hand-drawn map the engine was built against, which is no
+longer what ships.*
 
 ## Building
 
