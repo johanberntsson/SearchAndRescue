@@ -67,12 +67,12 @@ scarce now is not ideas but *memory*: about 800 bytes of the 32K and 80 of the
 low free RAM, with the easy reclaims already spent. Read the Open note on
 `cstack` before starting anything large.
 
-- **The controls are finished.** Called on 13 Aug 2026, flying them: WASD, RF,
-  QE and the three speed modes are the drone's and they feel right. An earlier
-  entry here wanted a rethink — long push against short push, thrust scaled by
-  frame time, a joystick — and that is **withdrawn**, not deferred. The one
-  thing left is in Open and is low priority: speed changes snap, and could
-  accelerate and brake instead.
+- **The keyboard controls are finished.** Called on 13 Aug 2026, flying them:
+  WASD, RF, QE and the three speed modes are the drone's and they feel right.
+  An earlier entry here wanted a rethink — long push against short push, thrust
+  scaled by frame time — and that is **withdrawn**, not deferred. Two things
+  survive it, both in Open and both later: a joystick *beside* the keyboard,
+  and speed changes that accelerate and brake rather than snapping.
 - More of the game. `documentation/vision.md` has the design; the two
   missions are the first pieces of it. A third is a table entry and a sprite
   sheet, and there is now room for it: generated maps under `--shared` leave
@@ -157,6 +157,20 @@ Do not re-litigate these without new measurements.
 
 - The far edge of each z band pops as you fly. Either blend the bands or
   shorten the step growth.
+- **A joystick, in parallel with the keyboard and not instead of it.** The
+  stick takes what WASD does — forward, back and yaw — and `FIRE` takes the
+  mission's own action, which the code already knows how to name: an empty bay
+  means `SPACE` files a report and a full one means `RETURN` opens it, so
+  `FIRE` is one more caller of `mission_action_key` rather than a second rule
+  about what buttons do. What it does *not* cover is the rest of the panel —
+  climb, gimbal, the speed modes and `RUN/STOP` stay on the keys. Both inputs
+  live at once, so `input.c` returns the union of the two rather than choosing
+  between them; the port reads at `$DC00`/`$DC01`, which is the same CIA1 the
+  matrix scan already talks to — which is the trap as well as the convenience:
+  the joystick lines *are* the keyboard's, so port 2 sits on the row select
+  `input.c` writes and port 1 on the columns it reads. Scan the matrix and the
+  stick in one pass, with the rows driven high for the stick read, rather than
+  bolting a second reader on beside the first.
 - **Speed changes snap.** Picking a speed mode, or pushing and releasing `W`,
   moves the drone to that speed the same frame. Ramping towards the new speed
   and braking off the old would read better — a real drone leans into a
