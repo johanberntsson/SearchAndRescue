@@ -37,6 +37,11 @@ typedef struct {
 } camera;
 
 void voxel_init(void);
+
+// Point the march at one of the maps resident in attic RAM. Everything a map
+// is to the renderer is two pointer high bytes and the plane tables, so this
+// is 512 bytes of table and no pixels -- see MAP_SLOT in loader.h.
+void voxel_set_map(uint8_t slot);
 void voxel_render(uint32_t base, const camera *cam);
 
 // Terrain height under a map position, for keeping the camera above ground

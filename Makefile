@@ -8,10 +8,12 @@ PROFILE ?= 1
 # free RAM at $1600 and only fit there when the per-ray tables are half size,
 # so src/loader.h #errors on it. See LOW_FREE there.
 WIDE    ?= 0
-# FLYNOW=1 skips the title and menu screens and launches straight into the
-# flight. The headless profiling run cannot press a key, so without it a
-# -dumpmem image has no frames in it at all. Never for timing comparisons of
-# anything but itself -- it is the same code, just entered differently.
+# FLYNOW=n skips the title and menu screens and launches straight into mission
+# n: 1 for the first, 2 for the second. The headless profiling run cannot press
+# a key, so without it a -dumpmem image has no frames in it at all -- and
+# FLYNOW=2 is the only way such a run reaches the second mission's *map*.
+# Never for timing comparisons of anything but itself -- it is the same code,
+# just entered differently.
 FLYNOW  ?= 0
 # REPORT=n holds the startup benchmark report on screen for n seconds instead
 # of 20. For a session at the real MEGA65, where that report is the only way to
@@ -43,8 +45,22 @@ D81      = $(BUILD)/sar.d81
 # src/sprite.c numbers them: 0 the lost hiker, 1 the pair by the lake. They are
 # converted together because they share the one on-screen palette.
 SPRITES  = resources/survivor-sprite.png resources/medicalemergency-sprite.png
-RES      = $(BUILD)/terrain.hgt $(BUILD)/terrain.col $(BUILD)/terrain.pal \
-           $(BUILD)/terrain.ovr $(BUILD)/terrain.spr $(BUILD)/terrain.sp2
+
+# The maps on the disk, in slot order: mission 1 flies slot 0 and mission 2
+# slot 1 (src/mission.c chooses). They are *generated* from these YAMLs rather
+# than drawn, which is what makes several of them fit -- two come to about 500
+# KB crunched against 661 KB for the one hand-drawn pair. Keep MAP_COUNT in
+# src/loader.h in step with this list.
+MAP_YAMLS = maps/island.yaml maps/plains.yaml
+MAP_IDS   = 03 05
+MAP_NUMS  = 0 1   # slot numbers, one per map above
+
+# Generated maps are build products and are not in git; genmap.py names them
+# from each mission's `id`.
+GEN_MAPS = $(foreach id,$(MAP_IDS),maps/hmap$(id).png maps/cmap$(id).png)
+MAP_RES  = $(foreach n,$(MAP_NUMS),$(BUILD)/map$(n).hgt $(BUILD)/map$(n).col \
+                                    $(BUILD)/map$(n).pal $(BUILD)/map$(n).ovr)
+RES      = $(MAP_RES) $(BUILD)/terrain.spr $(BUILD)/terrain.sp2
 
 all: $(D81)
 
@@ -90,11 +106,35 @@ comma := ,
 empty :=
 space := $(empty) $(empty)
 
-$(RES) &: resources/D1.png resources/C1W.png $(SPRITES) \
-          tools/convmap.py $(CONFIG_STAMP) | $(BUILD)
-	python3 tools/convmap.py resources/D1.png resources/C1W.png \
+# The maps, from their mission files. One genmap run per mission; the id in
+# the filename is the mission's own, so these are spelled out rather than
+# pattern-matched.
+maps/hmap03.png maps/cmap03.png &: maps/island.yaml maps/palette.yaml \
+                                   tools/genmap.py tools/fixed.py
+	python3 tools/genmap.py maps/island.yaml
+
+maps/hmap05.png maps/cmap05.png &: maps/plains.yaml maps/palette.yaml \
+                                   tools/genmap.py tools/fixed.py
+	python3 tools/genmap.py maps/plains.yaml
+
+# **--shared is what lets more than one map share a disk.** Without it each
+# map hands the sprites whatever palette entries its own colours left free, so
+# a figure changes colour with the mission; with it every map reserves the
+# whole shared ramp and the sprite files come out byte-identical, so one set
+# serves them all. See the header of tools/convmap.py.
+#
+# The sprites are taken from slot 0's conversion for that reason. The rest of
+# slot 1's output is used and its sprite files are simply the same bytes.
+$(RES) &: $(GEN_MAPS) $(SPRITES) tools/convmap.py maps/palette.yaml \
+          $(CONFIG_STAMP) | $(BUILD)
+	python3 tools/convmap.py maps/hmap03.png maps/cmap03.png \
 	    $(subst $(space),$(comma),$(SPRITES)) \
-	    $(BUILD)/terrain $(HGT_SIZE) $(COL_SIZE)
+	    $(BUILD)/map0 $(HGT_SIZE) $(COL_SIZE) --shared maps/palette.yaml
+	python3 tools/convmap.py maps/hmap05.png maps/cmap05.png \
+	    $(subst $(space),$(comma),$(SPRITES)) \
+	    $(BUILD)/map1 $(HGT_SIZE) $(COL_SIZE) --shared maps/palette.yaml
+	cp $(BUILD)/map0.spr $(BUILD)/terrain.spr
+	cp $(BUILD)/map0.sp2 $(BUILD)/terrain.sp2
 
 # tools/diskutil.rb refuses to overwrite a file that already exists on the image,
 # so the image is always built from scratch.

@@ -21,13 +21,27 @@
 // keeps the "drop the two high coordinate bytes into the pointer" addressing.
 #define ATTIC_BASE 0x8000000UL
 
-// Attic layout. The maps are crunched on disk, so each is read into staging
-// first and decrunched down to its home; staging sits clear of every map's
-// largest possible size.
-#define ATTIC_COLOURMAP 0x8000000UL  // up to 1 MB, 16 planes at most
-#define ATTIC_HEIGHTMAP 0x8100000UL  // up to 1 MB, when it is too big for chip
-#define ATTIC_STAGE     0x8200000UL  // the crunched stream being unpacked
-#define ATTIC_PALETTE   0x8300000UL  // 768 bytes, clear of the largest stream
+// Attic layout, and **the whole reason more than one map can be resident**.
+// A map slot is 2 MB: a colourmap of up to 1 MB on a megabyte boundary, then
+// its heightmap. Three of them fit below the staging area, and the maps are
+// crunched on disk so each is read into staging first and decrunched down to
+// its home.
+//
+// Nothing about a slot is in the renderer: `voxel_set_map` rebuilds the plane
+// tables from a slot's bank byte, so switching maps between missions is 512
+// bytes of table and no pixels at all. That is what makes a disk with several
+// maps on it worth building -- see documentation/on-device-maps.md for the
+// measurement that says a generated map is a quarter the size of a drawn one.
+#define MAP_SLOTS       3
+#define MAP_SLOT_BYTES  0x200000UL
+#define MAP_SLOT(n)     (ATTIC_BASE + (uint32_t)(n) * MAP_SLOT_BYTES)
+#define MAP_COLOURMAP(n) MAP_SLOT(n)                    // up to 1 MB, 16 planes
+#define MAP_HEIGHTMAP(n) (MAP_SLOT(n) + 0x100000UL)     // up to 1 MB
+
+#define ATTIC_COLOURMAP MAP_COLOURMAP(0)
+#define ATTIC_HEIGHTMAP MAP_HEIGHTMAP(0)
+#define ATTIC_STAGE     0x8600000UL  // the crunched stream being unpacked
+#define ATTIC_PALETTE   0x8700000UL  // one 768-byte palette per map slot
 
 #define COLOURMAP ATTIC_COLOURMAP
 
@@ -115,8 +129,22 @@ extern uint8_t load_staging[LOAD_STAGING];
 // the 768 bytes of it went to the survivor sprite when the 32K the program,
 // its data and its stack share ran out. Attic RAM is fine for it: it is read
 // once, at startup, and 768 slow reads are nothing.
-#define PALETTE_BUF   ATTIC_PALETTE
+// One per map slot, because a climate is a palette: the shared ramp means two
+// generated maps hold the same *indices*, and a temperate island and a hot
+// plain put different colours behind them. `vic4_set_palette` is given the
+// flight's own at launch.
 #define PALETTE_BYTES 768
+#define PALETTE_SLOT(n) (ATTIC_PALETTE + (uint32_t)(n) * 1024UL)
+#define PALETTE_BUF   PALETTE_SLOT(0)
+
+// The panel's overview map is per map too, and small enough to keep all of
+// them in bank 1: the flight's own is DMAd down to OVERVIEW at launch.
+#define OVERVIEW_STORE 0x1E800UL
+#define OVERVIEW_SLOT(n) (OVERVIEW_STORE + (uint32_t)(n) * OVERVIEW_BYTES)
+
+// How many maps the disk actually carries, and which one each mission flies
+// is in src/mission.c. Keep in sync with the Makefile's MAP_YAMLS.
+#define MAP_COUNT 2
 
 // Called as loading proceeds, with how much of it is done as a percentage.
 // It is called once per chunk read, so most calls repeat the last figure.
@@ -142,6 +170,17 @@ const char *loader_error_file(void);
 int load_small(const char *name, void *dest, uint16_t length);
 
 // 768 bytes for vic4_set_palette, valid once load_resources has succeeded.
-const uint8_t __far *loaded_palette(void);
+const uint8_t __far *loaded_palette(uint8_t slot);
+
+// Which map slot the game is flying. Set by map_use() when a flight starts;
+// read by anything that needs the *current* map's resources rather than a
+// particular one -- the weather's clear sky, which restores sixteen entries
+// from the palette that shipped with this map.
+extern uint8_t map_current;
+
+// Point the renderer, the palette and the panel's overview at one map slot.
+// Everything a map is, in one call: 512 bytes of plane table, a palette
+// upload and a 1 KB DMA. No pixels move and nothing reloads.
+void map_use(uint8_t slot);
 
 #endif

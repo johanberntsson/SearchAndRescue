@@ -5,6 +5,8 @@
 #include "exo.h"
 #include "loader.h"
 #include "sprite.h"
+#include "vic4.h"
+#include "voxel.h"
 
 // How much of the staging buffer one Kernal read fills. Down from 2048 when
 // the survivor sprite's tables went in: the program, its data and its stack
@@ -193,35 +195,62 @@ static int load_far(const char *name, uint32_t dest, uint32_t length)
   return r;
 }
 
+// MAP0.HGT, MAP0.COL and so on: the digit is the map slot. One buffer, patched
+// in place, because a printf here would want the Kernal's screen editor and
+// the display is already the game's.
+static char map_file[] = "MAPn.XXX";
+
+static const char *map_name(uint8_t slot, const char *ext)
+{
+  map_file[3] = (char)('0' + slot);
+  map_file[5] = ext[0];
+  map_file[6] = ext[1];
+  map_file[7] = ext[2];
+  return map_file;
+}
+
 int load_resources(load_progress report)
 {
+  uint8_t slot;
+
   prog_report = report;
   progress_to(0);
 
-  if (load_crunched("TERRAIN.HGT", HEIGHTMAP, 0, 20))
-    return -1;
-  if (load_crunched("TERRAIN.COL", COLOURMAP, 20, 76))
-    return -1;
-  // The palette waits in banked RAM until the display is in full-colour mode:
-  // uploading it while the text screen is still up would recolour the loading
-  // message out of existence.
-  //
-  // Read into the staging buffer and moved up afterwards, rather than through
-  // load_far, which HANGS on this one file: the Kernal never returns from the
-  // open or the read that follows it. Same file, same 768 bytes, same buffer,
-  // any destination -- only the call path differs, and load_far reads
-  // TERRAIN.OVR two lines below perfectly happily. Not understood; the
-  // arrangement below is the one that works.
-  // Whole rather than in chunks, and it is the reason LOAD_STAGING is sized
-  // the way it is: 768 bytes went into a 512-byte buffer here for several
-  // commits, overrunning it by 256 every boot.
-  if (load_small("TERRAIN.PAL", load_staging, PALETTE_BYTES) != PALETTE_BYTES)
-    return fail("SHORT READ", "TERRAIN.PAL");
-  dma_copy((uint32_t)(uint16_t)load_staging, PALETTE_BUF, PALETTE_BYTES);
+  // Every map the disk carries, each into its own attic slot. Two of them
+  // cost about 500 KB crunched against the 661 KB one hand-drawn map took,
+  // which is the whole argument for generating them: see
+  // documentation/on-device-maps.md.
+  for (slot = 0; slot < MAP_COUNT; slot++) {
+    uint8_t from = (uint8_t)(slot * (96 / MAP_COUNT));
+    uint8_t mid = (uint8_t)(from + (96 / MAP_COUNT) / 4);
+    uint8_t to = (uint8_t)(from + 96 / MAP_COUNT);
+
+    if (load_crunched(map_name(slot, "HGT"), MAP_HEIGHTMAP(slot), from, mid))
+      return -1;
+    if (load_crunched(map_name(slot, "COL"), MAP_COLOURMAP(slot), mid, to))
+      return -1;
+    // The palette waits in attic RAM until the flight that wants it: uploading
+    // one while the text screen is still up would recolour the loading message
+    // out of existence.
+    //
+    // Read into the staging buffer and moved up afterwards, rather than
+    // through load_far, which HANGS on this one file: the Kernal never returns
+    // from the open or the read that follows it. Same file, same 768 bytes,
+    // same buffer, any destination -- only the call path differs, and load_far
+    // reads the overview two lines below perfectly happily. Not understood;
+    // the arrangement below is the one that works. Whole rather than in
+    // chunks, and it is the reason LOAD_STAGING is sized the way it is: 768
+    // bytes went into a 512-byte buffer here for several commits, overrunning
+    // it by 256 every boot.
+    if (load_small(map_name(slot, "PAL"), load_staging, PALETTE_BYTES)
+        != PALETTE_BYTES)
+      return fail("SHORT READ", map_name(slot, "PAL"));
+    dma_copy((uint32_t)(uint16_t)load_staging, PALETTE_SLOT(slot),
+             PALETTE_BYTES);
+    if (load_far(map_name(slot, "OVR"), OVERVIEW_SLOT(slot), OVERVIEW_BYTES))
+      return -1;
+  }
   progress_to(97);
-  if (load_far("TERRAIN.OVR", OVERVIEW, OVERVIEW_BYTES))
-    return -1;
-  progress_to(98);
   {
     const char *bad = sprite_load();
 
@@ -232,7 +261,22 @@ int load_resources(load_progress report)
   return 0;
 }
 
-const uint8_t __far *loaded_palette(void)
+const uint8_t __far *loaded_palette(uint8_t slot)
 {
-  return (const uint8_t __far *)PALETTE_BUF;
+  return (const uint8_t __far *)PALETTE_SLOT(slot);
+}
+
+uint8_t map_current;
+
+void map_use(uint8_t slot)
+{
+  map_current = slot;
+  voxel_set_map(slot);
+  // A climate is a palette: the two generated maps hold the same indices and
+  // put different colours behind them, so this is what makes an island look
+  // like an island and a plain like a plain.
+  vic4_set_palette(loaded_palette(slot));
+  // The panel's overview is the map seen from above, so it travels with it.
+  dma_copy(OVERVIEW_SLOT(slot), OVERVIEW, OVERVIEW_BYTES);
+  vic4_overview_ready();
 }

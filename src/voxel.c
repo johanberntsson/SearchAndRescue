@@ -191,27 +191,47 @@ static void build_planes(uint8_t *xtab, uint8_t *ytab, uint8_t axis, uint8_t ban
 }
 #endif
 
+// Point the march at one of the resident maps. **This is the whole of what a
+// map is to the renderer**: two pointers' high bytes and the plane tables that
+// carry the bank byte, so several maps can sit in attic RAM at once and a
+// mission chooses between them for 512 bytes of table and no pixels at all.
+//
+// The 256x256 case has no plane tables -- the bank goes straight in the
+// pointer -- and cannot be in attic anyway, so it is always slot 0.
+void voxel_set_map(uint8_t slot)
+{
+  uint32_t colour = MAP_COLOURMAP(slot);
+#if HGT_SIZE > 256
+  uint32_t height = MAP_HEIGHTMAP(slot);
+#else
+  uint32_t height = HEIGHTMAP;
+  (void)slot;
+#endif
+
+  height_map = (const uint8_t __far *)(height + MAP_BIAS);
+
+  // The assembly rewrites only the low two bytes of these, so the bank and
+  // megabyte set here stand for the whole run.
+  vx_hptr[2] = (uint8_t)(height >> 16);
+  vx_hptr[3] = (uint8_t)(height >> 24);
+  vx_cptr[3] = (uint8_t)(colour >> 24);
+#if COL_AXIS > 1
+  // Byte 2 is the plane, picked per span by the assembly.
+  build_planes(vx_cplane_x, vx_cplane_y, COL_AXIS, (uint8_t)(colour >> 16));
+#else
+  vx_cptr[2] = (uint8_t)(colour >> 16);
+#endif
+#if HGT_AXIS > 1
+  build_planes(vx_hplane_x, vx_hplane_y, HGT_AXIS, (uint8_t)(height >> 16));
+#endif
+}
+
 void voxel_init(void)
 {
   uint16_t k, x, z = Z_NEAR, step = Z_STEP0;
   uint8_t y, band, i;
 
-  height_map = (const uint8_t __far *)(HEIGHTMAP + MAP_BIAS);
-
-  // The assembly rewrites only the low two bytes of these, so the bank and
-  // megabyte set here stand for the whole run.
-  vx_hptr[2] = (uint8_t)(HEIGHTMAP >> 16);
-  vx_hptr[3] = (uint8_t)(HEIGHTMAP >> 24);
-  vx_cptr[3] = (uint8_t)(COLOURMAP >> 24);
-#if COL_AXIS > 1
-  // Byte 2 is the plane, picked per span by the assembly.
-  build_planes(vx_cplane_x, vx_cplane_y, COL_AXIS, (uint8_t)(COLOURMAP >> 16));
-#else
-  vx_cptr[2] = (uint8_t)(COLOURMAP >> 16);
-#endif
-#if HGT_AXIS > 1
-  build_planes(vx_hplane_x, vx_hplane_y, HGT_AXIS, (uint8_t)(HEIGHTMAP >> 16));
-#endif
+  voxel_set_map(0);
   vx_bands = BANDS;
   vx_bandsteps = BAND_STEPS;
 

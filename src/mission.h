@@ -34,6 +34,10 @@ typedef struct {
   const char *lost;   // ... and when the cargo goes down in the wrong place
   uint8_t figure;     // which billboard stands at the fix; see sprite.h
   uint8_t weather;    // WEATHER_CLEAR or WEATHER_RAIN; see weather.h
+  // Which of the maps resident in attic RAM this mission is flown over. The
+  // fixes below are cells of *that* map, so the two travel together: change
+  // one and the target is in the sea. See MAP_SLOT in loader.h.
+  uint8_t map;
   uint16_t lat;       // millidegrees north of the target's last known fix
   uint16_t lon;       // millidegrees east
 } mission;

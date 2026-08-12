@@ -130,7 +130,7 @@ void weather_set(uint8_t weather)
     // here: the shipped gradient comes from SKY_TOP and SKY_HORIZON in
     // tools/convmap.py, and a second copy of those numbers in C would drift
     // from them the first time anybody changed the sky.
-    vic4_set_range(loaded_palette(), SKY_BASE, SKY_SHADES);
+    vic4_set_range(loaded_palette(map_current), SKY_BASE, SKY_SHADES);
     return;
   }
 

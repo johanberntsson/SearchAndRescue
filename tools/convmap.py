@@ -2,7 +2,7 @@
 """Convert the VoxelSpace PNG maps into MEGA65 resources.
 
     convmap.py <height.png> <colour.png> <sprite.png>[,<sprite.png>...]
-               <out-prefix> [hgt-size] [col-size]
+               <out-prefix> [hgt-size] [col-size] [--shared maps/palette.yaml]
 
 writes <out-prefix>.hgt, <out-prefix>.col, <out-prefix>.pal,
 <out-prefix>.ovr (the panel's overview map) and one billboard file per sprite
@@ -22,6 +22,15 @@ because there is only one palette on screen: their colours have to go in slots
 the colourmap has left free, which is not knowable without the colourmap --
 and every sheet has to draw from that one pool, so they are quantised together
 rather than one at a time.
+
+`--shared` is for the generated maps, and it is what lets **more than one map
+share a disk**.  Without it the free pool is whatever a particular colourmap
+happens not to use, so two maps hand the sprites different palette entries and
+a figure changes colour with the mission.  With it, every index the shared
+ramp in maps/palette.yaml claims is treated as used whether this map reached it
+or not -- and so are 1..15, which the design keeps for the system -- so the
+pool starts at the same place for every map and one set of sprite files serves
+all of them.  It costs nothing: those entries are spoken for anyway.
 """
 
 import os
@@ -371,13 +380,39 @@ def reserve(indices, rgb, entry, used, reserved):
     return (used - {entry}) | {spare}
 
 
+def shared_indices(path):
+    """Every palette index the shared ramp claims, from maps/palette.yaml.
+
+    Read here rather than imported from genmap.py so that convmap.py stays
+    what it has always been: a converter that needs nothing but its inputs.
+    The file's shape is the generator's, though, so keep the two in step --
+    a band is `base`, `count` steps, and one entry per shade unless it says
+    `shaded: false`.
+    """
+    import yaml
+    with open(path) as f:
+        pal = yaml.safe_load(f)
+    shades = len(pal["shades"])
+    out = set()
+    for band in pal["bands"].values():
+        span = band["count"] * (1 if band.get("shaded") is False else shades)
+        out |= set(range(band["base"], band["base"] + span))
+    return out
+
+
 def main():
-    if not 5 <= len(sys.argv) <= 7:
+    argv = list(sys.argv[1:])
+    shared = None
+    if "--shared" in argv:
+        i = argv.index("--shared")
+        shared = argv[i + 1]
+        del argv[i:i + 2]
+    if not 4 <= len(argv) <= 6:
         sys.exit(__doc__)
-    height_png, colour_png, sprite_pngs, prefix = sys.argv[1:5]
+    height_png, colour_png, sprite_pngs, prefix = argv[:4]
     sprite_pngs = sprite_pngs.split(",")
-    hgt_size = int(sys.argv[5]) if len(sys.argv) > 5 else DEFAULT_HGT_SIZE
-    col_size = int(sys.argv[6]) if len(sys.argv) > 6 else DEFAULT_COL_SIZE
+    hgt_size = int(argv[4]) if len(argv) > 4 else DEFAULT_HGT_SIZE
+    col_size = int(argv[5]) if len(argv) > 5 else DEFAULT_COL_SIZE
 
     heights = load_heightmap(height_png, hgt_size)
     indices, rgb = load_colourmap(colour_png, col_size)
@@ -397,6 +432,11 @@ def main():
     reserved = ({0, HUD_INK, HUD_PAPER}
                 | set(range(SKY_BASE, SKY_BASE + SKY_SHADES))
                 | {entry for entry, _ in PANEL_COLOURS})
+    if shared:
+        # Everything the shared ramp claims, plus the system's low sixteen.
+        # See --shared in the header: this is what makes one set of sprite
+        # files serve every map on the disk.
+        reserved |= shared_indices(shared) | set(range(1, 16))
     for entry, colour in PANEL_COLOURS:
         used = reserve(indices, rgb, entry, used, reserved)
         rgb[entry] = colour
@@ -452,7 +492,8 @@ def main():
         print(f"  sprite {n} ({os.path.basename(sprite_pngs[n])}): {w}x{h}, "
               f"{raw_sizes[sprite_suffix(n)]} bytes, palette "
               f"{min(entries)}..{max(entries)}")
-    print(f"  {len(pool)} palette entries still free")
+    print(f"  {len(pool)} palette entries still free"
+          + ("  (pool shared across maps)" if shared else ""))
 
 
 if __name__ == "__main__":

@@ -7,9 +7,19 @@
 // LAT/LON readout is the only way to navigate and a search area you cannot
 // name is not a search area.
 //
-//   46.713N 008.110E is the top of the pyramid in the north west of the map.
-//   46.597N 008.227E is the shore of the lake in the south east, five height
-//   units above the water.
+// **Each mission also names its map**, and the fix is a cell of that map, so
+// the two can never be edited apart. The maps are generated from
+// maps/island.yaml and maps/plains.yaml (the Makefile's MAP_YAMLS) and both
+// are resident in attic RAM at once, which a hand-drawn map pair could never
+// have been: two generated maps are about 500 KB crunched against 661 KB for
+// one drawn one.
+//
+//   46.687N 008.106E, map 0, is the top of the step pyramid on the island's
+//   northern headland -- the pyramid is an `items:` entry in island.yaml and
+//   is built into the terrain itself, so the hiker is standing on generated
+//   ground.
+//   46.522N 008.081E, map 1, is the shore of the largest lake on the plains,
+//   a cell of dry ground with water on three sides of it.
 const mission missions[MISSION_COUNT] = {
     {
         "THE LOST HIKER",
@@ -24,8 +34,9 @@ const mission missions[MISSION_COUNT] = {
         0,
         0,
         WEATHER_CLEAR,
-        46713,
-        8110,
+        0,      // the island
+        46687,
+        8106,
     },
     {
         "FIRST AID",
@@ -40,8 +51,9 @@ const mission missions[MISSION_COUNT] = {
         "THE ONLY EPIPEN IS LOST ON THE HILL",
         1,
         WEATHER_RAIN,
-        46597,
-        8227,
+        1,      // the plains
+        46522,
+        8081,
     },
 };
 

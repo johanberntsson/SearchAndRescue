@@ -301,6 +301,12 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
   uint16_t message_left = 0;
   uint32_t launched;
 
+  // The mission's own map: the renderer's plane tables, the palette its
+  // climate wants and the panel's overview, all from attic RAM and none of it
+  // reloaded from the disk. This is the whole of what flying somewhere else
+  // costs.
+  map_use(m->map);
+
   sprite_select(m->figure);
   sprite_place(FIX_TO_X(m->lon), FIX_TO_Y(m->lat));
 
@@ -414,7 +420,9 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
 
 int main(void)
 {
-  uint8_t mission_no = 0;
+  // FLYNOW=n launches straight into mission n - 1, so FLYNOW=2 is the way to
+  // see the second mission's map without a keyboard. See the note below.
+  uint8_t mission_no = FLYNOW ? (uint8_t)(FLYNOW - 1) : 0;
 
   // Loading comes first, and on the ROM's own text screen. Both halves of
   // that are forced:
@@ -442,15 +450,17 @@ int main(void)
   profile_report(REPORT_SECONDS);
 
   vic4_init();
-  vic4_set_palette(loaded_palette());
   voxel_init();
-  // Once, before any crosshair has been drawn into the overview map: this is
-  // the copy every later crosshair is lifted with.
-  vic4_overview_ready();
+  // The first map, so the menus have a palette and the panel an overview.
+  // A flight calls this again with its own mission's map: see map_use().
+  map_use(0);
 
   // FLYNOW=1 launches straight into the flight. It exists for the headless
   // profiling run, which has no way to press a key and would otherwise dump a
-  // memory image with no frames rendered in it.
+  // memory image with no frames rendered in it. FLYNOW=2 does the same for
+  // mission two, which is the only way to see the second map from a headless
+  // run -- and therefore the way the several-maps-on-one-disk arrangement is
+  // checked at all.
 #if !FLYNOW
   screens_title();
   wait_for_space();
