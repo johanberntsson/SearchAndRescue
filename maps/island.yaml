@@ -18,6 +18,6 @@ general:
 # stage.
 items:
   - type: pyramid
-    x: 422
-    y: 481
+    x: 426
+    y: 274
     size: medium

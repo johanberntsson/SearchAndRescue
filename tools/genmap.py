@@ -9,21 +9,32 @@ exactly the two shapes tools/convmap.py already consumes, so nothing downstream
 of here changes: convmap.py samples them down, crunches them and the build puts
 them on the disk the same way it does the hand-drawn pair in resources/.
 
-See documentation/procedural-maps.md for the design and the YAML schema.  This
-is the first stage of it: terrain only.  mission.bin and the Python previewer
-are not here yet, so the `items` block is parsed and checked but not yet
-written anywhere.
+See documentation/procedural-maps.md for the design and the YAML schema.  Items
+that are terrain -- a pyramid -- are built into the two maps here; the rest
+wait for mission.bin.
 
-Everything is drawn from one seeded RNG stream, so the same YAML gives byte
-identical output on any machine, and the seed in the file is the whole of the
-state needed to get a map back.
+Everything is drawn from one seeded xorshift stream, so the same YAML gives
+byte identical output on any machine, and the seed in the file is the whole of
+the state needed to get a map back.
 
-The algorithms are deliberately plain -- hash-based value noise on a lattice,
-box blurs, steepest descent, priority flood -- because the design wants them
-portable to C or 45GS02 later, and one function here is meant to become one
-routine there.  numpy is a convenience for doing a megapixel at a time, not
-something the generation logic leans on: no gradient tables, no library noise,
-nothing that would have to be redesigned before it could move on-device.
+**The arithmetic is the MEGA65's.**  Not "portable in principle": every value
+in this file is a Q0.16 integer, every multiply is one the 45GS02's $D770 does
+in sixteen cycles, every divide is a reciprocal, and sqrt, tanh and the ramp's
+gamma are 257-entry tables -- all of it in tools/fixed.py, whose self-test
+prices each routine against the float it replaced.  numpy is here to do a
+megapixel at a time and for no other reason: read `>>` as a shift and
+`np.where` as a branch and this is the C.
+
+Two things follow that are easy to lose.  A histogram stands in for every
+percentile, median and sort, because the machine has no room to sort a
+megapixel -- and the bucket width lands directly on the map's heights, so it
+interpolates inside the bucket (see percentile()).  And the whole file must
+stay free of numpy semantics that have no scalar meaning: fancy indexing over
+a whole array is fine, a library that solves the problem for you is not.
+
+documentation/on-device-maps.md costs the rest of the journey: what the
+generator would take to run on the machine itself, what it has to beat, and
+the six traps this rewrite turned up.
 """
 
 import argparse
@@ -34,6 +45,20 @@ import sys
 import numpy as np
 import yaml
 from PIL import Image
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fixed as F                                         # noqa: E402
+
+ONE = F.ONE
+
+# The stretch's histogram: 1024 buckets of the field, see percentile().
+BUCKETSHIFT = 6
+BUCKETS = ONE >> BUCKETSHIFT
+
+# The ramp's gamma, over 0..2 rather than 0..1: `t` is a height over the map's
+# own 99th percentile and the top one per cent of the terrain is above 1.0 by
+# construction. See fixed.gamma_table.
+GAMMA_TOP = 2
 
 # The source PNGs are 1024x1024 and convmap.py samples them down to HGT_SIZE
 # and COL_SIZE, so generating at anything less would cap what the build can
@@ -185,6 +210,7 @@ BANDS = LAND_BANDS + ("water", "masonry")
 # fifth of every map: the ramp is a set of bands with names, and "peak" has to
 # mean the peaks.
 RAMP_GAMMA = 1.8
+GAMMA = F.gamma_table(RAMP_GAMMA, GAMMA_TOP)
 
 # Rivers descend on a blurred copy of the terrain. On the raw surface a
 # steepest-descent walk falls into the first noise pit it meets and stops after
@@ -215,40 +241,15 @@ RIVER_POOL_RISE = 0.02
 LAKE_RISE = 0.05
 
 
-# --- the one RNG stream -------------------------------------------------
-
-class Stream:
-    """The single seeded source everything draws from.
-
-    Noise salts come out of it in sequence rather than being constants, so two
-    octaves never share a lattice and the whole map still reproduces from the
-    seed alone. Keep draws in a fixed order: changing the order changes the
-    map, which is a feature when it is deliberate and a nuisance when it is
-    not.
-    """
-
-    def __init__(self, seed):
-        self.rng = np.random.default_rng(seed)
-
-    def salt(self):
-        return int(self.rng.integers(0, 1 << 30))
-
-    def uniform(self, lo, hi, n=None):
-        return self.rng.uniform(lo, hi, n)
-
-    def choice(self, n, k):
-        """k distinct indices from range(n), or all of them if there are fewer."""
-        return self.rng.permutation(n)[:k]
-
-
 # --- noise --------------------------------------------------------------
 
 def hash32(x, y, salt):
-    """A 32-bit integer hash of a lattice point. One multiply-shift chain.
+    """The lattice hash, unchanged in shape and moved to uint32.
 
-    Written on uint64 and masked back to 32 bits at every step so it means the
-    same thing here as it would in C with uint32_t, rather than relying on how
-    numpy happens to wrap.
+    genmap.py already does this in integers -- it is the one part of the
+    generator that was portable from the start -- so this is the same multiply
+    and shift chain with numpy's uint64 masking replaced by the uint32 the
+    45GS02 would use.
     """
     m = np.uint64(0xFFFFFFFF)
     h = ((x.astype(np.uint64) * np.uint64(0x1F1F1F1F)) & m) ^ \
@@ -260,22 +261,25 @@ def hash32(x, y, salt):
 
 
 def lattice_values(period, salt):
-    """A period x period grid of hashed values in 0..1."""
+    """A period x period grid of hashed Q0.16 values.
+
+    The float version divides the low sixteen bits by 65535 to reach 0..1;
+    in Q0.16 the low sixteen bits *are* the value, which is one mask instead
+    of a divide and the reason this representation was chosen.
+    """
     y, x = np.meshgrid(np.arange(period), np.arange(period), indexing="ij")
-    return (hash32(x, y, salt) & np.uint64(0xFFFF)).astype(np.float64) / 65535.0
+    return (hash32(x, y, salt) & np.uint64(0xFFFF)).astype(np.int64)
 
 
-def smoothstep(t):
-    return t * t * (3.0 - 2.0 * t)
 
 
 def value_noise(size, period, salt):
-    """One octave: bilinear interpolation over a hashed lattice, smoothstepped.
+    """One octave: bilinear over a hashed lattice, smoothstepped, in Q0.16.
 
-    The lattice wraps at `period`, so the noise tiles -- which matters because
-    the world wraps too (map coordinates are 8.8 fixed point in a uint16_t, so
-    flying off one edge arrives at the other). A map whose noise did not tile
-    would show a seam there.
+    The weights are exact. `step` is a power of two, so the fraction of the
+    way across a lattice cell is the low bits of the pixel index shifted up
+    to Q0.16 -- no division, no rounding, and the same number the C version
+    would compute from a mask and a shift.
     """
     if period > size:
         period = size
@@ -284,75 +288,108 @@ def value_noise(size, period, salt):
 
     i0 = np.arange(size) // step
     i1 = (i0 + 1) % period
-    w = smoothstep((np.arange(size) % step) / step)
+    shift = F.FRACBITS - (step.bit_length() - 1)
+    w = F.smoothstep((np.arange(size) % step) << shift)
 
-    top = corner[np.ix_(i0, i0)] * (1 - w) + corner[np.ix_(i0, i1)] * w
-    bot = corner[np.ix_(i1, i0)] * (1 - w) + corner[np.ix_(i1, i1)] * w
-    return top * (1 - w[:, None]) + bot * w[:, None]
+    top = F.lerp(corner[np.ix_(i0, i0)], corner[np.ix_(i0, i1)], w)
+    bot = F.lerp(corner[np.ix_(i1, i0)], corner[np.ix_(i1, i1)], w)
+    return F.lerp(top, bot, w[:, None])
+
+
+def percentile(field, num, den):
+    """The value at num/den of the way up `field`, by histogram, in Q0.16.
+
+    A bucket is 1/1024 of full scale, and the interpolation inside it is not
+    a nicety: this number scales the whole land ramp, so a bucket of error
+    moves every pixel a fiftieth of a step and lands one in eight of them on
+    the other side of a boundary. One divide, at setup, to place the cut
+    within its bucket -- the counts either side of it are already in hand.
+    """
+    counts = np.bincount((field >> BUCKETSHIFT).ravel(), minlength=BUCKETS + 1)
+    cum = np.cumsum(counts)
+    want = int(field.size) * num // den
+    b = int(np.searchsorted(cum, want))
+    below = int(cum[b - 1]) if b else 0
+    inside = int(counts[b])
+    frac = ((want - below) << BUCKETSHIFT) // inside if inside else 0
+    return (b << BUCKETSHIFT) + frac
+
+
+def stretch(total):
+    """The 0.5/99.5 percentile stretch, by histogram instead of by sort.
+
+    numpy sorts a megapixel to find a percentile. The MEGA65 cannot, and does
+    not need to: a histogram gives both cut points in one pass, and the divide
+    by (hi - lo) is hoisted into a reciprocal so the second pass is a
+    multiply.
+
+    **The bucket width lands directly on the map's heights**, which is why it
+    is 1024 buckets and not 256. Both ends of the stretch move by up to a
+    bucket, and the whole field is scaled between them, so a 256-bucket
+    histogram put the mountains map a systematic 0.77 height units below the
+    float version -- not noise, a bias, visible as every summit being slightly
+    lower. At 1024 it is a fifth of that and the cost is 4 KB of counters
+    instead of 1 KB, which is nothing against the map itself.
+    """
+    lo = percentile(total, 5, 1000)
+    hi = percentile(total, 995, 1000)
+    span = max(hi - lo, 1)
+    recip = (ONE * ONE) // span            # one divide, at setup
+    return np.clip(F.scale(np.clip(total - lo, 0, None), recip), 0, ONE)
 
 
 def fbm(size, octaves, gain, stream, ridged=False, base=LATTICE):
-    """Octaves of value noise, each twice the frequency and `gain` the weight.
+    """Octaves of value noise, in Q0.16. The float version's shape exactly.
 
-    Ridged folds the sum about its middle, which turns the smooth hills of
-    plain value noise into creased ridges with valleys between them -- the
-    difference between rolling country and a mountain range.
-
-    Folding each octave separately is the textbook ridged multifractal and was
-    tried first. It creases along every lattice's own mid-contour, so the
-    ridges come out boxy and follow the noise grid; folding once at the end
-    creases along a contour of the finished field instead, and the ridges are
-    long and sinuous. It is also one operation on one array rather than one
-    per octave, which is the cheaper of the two to port.
+    The weighted sum is accumulated at Q8.16 -- an octave sum reaches several
+    times ONE before it is normalised -- and divided by the total weight
+    through a reciprocal, which is the only place this differs from the float
+    in more than rounding.
     """
-    total = np.zeros((size, size))
-    weight = 0.0
-    amp = 1.0
+    total = np.zeros((size, size), np.int64)
+    weight = 0
+    amp = ONE
     for o in range(octaves):
         period = base << o
         if period > size:
             break
         n = value_noise(size, period, stream.salt())
-        # Every octave is sampled at its own offset, which is a roll of a
-        # tiling array and so still tiles. Without it all the lattices share
-        # their cell boundaries and the sum comes out visibly quilted -- most
-        # of all when ridged folds each octave about its middle, which puts a
-        # crease on exactly those lines.
-        oy, ox = (int(v) for v in stream.uniform(0, size, 2))
+        oy, ox = stream.below(size), stream.below(size)
         n = np.roll(np.roll(n, oy, 0), ox, 1)
-        total += amp * n
+        total += F.scale(n, amp)
         weight += amp
-        amp *= gain
-    total /= weight
+        amp = F.mul(amp, gain)
 
-    # Stretched to the full 0..1 before anything else looks at it. A sum of
-    # octaves is a bell around the middle and never reaches either end, so
-    # without this a `range` of 0.8 delivers about half of that, and -- worse
-    # for the fold below -- almost every pixel sits near 0.5, which is exactly
-    # where the crease is. Percentiles rather than the extremes, so one
-    # outlying lattice corner cannot set the scale for the whole map.
-    lo, hi = np.percentile(total, (0.5, 99.5))
-    total = np.clip((total - lo) / max(hi - lo, 1e-6), 0.0, 1.0)
-
+    total = F.scale(total, (ONE * ONE) // weight)
+    total = stretch(total)
     if ridged:
-        total = 1.0 - np.abs(2.0 * total - 1.0)
+        total = ONE - np.abs(2 * total - ONE)
     return total
 
 
 # --- macro shape --------------------------------------------------------
 
 def island_mask(size, spec, stream):
-    """Radial falloff from the centre, with a noisy coastline.
+    """Radial falloff with a noisy coastline, in Q0.16.
 
-    The mask is what makes an island an island; the noise on the radius is what
-    stops it being a disc. Because everything outside it is under water, the
-    map still tiles even though the mask itself is not periodic: sea meets sea
-    at the seam.
+    The radius is the one per-pixel square root in the generator, which is
+    what `fixed.sqrt`'s normalisation was written for: at the centre of the
+    map the unnormalised table read is wrong by two height units, and the
+    error is a visible ring.
     """
-    axis = (np.arange(size) - size / 2.0) / (size / 2.0)
-    r = np.sqrt(axis[:, None] ** 2 + axis[None, :] ** 2)
-    r = r + ISLAND_WOBBLE * (2.0 * value_noise(size, spec["lattice"], stream.salt()) - 1.0)
-    return smoothstep(np.clip((ISLAND_EDGE - r) / ISLAND_FADE, 0.0, 1.0))
+    axis = ((np.arange(size) * 2 - size) * ONE) // size      # -1..1 in Q0.16
+    r2 = (axis[:, None] ** 2 + axis[None, :] ** 2) >> F.FRACBITS
+    # Past the corners r2 exceeds 1.0, where sqrt's table saturates. Those
+    # pixels are half a map outside the coast and mask to nothing anyway, so
+    # the clip costs nothing and keeps the root inside its domain.
+    r = F.sqrt(np.clip(r2, 0, ONE))
+
+    wobble = F.scale(2 * value_noise(size, spec["lattice"], stream.salt()) - ONE,
+                     int(ISLAND_WOBBLE * ONE))
+    r = r + wobble
+    recip = (ONE * ONE) // int(ISLAND_FADE * ONE)
+    t = np.clip(F.scale(int(ISLAND_EDGE * ONE) - r, recip), 0, ONE)
+    return F.smoothstep(t)
 
 
 def base_terrain(size, spec, stream):
@@ -360,76 +397,80 @@ def base_terrain(size, spec, stream):
     octaves, gain = RUGGEDNESS[spec["ruggedness"]]
     shape = TYPES[spec["type"]]
 
-    n = fbm(size, max(2, octaves + SCALE[spec["scale"]]["octaves"]), gain, stream,
-            ridged=shape["ridged"], base=spec["lattice"])
-    h = shape["floor"] + shape["range"] * n
+    n = fbm(size, max(2, octaves + SCALE[spec["scale"]]["octaves"]),
+            int(gain * ONE), stream, ridged=shape["ridged"],
+            base=spec["lattice"])
+    h = int(shape["floor"] * ONE) + F.scale(n, int(shape["range"] * ONE))
     if spec["type"] == "island":
-        h = h * island_mask(size, spec, stream)
+        h = F.scale(h, island_mask(size, spec, stream))
     return h
 
 
 # --- features -----------------------------------------------------------
 
 def add_hills(h, spec, stream, sea):
-    """Bumps of the given size dropped on dry land.
-
-    A shouldered dome rather than a cone, so the hill blends into whatever it
-    lands on instead of creasing it; and the placement is rejected if it falls
-    in water, because a hill in the sea is an island nobody asked for.
-
-    Every dome is modulated by a noise field, because a radial function alone
-    puts a perfect circle on the map -- which the eye finds immediately from
-    the air, and which the colour ramp then crowns with a round bald summit.
-    """
+    """Bumps of the given size dropped on dry land, in Q0.16."""
     count = HILL_COUNTS[spec["hills"]]
     if not count:
         return
     radius, height = HILL_SIZE[spec["hills-size"]]
     radius = max(2, round(radius * spec["feature"] * h.shape[0] / DEFAULT_SIZE))
-    height *= TYPES[spec["type"]]["range"]
+    height = int(height * TYPES[spec["type"]]["range"] * ONE)
     texture = value_noise(h.shape[0], spec["lattice"] << 3, stream.salt())
 
     placed = 0
     for _ in range(count * 8):
         if placed == count:
             break
-        cy, cx = (int(v) for v in stream.uniform(0, h.shape[0], 2))
+        cy, cx = stream.below(h.shape[0]), stream.below(h.shape[0])
         if h[cy, cx] <= sea:
             continue
-        stamp(h, cy, cx, radius, lambda d: height * smoothstep(1.0 - d), texture)
+        stamp(h, cy, cx, radius,
+              lambda d: F.scale(F.smoothstep(ONE - d), height), texture)
         placed += 1
 
 
 def stamp(h, cy, cx, radius, profile, texture=None):
-    """Add a radial profile to the map at (cy, cx), wrapping at the edges.
+    """Add a radial profile at (cy, cx), wrapping. Q0.16 throughout.
 
-    `profile` takes the distance from the centre as a fraction of the radius
-    and returns what to add. Wrapping matters for the same reason the noise
-    tiles: a feature that fell off the edge would leave a half-hill at a seam
-    the pilot can fly across.
+    `profile` takes the distance from the centre as Q0.16 and returns Q0.16 to
+    add. The distance is exact: `fixed.hypot` is the digit-by-digit root,
+    because this is where a rounding error becomes a stair on a hillside.
     """
     size = h.shape[0]
     span = np.arange(-radius, radius + 1)
-    d = np.sqrt(span[:, None] ** 2 + span[None, :] ** 2) / radius
-    inside = d <= 1.0
+    # Measured at DISCBITS and shifted up to Q0.16 afterwards, so isqrt keeps
+    # its 32-bit domain -- see fixed.hypot.
+    d = (F.hypot(span[:, None], span[None, :], F.DISCBITS)
+         << (F.FRACBITS - F.DISCBITS)) // radius
+    inside = d <= ONE
     ys = (cy + span) % size
     xs = (cx + span) % size
     box = np.ix_(ys, xs)
-    patch = np.where(inside, profile(np.clip(d, 0.0, 1.0)), 0.0)
+    patch = np.where(inside, profile(np.clip(d, 0, ONE)), 0)
     if texture is not None:
-        patch = patch * (1.0 - HILL_ROUGH + 2.0 * HILL_ROUGH * texture[box])
+        rough = int(HILL_ROUGH * ONE)
+        patch = F.scale(patch, ONE - rough + 2 * F.scale(texture[box], rough))
     h[box] += patch
 
 
 def box_blur(a, radius):
-    """Separable moving average, wrapping. Two passes of a running sum."""
+    """Separable moving average, wrapping, in Q0.16.
+
+    The float version divides the window sum by its width. The width is
+    2r + 1, never a power of two, so the divide is hoisted into a reciprocal
+    and the running sum is multiplied by it -- one $D770 multiply per pixel
+    instead of a division the machine does not have. The sum itself is at most
+    33 values of 16 bits, which is why it can stay in 32 bits.
+    """
     n = 2 * radius + 1
+    recip = ((1 << 32) + n - 1) // n
     for axis in (0, 1):
         a = np.moveaxis(a, axis, 0)
         pad = np.concatenate([a[-radius:], a, a[:radius]], axis=0)
-        c = np.cumsum(pad, axis=0)
-        c = np.concatenate([np.zeros((1,) + a.shape[1:]), c], axis=0)
-        a = (c[n:] - c[:-n]) / n
+        c = np.cumsum(pad.astype(np.int64), axis=0)
+        c = np.concatenate([np.zeros((1,) + a.shape[1:], np.int64), c], axis=0)
+        a = ((c[n:] - c[:-n]) * recip) >> 32
         a = np.moveaxis(a, 0, axis)
     return a
 
@@ -445,65 +486,40 @@ def local_minima(h, water):
 
 
 def flood_basin(h, water, level, cy, cx, budget, rise, blocked=None):
-    """Flood the basin around one cell until it fills `budget` cells.
+    """genmap.flood_basin with integer heights. The algorithm is unchanged.
 
-    A priority flood: the region grows by repeatedly swallowing its lowest
-    frontier cell, so the water level only ever rises and the region is exactly
-    the basin that level fills. The surface is the highest cell taken, which is
-    the lip it would spill over.
+    Including the spill point: the level is cut back to the lowest cell left
+    on the frontier, or the lake stands above the beach beside it. See
+    documentation/procedural-maps.md -- that trap cost a release's worth of
+    dark blocks standing out of the sea, and porting it faithfully is cheaper
+    than finding it twice.
 
-    A basin too shallow to hold the budget hits `rise` first and keeps whatever
-    it had -- better a small lake than a flooded plain.
-
-    **Both of those stop the fill early, and a level taken from the highest
-    cell swallowed is then water standing above the land beside it.** The
-    frontier is still holding cells lower than that level, and they stay dry:
-    the lake keeps its shape but gains a rim it is pouring over, drawn as a
-    wall of water several units proud of the ground. It is worst where the sea
-    blocks the fill -- a coastal basin runs out of budget instead of reaching a
-    shore -- and from the air it is a row of dark blocks standing out of the
-    water, which is how it was found. So the level is cut back to the lowest
-    cell left on the frontier, which is the point the basin would actually
-    spill at, and anything above the new level is not part of the lake.
-
-    `blocked` is the water this pool may not grow into, and it is not always
-    the live map: a pool at the end of a river is surrounded by that river's
-    own channel, so blocking on live water walls it in at one pixel. Passing
-    the water as it stood before the river set out lets the pool back up into
-    its own channel, which is what a pool does, while still refusing to spread
-    into a lake or the sea.
+    The heap is the one structure here that is not obviously 6502-shaped. Its
+    entries are (height, y, x), which packs into four bytes, and a lake takes a
+    few thousand of them -- chip RAM the generator has to spare, since it is
+    stage one and owns the machine.
     """
     size = h.shape[0]
     if blocked is None:
         blocked = water
-    start = h[cy, cx]
+    start = int(h[cy, cx])
     seen = {(cy, cx)}
-    frontier = [(float(start), cy, cx)]
+    frontier = [(start, cy, cx)]
     region = []
     surface = start
     while frontier and len(region) < budget:
         hh, y, x = heapq.heappop(frontier)
         if hh > start + rise:
-            heapq.heappush(frontier, (hh, y, x))   # it is a spill point too
+            heapq.heappush(frontier, (hh, y, x))
             break
         surface = max(surface, hh)
         region.append((y, x))
         for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
             ny, nx = ny % size, nx % size
-            # Standing water is not somewhere a basin can grow into. Left in,
-            # the frontier reaches the coast, finds the sea to be the lowest
-            # thing available and spends the whole area budget painting ocean
-            # at the lake's own surface level -- a raised sheet of water
-            # halfway across the map.
             if (ny, nx) not in seen and not blocked[ny, nx]:
                 seen.add((ny, nx))
-                heapq.heappush(frontier, (float(h[ny, nx]), ny, nx))
+                heapq.heappush(frontier, (int(h[ny, nx]), ny, nx))
 
-    # Where the basin would spill: the lowest cell still on the frontier, which
-    # is dry ground adjacent to the lake. Water cannot stand above it, so it is
-    # a ceiling on the level, and the cells the lower level no longer covers
-    # are not lake. Every remaining cell was popped in increasing order, so the
-    # ones that survive are a prefix and the lake keeps its shape.
     if frontier:
         surface = min(surface, min(hh for hh, _, _ in frontier))
     region = [(y, x) for y, x in region if h[y, x] <= surface]
@@ -520,62 +536,46 @@ def flood_basin(h, water, level, cy, cx, budget, rise, blocked=None):
 def fill_lakes(h, water, level, spec, stream):
     """Flood basins at local minima until each reaches its area budget.
 
-    A priority flood: the region grows by repeatedly swallowing its lowest
-    frontier cell, so the water level only ever rises and the region is exactly
-    the basin that level fills. The surface is the highest cell taken, which is
-    the lip it would spill over.
-
-    A basin that is too shallow to hold the budget hits LAKE_RISE first and
-    keeps whatever it had -- better a small lake than a flooded plain.
+    **The candidates are chosen by a histogram, not by a sort.** The float
+    version argsorts every local minimum and keeps the lower half; there can
+    be tens of thousands of them and a 45GS02 is not going to sort that. One
+    pass of the same 1024-bucket histogram the stretch uses gives the median
+    height, and "every minimum below the median" is the same set the sort was
+    there to produce -- the order does not matter, because the next thing the
+    float version does is shuffle it.
     """
     count = COUNTS[spec["lakes"]]
     if not count:
         return
-    # Areas, so the scale's length multiplier goes in squared.
     budget = round(LAKE_AREA[spec["lakes-size"]]
                    * (spec["feature"] * h.shape[0] / DEFAULT_SIZE) ** 2)
-    size = h.shape[0]
 
     minima = local_minima(h, water)
     if not len(minima):
         return
-    # The lower half of the minima, shuffled, and taken until enough lakes are
-    # placed. Taking the lowest few instead put every lake in one basin: a flat
-    # basin floor is thousands of cells that are all no higher than their
-    # neighbours, so the lowest candidates are all the same puddle. A candidate
-    # that some earlier lake has already flooded is skipped for the same
-    # reason, which is what actually spreads them out.
-    order = np.argsort(h[minima[:, 0], minima[:, 1]])
-    candidates = minima[order[:max(len(order) // 2, count)]]
+    depth = h[minima[:, 0], minima[:, 1]]
+    counts = np.bincount(depth >> BUCKETSHIFT, minlength=BUCKETS + 1)
+    half = int(np.searchsorted(np.cumsum(counts), max(len(depth) // 2, count)))
+    candidates = minima[depth <= (half << BUCKETSHIFT)]
+    if not len(candidates):
+        candidates = minima
+
     placed = 0
-    for pick in stream.choice(len(candidates), len(candidates)):
+    for pick in stream.pick(len(candidates), len(candidates)):
         if placed == count:
             break
         cy, cx = (int(v) for v in candidates[pick])
         if water[cy, cx]:
             continue
         placed += 1
-        flood_basin(h, water, level, cy, cx, budget, LAKE_RISE)
+        flood_basin(h, water, level, cy, cx, budget, int(LAKE_RISE * ONE))
 
 
 def carve_rivers(h, water, level, spec, stream):
     """Steepest descent from high ground to the first water it reaches.
 
-    The walk follows a blurred copy of the terrain, because the real surface
-    has a noise pit every few pixels and a raw descent stops in the first one.
-    The channel is cut into the real surface though, and its floor is kept
-    monotonically falling -- once the river has been down to a level it never
-    climbs back, so a channel is always something water could run along rather
-    than a groove draped over the noise.
-
-    **The channel is measured against the terrain as it was before any of this
-    ran.** Against the live map it digs itself in: a disc flattens the ground
-    several pixels ahead of the walk, so when the walk arrives there the ground
-    it reads is its own channel floor and it cuts RIVER_DEPTH below that again.
-    Every step took another notch out, and after thirty of them the river was
-    below sea level -- which the sea pass downstream then flattens and paints
-    in the deepest shade there is. That is a black canyon across the map, and
-    it is what a river looked like here until the pristine copy was kept.
+    Every part of this is already integer in shape -- comparisons, a blurred
+    field, eight neighbours -- so the port is the constants and the disc.
     """
     count = COUNTS[spec["rivers"]]
     if not count:
@@ -583,40 +583,32 @@ def carve_rivers(h, water, level, spec, stream):
     radius = max(1, round(RIVER_SIZE[spec["river-size"]] * spec["feature"]
                           * h.shape[0] / DEFAULT_SIZE))
     size = h.shape[0]
-    flow = box_blur(h, max(1, round(FLOW_BLUR * spec["feature"] * size / DEFAULT_SIZE)))
-    wander = MEANDER * (2.0 * value_noise(size, spec["lattice"] << MEANDER_OCTAVES,
-                                          stream.salt()) - 1.0)
+    flow = box_blur(h, max(1, round(FLOW_BLUR * spec["feature"]
+                                    * size / DEFAULT_SIZE)))
+    wander = F.scale(2 * value_noise(size, spec["lattice"] << MEANDER_OCTAVES,
+                                     stream.salt()) - ONE,
+                     int(MEANDER * ONE))
     surface = h.copy()
+    depth = int(RIVER_DEPTH * ONE)
+    sea = int(spec["sea"] * ONE)
 
-    # Sources in the top third of the terrain, so a river has somewhere to run
-    # from; below that it would meet water within a few steps.
-    high = np.argwhere(~water & (h > h.min() + 0.66 * (h.max() - h.min())))
+    lo, hi = int(h.min()), int(h.max())
+    high = np.argwhere(~water & (h > lo + (66 * (hi - lo)) // 100))
     if not len(high):
         return
 
-    for pick in stream.choice(len(high), count):
+    for pick in stream.pick(len(high), count):
         y, x = (int(v) for v in high[pick])
-        run = surface[y, x]
-        # The water that was already standing when this river set out: the sea,
-        # the lakes, and whatever earlier rivers cut. It is both where this one
-        # stops and where it may not write, because a channel arriving at the
-        # coast is still well above sea level and stamping its own surface over
-        # the sea would raise a plateau of water out in the bay. Its own
-        # channel has to be excluded from the test, or it would stop on the
-        # first pixel it had just cut.
+        run = int(surface[y, x])
         standing = water.copy()
         for _ in range(4 * size):
             if standing[y, x]:
-                break            # reached the sea, a lake or another river
-            run = min(run, surface[y, x] - RIVER_DEPTH)
-            if run <= spec["sea"]:
-                break            # down to the sea plane: there is nothing lower
+                break
+            run = min(run, int(surface[y, x]) - depth)
+            if run <= sea:
+                break
             stamp_river(h, water, level, y, x, radius, run, standing)
 
-            # Every neighbour that is genuinely downhill, and the meander picks
-            # between them. The test that ends the river is on the blurred
-            # field alone, so the wander can bend the path without ever being
-            # able to stop it.
             best, score = None, None
             here = flow[y, x]
             for dy in (-1, 0, 1):
@@ -628,51 +620,35 @@ def carve_rivers(h, water, level, spec, stream):
                             if score is None or s < score:
                                 best, score = (ny, nx), s
             if best is None:
-                # A pit in the macro slope. The river has to end in *something*
-                # -- a blue thread stopping in the middle of a plain is the one
-                # thing you notice from the air -- so it ends in the pool it
-                # would actually make, which on a plain with nowhere to drain
-                # is what happens to a river anyway.
                 flood_basin(h, water, level, y, x,
                             round(RIVER_POOL * (spec["feature"] * size
-                                                / DEFAULT_SIZE) ** 2),
-                            RIVER_POOL_RISE, blocked=standing)
+                                                  / DEFAULT_SIZE) ** 2),
+                            int(RIVER_POOL_RISE * ONE), blocked=standing)
                 break
             y, x = best
 
 
 def stamp_river(h, water, level, cy, cx, radius, run, standing):
-    """Cut one disc of channel at `run` and put water in it."""
+    """One disc of channel at `run`, with water in it. Integer distances."""
     size = h.shape[0]
     span = np.arange(-radius, radius + 1)
-    d = np.sqrt(span[:, None] ** 2 + span[None, :] ** 2) / (radius + 0.5)
+    # The float version divides by radius + 0.5, so this doubles first and
+    # divides by 2r + 1 -- in that order, or the low bits are gone before the
+    # doubling can use them.
+    d = ((F.hypot(span[:, None], span[None, :], F.DISCBITS)
+          << (F.FRACBITS - F.DISCBITS)) * 2) // (radius * 2 + 1)
     ys, xs = (cy + span) % size, (cx + span) % size
     box = np.ix_(ys, xs)
     free = ~standing[box]
 
-    # The banks are cut too, one shoulder wider than the water, so the channel
-    # has sides rather than being a flat strip laid over the hillside.
-    bank = free & (d <= 1.0)
-    h[box] = np.where(bank, np.minimum(h[box], run + RIVER_DEPTH), h[box])
-    # The channel floor is *set* to the run rather than cut down to it, so the
-    # bed and the surface are the same number and the colour reads the river as
-    # the shallow water it is. Cutting left a pixel that an earlier, higher
-    # disc had made wet sitting over a bed a later, lower one had dug, and the
-    # difference came out as deep-water colour along half of every river.
-    # `h[box] >= run` is the same rule the lake's spill point is: a channel may
-    # be *cut* into the ground but never built up out of it. Without it a disc
-    # crossing a slope raises its downhill half to the run, and the river comes
-    # out running along the top of a low wall of its own water. The centre
-    # always passes -- the run was taken RIVER_DEPTH below it -- so the channel
-    # cannot be broken by this, only narrowed where the ground falls away.
-    wet = free & (d <= 0.7) & (h[box] >= run)
+    bank = free & (d <= ONE)
+    h[box] = np.where(bank, np.minimum(h[box], run + int(RIVER_DEPTH * ONE)),
+                      h[box])
+    # Cut, never build up -- the rule the wall of water at the waterline
+    # taught. See documentation/procedural-maps.md.
+    wet = free & (d <= (7 * ONE) // 10) & (h[box] >= run)
     h[box] = np.where(wet, run, h[box])
     water[box] |= wet
-    # Plain assignment, not a maximum: `run` only ever falls, and consecutive
-    # discs overlap heavily, so keeping the higher of the two would hold the
-    # surface at whatever the river was doing upstream and leave every channel
-    # reading as deep water. The standing water this must not overwrite is
-    # already excluded by `free`.
     level[box] = np.where(wet, run, level[box])
 
 
@@ -715,25 +691,17 @@ ITEMS = {"pyramid": PYRAMID}
 
 
 def place_items(h, water, items, size):
-    """Terraform the built things into the terrain.
+    """genmap.place_items in Q0.16. Terraces are integers already.
 
-    Returns a float array: -1 where nothing is built, and otherwise which
-    course of stone that pixel wears -- 0 for a riser, 1 for a tread.
-
-    A pyramid is a square, axis-aligned stack of terraces, which is the whole
-    of it: the site is levelled to the median of what it covers, each terrace
-    is a TERRACE-wide tread and a `height / steps` riser, and the heightfield
-    renderer does the rest.
-
-    **Coordinates are map pixels at DEFAULT_SIZE**, a quarter of a cell, and
-    are scaled with the map like every other length here -- so `--size` stays
-    what its comment claims, a resolution knob that does not move anything.
-    Read as pixels of whatever was generated, the same YAML put the pyramid a
-    hundred cells away at `--size 512`, which happened to land it in the sea
-    and say so; somewhere dry it would have been silent.
+    The only arithmetic here is the median of the footprint, which the float
+    version gets from numpy's sort. A pyramid covers 97x97 pixels at most, so
+    the sort is small -- but the machine has a histogram already written for
+    the stretch, and one that is 1024 buckets wide resolves the site to a
+    ninth of a height unit, which is finer than the terraces it is levelling
+    for.
     """
+    built = np.full(h.shape, -1, np.int64)
     scale = size / DEFAULT_SIZE
-    built = np.full(h.shape, -1.0)
     for n, item in enumerate(items):
         if item["type"] != "pyramid":
             continue
@@ -742,11 +710,8 @@ def place_items(h, water, items, size):
         riser = max(1, round(RISER * scale))
         steps = max(2, round(half * scale) // terrace)
         half = steps * terrace
-        height /= HEIGHT_MAX
+        height = int(height * ONE) // HEIGHT_MAX
         cy, cx = round(item["y"] * scale), round(item["x"] * scale)
-        if not (0 <= cx < size and 0 <= cy < size):
-            sys.exit(f"item {n} (pyramid) at {item['x']},{item['y']} is off a "
-                     f"{DEFAULT_SIZE}-pixel map")
 
         span = np.arange(-half, half + 1)
         ys, xs = (cy + span) % size, (cx + span) % size
@@ -756,31 +721,13 @@ def place_items(h, water, items, size):
                      f"water; move it or shrink it -- it covers "
                      f"{round((2 * half + 1) / scale)} pixels of the map")
 
-        # Chebyshev distance in whole pixels, so a terrace's contour is a
-        # square: how far in from the edge, in terraces. Tier 1 is the plinth
-        # at the outer edge and `steps` is the top platform, so the whole
-        # footprint is built ground and there is no zero-height course to
-        # leave a seam.
         out = np.maximum(np.abs(span)[:, None], np.abs(span)[None, :])
         tier = np.clip((half - out) // terrace + 1, 1, steps)
-        # The riser's own band is the outer part of each terrace: a whole map
-        # cell of it, which is what a ray can actually land on. It takes the
-        # *lighter* course and the tread the darker one, which is both what the
-        # hand-drawn pyramid does and what a sun this low means -- a wall
-        # catches it and a floor does not. It is also the way round that shows:
-        # from the air you see a stepped face nearly edge on, so the risers are
-        # most of what is on the screen and the treads are the lines between.
         band = ((half - out) % terrace) < riser
 
-        # The site is levelled to the median of what it covers -- part cut,
-        # part fill, which is how you level a site -- but never so high that
-        # the top runs into HEIGHT_MAX. Clipping there would flatten the top
-        # courses into one, and a step pyramid without its top steps is a
-        # spoil heap; cutting the platform deeper into the hill keeps the
-        # shape, which is the thing worth keeping.
-        base = min(float(np.median(h[box])), 1.0 - height)
-        h[box] = base + height * tier / steps
-        built[box] = np.where(band, 1.0, 0.0)
+        base = min(percentile(h[box], 1, 2), ONE - height)
+        h[box] = base + (height * tier) // steps
+        built[box] = np.where(band, ONE, 0)
     return built
 
 
@@ -870,56 +817,38 @@ def lit(colour, m):
 
 
 def sunlight(h, spec):
-    """How brightly the sun catches each pixel, 0..1 across the shade list.
+    """How brightly the sun catches each pixel, 0..ONE across the shades.
 
-    Not a Lambert dot against a surface normal but the plainer thing the
-    hand-drawn map turns out to be doing: how fast the ground rises *towards
-    the sun*, which is one dot product of the gradient with a horizontal
-    direction. Its luminance correlates 0.72 with the east-west gradient and
-    0.04 with the north-south one, which is what a light on the horizon gives
-    and what a normal-based model with a sun 40 degrees up does not.
-
-    A full Lambert was written first and measured worse in a way worth
-    recording: it needs the relief exaggerated into cell units before a normal
-    means anything, and that exaggeration then interacts with each map type's
-    own height range, so the same constant put 71% of a mountain range in the
-    two end shades and left a plain with no shading at all. Rise-towards-the-sun
-    against one reference steepness behaves the same on all three.
-
-    tanh rather than a clip, because the interesting terrain is the gentle
-    two-thirds around flat: a linear ramp steep enough to shade *that* piles
-    every hillside up in the end shades. Flat ground returns exactly 0.5, which
-    is the middle shade and the palette's 1.00 entry, so level ground comes out
-    in the climate's own colours whether it is shaded or not.
+    The gradient dot with a horizontal direction, then tanh. The sun's
+    bearing is a constant, so its two components are constants too -- at 270
+    degrees they are exactly -1 and 0, and the C version will carry them as
+    Q0.16 rather than calling a sine.
     """
-    cell = h.shape[0] / CELLS
-    hx = (np.roll(h, -1, 1) - np.roll(h, 1, 1)) / 2.0 * cell
-    hy = (np.roll(h, -1, 0) - np.roll(h, 1, 0)) / 2.0 * cell
+    cell = h.shape[0] // CELLS
+    lx = int(round(np.sin(np.radians(SUN_FROM)) * ONE))
+    ly = int(round(-np.cos(np.radians(SUN_FROM)) * ONE))
 
-    # Note the minus: a lit face is one where the ground *falls* towards the
-    # sun. Walk west into a sun in the west and a hillside that rises under you
-    # is the one turning its back on it, which is the east face -- exactly the
-    # face the pilot sees dark on the hand-drawn map.
-    az = np.radians(SUN_FROM)
-    lx, ly = np.sin(az), -np.cos(az)
-    rise = hx * lx + hy * ly
-    return 0.5 - 0.5 * np.tanh(rise / (SUN_REF * spec["feature"]))
+    hx = (np.roll(h, -1, 1) - np.roll(h, 1, 1)) * cell // 2
+    hy = (np.roll(h, -1, 0) - np.roll(h, 1, 0)) * cell // 2
+    rise = F.scale(hx, lx) + F.scale(hy, ly)
+
+    ref = int(SUN_REF * spec["feature"] * ONE)
+    return (ONE - F.tanh((rise << F.FRACBITS) // ref)) // 2
 
 
 def colourise(h, bed, water, level, built, spec, pal, stream):
-    """Height, slope, sun and water into palette indices, and the palette.
+    """genmap.colourise in Q0.16. The palette itself stays in floats.
 
-    The land bands are one contiguous ramp, so the whole of the land decision
-    is: how far up the terrain is this pixel, plus how steep it is, plus a
-    little dither -- and the answer indexes straight into the ramp. Where the
-    band boundaries fall is a matter of what colours the palette puts there and
-    nothing the code has to know about.
+    **What the machine computes is the index, not the colour.** The RGB behind
+    each entry is worked out once, on the PC, from `maps/palette.yaml`, and
+    ships as a 768-byte table -- the generator never interpolates a colour
+    stop or multiplies a channel by a shade. So the palette half of
+    genmap.colourise is reused as it stands and only the per-pixel decision is
+    ported, which is the half that has to run a million times.
 
-    The ramp is two dimensional now: every elevation step owns one entry per
-    shade, so the index is the step's base plus which way the ground faces the
-    sun. The map is still one add and one lookup away from a height, and the
-    renderer never learns that any of this happened -- it reads a palette index
-    per cell as it always did.
+    Every transcendental is a table: the ramp's gamma, the sun's tanh, and the
+    slope's square root. Every division is a reciprocal: the ramp's top, the
+    slope reference, the water's depth.
     """
     shades = pal["shades"]
     rgb = [(0, 0, 0)] * 256
@@ -933,63 +862,51 @@ def colourise(h, bed, water, level, built, spec, pal, stream):
     deep, wcolours = band_colours(pal, spec["climate"], "water")
     for e, c in zip(deep, wcolours):
         rgb[e] = c
-
-    # The top of the ramp is the map's own high ground rather than a constant,
-    # so flatlands use the whole ramp instead of coming out uniformly shore
-    # coloured. The 99th percentile and not the maximum: one hill peak should
-    # not spend the top half of the ramp on a dozen pixels. Built ground is
-    # left out of it -- a pyramid is not the country's high ground, and
-    # counting it would push the whole terrain ramp down to make room.
-    land = h[~water & (built < 0)]
-    top = np.percentile(land, 99) if land.size else 1.0
-    sea = spec["sea"]
-    t = (h - sea) / max(top - sea, 1e-6)
-
-    dy = np.roll(h, -1, 0) - np.roll(h, 1, 0)
-    dx = np.roll(h, -1, 1) - np.roll(h, 1, 1)
-    slope = np.sqrt(dy ** 2 + dx ** 2) / 2.0 * (h.shape[0] / CELLS)
-    t = np.clip(t, 0.0, None) ** RAMP_GAMMA
-    t = t + SLOPE_PUSH * np.clip(slope / (SLOPE_REF / spec["feature"]), 0.0, 1.0)
-    t = t * TYPES[spec["type"]]["ceiling"]
-
-    # Both dithers are added after the scaling, in steps and in shades, so each
-    # one means the same thing however the palette is re-cut. They are separate
-    # noise fields on purpose: one field would put the same pixels at the top of
-    # their elevation step and the top of their shade, which is a texture rather
-    # than a dither.
-    step = t * len(ramp) + MOTTLE * (
-        2.0 * value_noise(h.shape[0], h.shape[0] // 16, stream.salt()) - 1.0)
-    step = np.clip(step.astype(int), 0, len(ramp) - 1)
-
-    sun = sunlight(h, spec) * len(shades)
-    face = sun + SUN_MOTTLE * (
-        2.0 * value_noise(h.shape[0], h.shape[0] // 16, stream.salt()) - 1.0)
-    face = np.clip(face.astype(int), 0, len(shades) - 1)
-
-    indices = np.asarray(ramp, np.uint8)[step] + face.astype(np.uint8)
-
-    # Masonry is the same idea as the land ramp with one course of stone for
-    # the other axis: the sun is the one the terrain uses, so a terrace riser
-    # takes the same extreme shade a cliff would and the structure is lit into
-    # the country rather than pasted on it. The mottle is deliberately not
-    # applied -- dressed stone is not vegetation, and a dither across a flat
-    # tread is the one thing that would say "terrain" about it.
     stone, scolours = band_colours(pal, spec["climate"], "masonry")
     for e, c in zip(stone, scolours):
         for l, m in enumerate(shades):
             rgb[e + l] = lit(c, m)
-    course = np.clip((built * len(stone)).astype(int), 0, len(stone) - 1)
-    dressed = np.clip(sun.astype(int), 0, len(shades) - 1).astype(np.uint8)
-    indices = np.where(built >= 0,
-                       np.asarray(stone, np.uint8)[course] + dressed,
-                       indices)
 
-    # Water is shaded by how deep it is over the bed the terrain would have
-    # had, which is why the bed is kept before the surface is flattened onto
-    # it: a lake edge and a lake middle are the same height and should not be
-    # the same colour.
-    depth = np.clip((level - bed) / DEPTH_REF, 0.0, 1.0)
-    wshade = np.clip(((1.0 - depth) * len(deep)).astype(int), 0, len(deep) - 1)
+    sea = int(spec["sea"] * ONE)
+    land = h[~water & (built < 0)]
+    top = percentile(land, 99, 100) if land.size else ONE
+    t = F.scale(np.clip(h - sea, 0, None), (ONE * ONE) // max(top - sea, 1))
+
+    cell = h.shape[0] // CELLS
+    dy = np.roll(h, -1, 0) - np.roll(h, 1, 0)
+    dx = np.roll(h, -1, 1) - np.roll(h, 1, 1)
+    slope = F.scale(F.sqrt(np.clip((dy * dy + dx * dx) >> F.FRACBITS, 0, ONE)),
+                    (cell * ONE) // 2)
+
+    t = F.lookup(GAMMA, np.clip(t, 0, GAMMA_TOP * ONE) // GAMMA_TOP)
+    ref = int(SLOPE_REF * ONE / spec["feature"])
+    t = t + F.scale(np.clip(F.scale(slope, (ONE * ONE) // ref), 0, ONE),
+                    int(SLOPE_PUSH * ONE))
+    t = F.scale(t, int(TYPES[spec["type"]]["ceiling"] * ONE))
+
+    mottle = F.scale(2 * value_noise(h.shape[0], h.shape[0] // 16,
+                                     stream.salt()) - ONE,
+                     int(MOTTLE * ONE))
+    # One shift at the end, not one per term: the float truncates the sum.
+    step = np.clip((t * len(ramp) + mottle) >> F.FRACBITS, 0, len(ramp) - 1)
+
+    sun = sunlight(h, spec) * len(shades)
+    smottle = F.scale(2 * value_noise(h.shape[0], h.shape[0] // 16,
+                                      stream.salt()) - ONE,
+                      int(SUN_MOTTLE * ONE))
+    face = np.clip((sun + smottle) >> F.FRACBITS, 0, len(shades) - 1)
+
+    indices = np.asarray(ramp, np.uint8)[step] + face.astype(np.uint8)
+
+    course = np.clip(F.scale(built, len(stone) * ONE) >> F.FRACBITS,
+                     0, len(stone) - 1)
+    dressed = np.clip(sun >> F.FRACBITS, 0, len(shades) - 1).astype(np.uint8)
+    indices = np.where(built >= 0,
+                       np.asarray(stone, np.uint8)[course] + dressed, indices)
+
+    depth = np.clip(F.scale(np.clip(level - bed, 0, None),
+                            (ONE * ONE) // int(DEPTH_REF * ONE)), 0, ONE)
+    wshade = np.clip(((ONE - depth) * len(deep)) >> F.FRACBITS, 0, len(deep) - 1)
     indices = np.where(water, np.asarray(deep, np.uint8)[wshade], indices)
     return indices.astype(np.uint8), rgb
 
@@ -1108,21 +1025,22 @@ def main():
                  f"one of {', '.join(sorted(pal['climates']))}")
 
     size = args.size
-    stream = Stream(spec["seed"])
+    stream = F.Stream(spec["seed"])
     spec["sea"] = TYPES[spec["type"]]["sea"]
     spec["lattice"] = SCALE[spec["scale"]]["lattice"]
     spec["feature"] = SCALE[spec["scale"]]["feature"]
+    sea = int(spec["sea"] * ONE)
 
     h = base_terrain(size, spec, stream)
-    add_hills(h, spec, stream, spec["sea"])
+    add_hills(h, spec, stream, sea)
 
     # The sea first, so lakes and rivers can see it and stop at it.
-    water = h <= spec["sea"]
-    level = np.where(water, spec["sea"], -1.0)
+    water = h <= sea
+    level = np.where(water, sea, -1)
     fill_lakes(h, water, level, spec, stream)
     carve_rivers(h, water, level, spec, stream)
-    water |= h <= spec["sea"]                 # carving can cut down to sea level
-    level = np.where(water & (level < spec["sea"]), spec["sea"], level)
+    water |= h <= sea                         # carving can cut down to sea level
+    level = np.where(water & (level < sea), sea, level)
 
     # Water surfaces are flat: the renderer has no idea what water is, so a
     # lake is only a lake because its heights are all the same. The bed is kept
@@ -1135,7 +1053,7 @@ def main():
     built = place_items(h, water, items, size)
 
     indices, rgb = colourise(h, bed, water, level, built, spec, pal, stream)
-    heights = np.clip(h * HEIGHT_MAX, 0, 255).round().astype(np.uint8)
+    heights = np.clip((h * HEIGHT_MAX) >> F.FRACBITS, 0, 255).astype(np.uint8)
 
     outdir = args.outdir or folder
     os.makedirs(outdir, exist_ok=True)

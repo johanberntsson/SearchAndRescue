@@ -243,30 +243,37 @@ Reads are the direction to be careful with: a full pass over a 2 MB working
 field is 0.83 seconds before any arithmetic, which is what makes "build,
 measure, paint" three passes rather than ten.
 
-**Step 1, fixed point: the arithmetic is in, the pipeline is half ported.**
+**Step 1, fixed point: done. `tools/genmap.py` is integers now.**
 
 - `tools/fixed.py` is the arithmetic: Q0.16, one multiply-and-shift, 257-entry
   tables for sqrt/tanh/gamma, an exact digit-by-digit `isqrt`, and xorshift32
   with the three draws the generator makes. `python3 tools/fixed.py` checks
   each routine against the float it replaces and prints the error in height
   units and colour steps: **worst 0.007 height units, and sqrt exact to 0.003**.
-- `tools/genfixed.py` is the pipeline, in integers, as far as the hills:
-  lattice hash, value noise, fbm with its stretch and fold, the island mask,
-  the macro shape, the hills. It is **a second file on purpose and only until
-  it is finished** — the game on the disk and the reference screenshot are not
-  to move while this is unproven. `python3 tools/genfixed.py` compares it
-  against `genmap.py` over all three example missions.
-- Against the float generator **given the same draws**, the terrain agrees to
-  **0.00-0.39 of one height unit in 120** — under the quantisation the map
-  ships at — and the island's coastline moves on 0.001% of its pixels.
+- The pipeline was ported beside `genmap.py` as `tools/genfixed.py`, compared
+  against the float version stage by stage, and then **swapped in**: the float
+  path is gone and so is the second file, because two generators is not a
+  state to keep. What the comparison said before the swap, over all three
+  example missions:
+  - **terrain**, given the same draws: worst **0.01-0.03 of one height unit in
+    120**, and the island's coastline moving on 0.001% of its pixels.
+  - **colour**, given the same terrain and water: 4-15% of land pixels land on
+    a different palette entry, **none by more than one ramp step or one sun
+    shade**. Worth its proportion — the generator dithers the ramp by ±1.4
+    steps on purpose, so the port disagreed by less than the noise the map is
+    drawn with.
+  - **water** cannot be compared pixel by pixel, because the *choosing*
+    differs and not the arithmetic: a 45GS02 cannot argsort tens of thousands
+    of local minima, so the candidates come from a histogram median instead.
+    It is compared as water — how much, in how many bodies, how big.
 
 Six things that cost a debugging round each, and would have cost more in C:
 
 - **the comparison has to feed both sides the same draws.** PCG64 and
   xorshift32 build different maps however good the arithmetic is; the first
   comparison reported 8 height units of "error" that was nothing but the seeds
-  re-rolling. `SameDraws` in `genfixed.py` answers `genmap.Stream`'s interface
-  out of the xorshift, which leaves the arithmetic as the only difference.
+  re-rolling. The harness answered the float generator's stream interface out
+  of the xorshift instead, which left the arithmetic as the only difference.
 - **`isqrt`'s domain is 32 bits and the first caller blew straight past it.**
   Asking `hypot` for sixteen fractional bits hands the root 2^45; it silently
   returns the root of what fits under 2^30, every disc profile came out as
@@ -277,11 +284,31 @@ Six things that cost a debugging round each, and would have cost more in C:
   256-bucket histogram put the mountains map a systematic 0.77 height units
   below the float version — a bias, not noise, because both ends of the stretch
   move and everything scales between them. 1024 buckets costs 4 KB and a fifth
-  of the error.
+  of the error; interpolating *inside* the bucket — one divide, at setup, from
+  counts already in hand — takes it to 0.01. Twice, that one: the first
+  attempt returned the bucket *below* the one the value is in and made
+  everything worse, which is the sort of off-by-one a histogram hides well.
+- **the ramp's gamma table has to reach past 1.0.** `t` is a height over the
+  map's own 99th percentile, so the top one per cent of the terrain is above
+  1.0 by construction. A table over 0..1 saturates exactly the pixels that
+  should be reaching the top of the ramp, and a flatland's hilltops came out
+  the colour of its middle slopes. The domain is 0..2 and the read is a shift.
+- **the comparison measured the stream a second time.** `colourise` draws two
+  noise fields for its dithers, and by then the two pipelines had consumed
+  different numbers of draws — the lakes see to that — so the dithers were
+  different fields entirely and *70%* of pixels "differed" by a step of
+  dither. Re-seeded identically it is 4-15% at one step. Every comparison in
+  this port had to be told what it was holding constant, and twice it was not.
 
-Still float, in pipeline order: lakes, rivers, the pyramid, and the whole of
-`colourise` — which is the largest of them and the one with the two remaining
-transcendentals in it.
+**What the swap cost, and it was not nothing: every map re-rolled.** xorshift
+draws different offsets from the same seed, so the island is a different island
+— an equally good one, flown and looked at, but not the same one. Both
+consequences landed as predicted. The pyramid at 422,481 came out under a lake
+and the generator refused to build it, exactly as it should; it moved to
+426,274, a headland where it reads better than it did before. And the reference
+screenshot was of a map that no longer exists, so it was retaken.
 
-The measurement that was owed here -- DMA from chip RAM to attic RAM on real
-hardware -- is in, and it is the good kind of surprise: see step 0 above.
+**Step 1 is done.** What is left is the machine itself: `fixed.py` and then the
+pipeline into C, one routine at a time, each with the checksum verification
+above — starting with `fbm`, the experiment that settles the dominant term of
+the estimate and proves the two-stage boot at the same time.

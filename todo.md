@@ -82,15 +82,14 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
 - One billboard, one depth. Several at different depths need either a clip
   step per sprite (another pass of the march) or a real per-column depth
   buffer. Sorting them and snapshotting at the nearest is probably enough.
-- **On-device map generation, step 1 of the port.** The PC-side rewrite into
-  integers is done: `tools/fixed.py` is the arithmetic a 45GS02 can run and
-  `tools/genfixed.py` is the whole generator against it, agreeing with the
-  float version to 0.03 of a height unit and one ramp step. What is left is
-  the swap -- `genfixed.py` becomes `genmap.py`'s insides, the float path goes,
-  and **every map re-rolls**, so each mission's hand-placed items need
-  re-placing and the reference screenshot retaking. Only then does any of it
-  become C. `documentation/on-device-maps.md` has the costing, the measured
-  budget it has to beat, and six traps found on the way.
+- **On-device map generation, step 2: the C port.** Step 1 is done —
+  `tools/genmap.py` is integers now (`tools/fixed.py` is the arithmetic), so
+  what it computes is what a 45GS02 would. Next is a stage-one PRG that
+  generates one 512x512 field into attic RAM, times itself with `src/profile.c`
+  and prints a checksum the PC tool can match: that one experiment settles the
+  dominant term of the estimate and proves the two-stage boot at once.
+  `documentation/on-device-maps.md` has the costing, the measured budget it has
+  to beat, and the traps the rewrite turned up.
 - **Procedural maps, stage three.** The generator and the previewer are both
   done, and the items that are terrain are built (see Done). Next is
   `mission.bin` — the pre-parsed struct the game reads instead of hardcoded

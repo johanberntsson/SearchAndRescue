@@ -536,8 +536,19 @@ will say so rather than quietly painting terrain in a sprite colour.
 
 **Maps can also be generated rather than drawn.** `tools/genmap.py` turns a
 mission YAML in `maps/` into `hmapNN.png`/`cmapNN.png` — the same two shapes
-`convmap.py` reads — from one seeded RNG stream, so a seed and a YAML file
-reproduce a map byte for byte. `maps/palette.yaml` is the shared index ramp:
+`convmap.py` reads — from one seeded xorshift stream, so a seed and a YAML file
+reproduce a map byte for byte.
+
+**Its arithmetic is the MEGA65's, not Python's.** Every value is a Q0.16
+integer, every divide is a reciprocal, sqrt/tanh/gamma are 257-entry tables,
+and a histogram stands in for every percentile, median and sort — all of it in
+`tools/fixed.py`, whose self-test prices each routine against the float it
+replaced (worst 0.007 of a height unit). numpy is there to do a megapixel at a
+time and nothing else: read `>>` as a shift and `np.where` as a branch and it
+is the C. That is not tidiness, it is the on-device port
+(`documentation/on-device-maps.md`) done in the place where a mistake is cheap;
+the float version it replaced agreed with it to 0.03 of a height unit and one
+ramp step, which is less than the dither the ramp already carries. `maps/palette.yaml` is the shared index ramp:
 water at 16..23 by depth, then a land ramp at 24..149 that is **21 elevation
 steps of 6 sun shades each**, with the RGB behind those indices chosen by the
 mission's `climate`. About 130 entries against the hand-drawn map's 184, so

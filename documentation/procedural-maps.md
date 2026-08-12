@@ -143,9 +143,10 @@ and attic RAM slot.
 
 ## Terrain generation notes
 
-- Single seeded RNG stream per map (e.g. `numpy.random.default_rng(seed)`)
-  drives noise, river paths, everything — full reproducibility from the
-  YAML alone, nothing else needed to regenerate byte-identical output.
+- Single seeded RNG stream per map — a 32-bit xorshift, because it had to be
+  one the MEGA65 can run too — drives noise, river paths, everything. Full
+  reproducibility from the YAML alone, nothing else needed to regenerate
+  byte-identical output.
 - `type` sets the macro elevation function:
   - island: radial falloff mask from centre + fractal noise (coastline)
   - mountains: ridged multifractal noise, higher amplitude/frequency
@@ -242,6 +243,14 @@ whether the struct came from a Python script or on-device generation.
 
 Not building this now, but the build-time tool should be written so it
 doesn't foreclose it:
+
+**Done, and gone further than this asked.** The generator is not merely
+portable in principle now — it is written in the machine's own arithmetic:
+Q0.16 integers, reciprocals instead of divides, tables instead of
+transcendentals, histograms instead of sorts, and a xorshift where numpy's
+PCG64 was. See `documentation/on-device-maps.md`. What follows is the note that
+asked for it, kept because the reasoning is still what governs anything added
+to the generator from here.
 
 - **Algorithm portability.** The Python generator can use numpy for
   convenience/speed on the PC, but the *algorithms themselves* should stay
