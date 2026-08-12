@@ -16,9 +16,10 @@ Two missions exist, end to end: a title screen, a mission list, a briefing, a
 flight, and a debrief. They are deliberately the same flight with different
 words on it — fly to somebody and press a key — because that is where the
 engine is: **The Lost Hiker** wants a report filed on a hiker waving from a
-summit, and **First Aid** wants an EpiPen dropped to a pair of hikers by a
-lake, with only one EpiPen aboard and a failed mission if it goes down in the
-wrong place.
+pyramid on an island, and **First Aid** wants an EpiPen dropped to a pair of
+hikers by a lake out on the plains, with only one EpiPen aboard and a failed
+mission if it goes down in the wrong place. The two fly over **different
+generated worlds, both on the one disk**.
 
 - 320x152 full-colour 3D view, double buffered, over a six-row 40-column text panel
 - 512x512 height and 1024x1024 colour maps, exomizer-crunched on the disk and
@@ -30,9 +31,14 @@ wrong place.
   renderer was all C; a real MEGA65 runs a few percent slower than the emulator
 - Altitude, heading, GPS coordinates and frame rate in the panel, with an overview
   map of the whole world and a crosshair showing where you are
-- Two software billboards — a lost hiker waving from the top of the pyramid at
-  46.713N 8.110E, and a casualty and their friend on the lake shore at 46.597N
-  8.227E — drawn over the finished terrain: scaled by distance, and clipped
+- **Two missions over two different worlds, both on the one disk** — the first
+  over a temperate island, the second over hot plains in the rain. Both are
+  generated from a paragraph of YAML and resident in attic RAM at once, which
+  a hand-drawn map pair could never be: two generated maps come to 487 KB
+  crunched against 661 KB for one drawn one
+- Two software billboards — a lost hiker waving from the step pyramid on the
+  island's northern headland at 46.687N 8.106E, and a casualty and their
+  friend on the lake shore at 46.522N 8.081E — drawn over the finished terrain: scaled by distance, and clipped
   against the heightfield with the same y-buffer the ray march already keeps, so
   a ridge in front of them hides their feet
 - Drone controls modelled on a real one: yaw, climb, camera gimbal and a
@@ -46,8 +52,8 @@ wrong place.
   over the finished picture, leaning as it falls. It costs 0.68 ms a frame,
   because the sky is sixteen palette entries rather than any pixels at all
 
-Off to the side, and not on the disk yet: **maps can now be generated instead of
-drawn.** `tools/genmap.py` turns a short YAML description — island or mountains
+**The maps are generated rather than drawn, and that is what puts two of them
+on the disk.** `tools/genmap.py` turns a short YAML description — island or mountains
 or flatlands, a climate, how many rivers and lakes and hills, how rugged, at
 what scale — into the same height/colour PNG pair the converter already reads,
 reproducibly from a seed. The terrain is **lit by a sun in the west**, the way
@@ -56,13 +62,20 @@ than as a coloured contour map: the land ramp is 21 elevation steps of six
 shades each, and which shade a pixel gets is how fast the ground falls towards
 the light. Landmarks are terrain too: a `pyramid` in the mission's `items` is
 terraformed into both maps, terrace by terrace, and costs the renderer nothing
-because there is nothing there but ground. `tools/preview.py` then flies one on the PC **with the game's own
+because there is nothing there but ground. Switching worlds between missions
+costs 512 bytes of table: a map's whole location lives in the renderer's plane
+lookups, so pointing the march at another one is rebuilding those and nothing
+else. And the arithmetic is the MEGA65's own — Q0.16 integers, reciprocals,
+tables, histograms instead of sorts — because the next step is to generate the
+maps on the machine itself; `documentation/on-device-maps.md` costs that out.
+
+`tools/preview.py` flies one on the PC **with the game's own
 renderer** — the same march, projection, map sampling and flight model, at the
 same 12.5 frames a second, with the constants read out of `src/` rather than
 copied — so terrain can be judged from the air and item coordinates noted down
 by flying to them. At the same camera it draws the machine's picture exactly,
 and `tools/checkview.py` is that comparison as a four-second command to run
-after touching the renderer. `maps/` holds the shared palette and three examples;
+after touching the renderer. `maps/` holds the shared palette and the missions' own map files;
 `documentation/procedural-maps.md` has the design and what is built so far.
 
 Getting there meant building a profiler first (`src/profile.c`, read with
@@ -89,14 +102,18 @@ You will need:
 ```sh
 make run                         # build build/sar.d81 and boot it in the emulator
 make PROFILE=0                   # without the instrumentation; use this for timing
-make FLYNOW=1                    # skip the menus and launch straight into a flight
+make FLYNOW=1                    # skip the menus and fly mission 1 (or FLYNOW=2)
 make HGT_SIZE=1024 COL_SIZE=512  # map resolutions, powers of two from 256 to 1024
 make release                     # the disk to hand out, into release/sar-latest.d81
 make clean
 ```
 
-The build produces a D81 with the game as `autoboot.c65`, which the MEGA65 ROM runs at
-boot, and the converted maps alongside it as separate files.
+The build produces a D81 with the game as `autoboot.c65`, which the MEGA65 ROM
+runs at boot, and both missions' maps alongside it as separate files —
+generated from `maps/*.yaml` by `tools/genmap.py` and converted by
+`tools/convmap.py`. The hand-drawn pair in `resources/` is no longer built
+into anything; it stays as the reference the terrain's lighting was measured
+against.
 
 ## Controls
 

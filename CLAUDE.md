@@ -22,7 +22,9 @@ rays and writing each to two neighbouring pixels; see Performance.
 make run          # build build/sar.d81 and boot it in xemu
 make prg          # skip the disk, run the PRG directly (no resources available)
 make PROFILE=0    # without the per-column instrumentation; use this for timing
-make FLYNOW=1     # skip the title and menus, launch straight into the flight
+make FLYNOW=1     # skip the title and menus, launch straight into mission 1
+make FLYNOW=2     # ... or mission 2, the only headless way to reach its map
+make REPORT=n     # hold the startup benchmark report n seconds, not 20
 make HGT_SIZE=1024 COL_SIZE=512     # map resolutions, 256..1024
 make release      # PROFILE=0 disk, copied to release/sar-latest.d81
 make clean
@@ -48,8 +50,15 @@ python3 tools/profread.py mem.bin
 **`FLYNOW=1` is what makes a headless run measure anything.** The game now
 waits for a keypress on the title screen, then two more through the menus, and
 nothing headless can press one; without it the dump has no frames in it and
-`profread` says so. Give the run at least 60 seconds — most of a minute of it
-is loading, before a single frame is drawn.
+`profread` says so. **`FLYNOW=2` is the same for mission two**, and the only
+way a headless run ever reaches the second map.
+
+Budget about 50 seconds before the first frame: roughly twenty of loading —
+both maps, 487 KB crunched — and then the startup benchmark report, which
+holds for `REPORT_SECONDS` (20 by default, `make REPORT=n` to change it).
+**Kill the run by PID and wait for it**, not with a bare `sleep` in the same
+command: a wait that races the emulator reads the *previous* run's screenshot,
+which looks exactly like a change that did not take.
 
 `timeout -s INT` looks like the way to end the run and mostly is, but xemu can
 take several seconds to act on the signal, so a loop that starts the next run
@@ -85,11 +94,12 @@ Only banks 1, 4 and 5 are free: `$20000-$3FFFF` holds the C65 ROM, and **colour 
 | `$1DC00` | 1028 each | Every billboard, one 32x32 slot per figure |
 | `$1F800-$1FFFF` | 2 KB | Colour RAM alias — **do not write** |
 | `$40000-$4FFFF` | 64 KB | Heightmap, only when it is 256x256 |
-| `$8000000-$80FFFFF` | 1 MB | Colourmap planes, attic RAM |
-| `$8100000-$81FFFFF` | 1 MB | Heightmap planes, when larger than 256x256 |
-| `$8200000-` | | Staging for the crunched stream being unpacked |
+| `$8000000-$81FFFFF` | 2 MB | Map slot 0: colourmap planes, then heightmap |
+| `$8200000-$83FFFFF` | 2 MB | Map slot 1 — mission two's world |
+| `$8400000-$85FFFFF` | 2 MB | Map slot 2, spare |
+| `$8600000-` | | Staging for the crunched stream being unpacked |
 | `$5C000`, `$5D000` | 2000 each | The two screen tables |
-| `$8300000` | 768 | The palette, until `vic4_set_palette` uploads it |
+| `$8700000` | 768 each | One palette per map slot, until a flight uploads its own |
 
 **The 32 KB fills up fast.** The survivor sprite took it down to about 360
 spare bytes; the game screens needed a couple of kilobytes more. Where the
@@ -270,9 +280,10 @@ of the 256 entries will do.
 title, mission list, briefing, fly, debrief, back to the list. `src/screens.c`
 draws the pages, `src/mission.c` holds what there is to be sent on.
 
-**The two missions are the same flight with different words on it**, and that
-is deliberate: fly to a figure standing at a fix and press a key. The mission
-table is what differs, and the one field the rest hangs off is `cargo`:
+**The two missions are the same flight with different words on it** — and, as
+of the two-map disk, over different country. The shape is deliberate: fly to a
+figure standing at a fix and press a key. The mission table is what differs,
+and the one field the rest hangs off is `cargo`:
 
 - **empty bay** — the job is to look. `SPACE` files a report, it needs the
   figure *on screen* and within ten cells, and getting it wrong costs nothing
@@ -289,9 +300,17 @@ say one thing in the briefing and do another in the air. The three endings —
 done, cargo lost, abandoned — are one `screens_debrief` page with different
 strings, for the same reason.
 
+**A mission names its map**, and the fix is a cell of *that* map, so the two
+travel together in the table and cannot be edited apart: mission one is flown
+over `maps/island.yaml` and stands its hiker on the step pyramid there;
+mission two over `maps/plains.yaml`, by the largest lake. See Resources for
+what a map slot is and what switching costs.
+
 Adding a third mission is a table entry, a sprite sheet in the Makefile's
 `SPRITES`, and nothing else — but see Resources for the palette budget, which
-is what actually limits how many figures there can be.
+is what actually limits how many figures there can be. A third *map* is a YAML
+file, a line in `MAP_YAMLS` and `MAP_COUNT`: there is a spare attic slot for
+it.
 
 **The pages cost no pixels.** The display picks text or full colour per
 character *number*, so writing numbers below `$100` into the rows the 3D view
@@ -519,13 +538,15 @@ flying right up to somebody makes it visible in the frame time.
 
 ## Resources
 
-`tools/convmap.py` turns the 1024x1024 VoxelSpace PNGs in `resources/` into `terrain.hgt`, `terrain.col`, `terrain.pal`, `terrain.ovr` and one billboard file per sprite sheet — the two maps crunched, the palette raw, and the figures cut out of the sheets (see The billboards). The sources need no quantisation: the heightmap is 8-bit greyscale and the colourmap is already a palette image. Palette bytes are nybble-swapped for the `$D100`/`$D200`/`$D300` registers, and the sky gradient goes in indices 224-239, which the colourmap never uses.
+`tools/convmap.py` turns a 1024x1024 heightmap/colourmap PNG pair into `<stem>.hgt`, `<stem>.col`, `<stem>.pal`, `<stem>.ovr` and one billboard file per sprite sheet — the two maps crunched, the palette raw, and the figures cut out of the sheets (see The billboards). The sources need no quantisation: the heightmap is 8-bit greyscale and the colourmap is already a palette image. Palette bytes are nybble-swapped for the `$D100`/`$D200`/`$D300` registers, and the sky gradient goes in indices 224-239, which the colourmap never uses.
 
 `convmap.py` takes the two map sizes as arguments; the Makefile passes
 `HGT_SIZE` and `COL_SIZE`. The sprite sheets are one **comma-separated**
-argument, from the Makefile's `SPRITES`, and the first one's output keeps the
-original name `terrain.spr` while the rest are `terrain.sp2`, `.sp3` and so
-on — the order `src/sprite.c` numbers its figures in.
+argument, from the Makefile's `SPRITES`, and the first one's output is
+`<stem>.spr` while the rest are `.sp2`, `.sp3` and so on — the order
+`src/sprite.c` numbers its figures in. Every map's conversion writes its own
+copy of them and they are identical under `--shared`, so the Makefile takes
+slot 0's and puts them on the disk as `terrain.spr`/`terrain.sp2`.
 
 **The palette is what limits how many figures there can be.** The colourmap
 uses about 170 of the 224 indices below the sky, the panel and HUD reserve
@@ -577,8 +598,46 @@ and the riser wears the lighter course because a stepped face seen from the air
 is nearly edge on. Item types genmap cannot build are refused rather than
 dropped, and the previewer pins only the ones it does not build.
 
-Nothing generated is on the disk yet — the Makefile still names
-`resources/D1.png` — and `mission.bin` is not written.
+**The disk is generated maps now, and there are two of them.** The Makefile's
+`MAP_YAMLS` names one mission file per map slot; each is run through
+`genmap.py` and then `convmap.py` into `build/map0.*` and `build/map1.*`, and
+`src/mission.c` says which slot a mission is flown over. The hand-drawn pair in
+`resources/` is no longer built into anything — it stays as the reference the
+sun was measured against and the pyramid copied from. `mission.bin` is still
+not written.
+
+**Several maps fit only because they are generated.** Two of them are 487 KB
+crunched against 661 KB for the one hand-drawn pair, so a disk that used to
+hold one world now holds two with 270 KB spare, and loading both takes about
+twenty seconds — less than the single drawn map took.
+
+**Switching between them is 512 bytes of table.** A map's whole location lives
+in the renderer's plane lookups: the march reads a bank byte out of
+`vx_hplane_y`/`vx_cplane_y` on every sample, so `voxel_set_map(slot)` rebuilds
+those and the march is looking at another world. `map_use(slot)` wraps that
+with the two other things a map is — **its palette, because a climate *is* a
+palette** (the shared ramp means both maps hold the same indices and put
+different colours behind them), and the panel's overview — and a flight calls
+it once at launch. No pixels move and nothing reloads: everything the game
+will ever need is resident after the one load at boot, which is what lets the
+Kernal be unusable from `vic4_init` onwards.
+
+Three things to know before adding a third map:
+
+- **`convmap.py --shared maps/palette.yaml` is what makes it work at all.**
+  Without it each map hands the sprites whatever palette entries its own
+  colours left free, so a figure changes colour with the mission. With it every
+  map reserves the whole shared ramp *and* the low sixteen, so the pool starts
+  in the same place for all of them and the sprite files come out
+  byte-identical — one set serves every map. It also settles the old question
+  about sprites taking indices below 16: they no longer can.
+- attic RAM is cut into **three** 2 MB slots (`MAP_SLOT` in `loader.h`), so
+  there is room for one more without moving anything. `MAP_COUNT` in
+  `loader.h` and `MAP_YAMLS` in the Makefile have to agree.
+- **`FLYNOW=n` launches straight into mission n**, and it is the only way a
+  headless run reaches the second map — nothing else can press a key. Both
+  maps were flown that way before the arrangement was believed.
+
 `documentation/procedural-maps.md` has the design, what is built, and the traps
 found building it. The one to know before touching the water: **a river
 measured against the live map digs itself a canyon** — each disc flattens the
@@ -640,11 +699,11 @@ ozmoo-z6 checkout, or `PATH`.
 
 **Reading a SEQ file through the Kernal reports EOF exactly 256 bytes early**, whatever the file's size (verified from 16 K to 64 K, at several chunk sizes). `convmap.py` therefore pads every resource by 512 bytes and `src/loader.c` reads a known length rather than looking for the end of the file.
 
-**`load_far` hangs on `TERRAIN.PAL` and nothing explains it.** Reading the
+**`load_far` hangs on the palette file and nothing explains it.** Reading the
 768-byte palette through `load_far` — open, read into the bounce buffer, DMA
 it up, close — never returns from the open or the read that follows it. The
 same 768 bytes of the same file into the same buffer through `load_small` is
-fine, and `load_far` reads `TERRAIN.OVR` two lines later without complaint.
+fine, and `load_far` reads the overview two lines later without complaint.
 Ruled out, each with its own run: the DMA destination (bank 1 at `$1C800` and
 `$1E000`, attic RAM at `$8300000` — all hang), the chunk size, short Kernal
 reads (`read_exact` loops now and it still hung), and `--no-cross-call`. The

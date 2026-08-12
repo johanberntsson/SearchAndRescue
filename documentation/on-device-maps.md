@@ -35,15 +35,25 @@ So the honest table is:
 
 | | maps as files today | generated on device |
 |---|---|---|
-| disk per mission | ~152 KB crunched | ~100 bytes of mission struct |
-| time before the flight | 9-12 s, measured | 20-30 s at full size, estimated |
-| missions per d81 | about five | as many as you care to write |
+| disk per mission | 152-335 KB crunched | ~100 bytes of mission struct |
+| time before the flight | 20 s for the two on the disk, measured | 20-30 s per map at full size, estimated |
+| missions per d81 | **two, built and flown** — perhaps four | as many as you care to write |
 | exomizer in the loop | yes | no |
 | `convmap.py` in the loop | yes | no — the generator writes the planes |
 
+The first row is now a fact rather than a projection: the disk carries the
+island at 152 KB and the plains at 335 KB, both resident in attic RAM at once,
+and the game switches between them for 512 bytes of plane table. A generated
+map varies more than expected -- the plains are twice the island, being all
+small features and dither where the island is mostly flat sea -- so "about
+five" was optimistic and four is the honest ceiling.
+
 **Generation loses the time row and wins the disk row**, and the disk row is
 the one that was worth having in the first place: the whole point of the YAML
-pipeline is more missions than a disk can hold as pixels. Five is not many.
+pipeline is more missions than a disk can hold as pixels. Four is not many —
+and note that the *game* already got most of this win without going on-device
+at all, since it is generation that shrank a map from 661 KB to 152. What
+on-device buys on top is the difference between four worlds and any number.
 
 There is a version that wins both, and it is the resolution trade below:
 generate the height field at 512x512 — which is what ships anyway — and paint

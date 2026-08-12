@@ -22,20 +22,22 @@ you to say.
 
 If the renderer or the *generator* is changed deliberately -- a different map
 under the same camera fails this just as a different renderer does -- the
-reference screenshot is what goes stale. Take a new one; there is no Makefile
-knob for building a disk from a generated map yet, so it is three commands:
+reference screenshot is what goes stale. Taking a new one is now one build,
+because the disk is built from the generated maps:
 
-    make FLYNOW=1 build/autoboot.c65
-    python3 tools/convmap.py maps/hmap03.png maps/cmap03.png \\
-        resources/survivor-sprite.png,resources/medicalemergency-sprite.png \\
-        build/terrain 512 1024
-    make FLYNOW=1 build/sar.d81      # terrain.* is newer, so it is not rebuilt
+    make FLYNOW=1
 
-then run it headless (`-headless` without `-sleepless`, ~70 s, see CLAUDE.md),
-read `LAT`/`LON`/`ALT`/`HDG` off the panel in the screenshot, and save it as
-`<name>-x<cell>-y<cell>-a<angle>-h<height>.png` -- this reads the camera out of
-that name. The panel gives the cell and not the sub-cell, so the fraction is
-recovered here by search.
+then run it headless (`-headless` without `-sleepless`; the report screen
+holds for REPORT_SECONDS after loading, so kill it around 50 s -- see
+CLAUDE.md), read `LAT`/`LON`/`ALT`/`HDG` off the panel in the screenshot, and
+save it as `<name>-x<cell>-y<cell>-a<angle>-h<height>.png` -- this reads the
+camera out of that name. The panel gives the cell and not the sub-cell, so the
+fraction is recovered here by search.
+
+The reference is of **map 0**, the island, which is what `--mission` defaults
+to. A second reference of the plains would want `FLYNOW=2` and
+`--mission maps/plains.yaml`; one is enough to catch a renderer that has
+drifted, and the second map is checked by flying it.
 """
 
 import argparse

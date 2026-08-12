@@ -1,12 +1,15 @@
 # Procedural map generation — design summary
 
-Status: **stages one and two are built** — `tools/genmap.py` turns a mission
-YAML into a height/colour map pair, and `tools/preview.py` flies it on the PC
-with the game's own renderer. `maps/` holds the palette definition and three
-example missions. `mission.bin` is not written yet, and nothing generated is on
-the disk: the build still ships the hand-drawn pair in `resources/`. See "As
-built" at the end for what the tools actually do and what was learned making
-them.
+Status: **built, and shipping.** `tools/genmap.py` turns a mission YAML into a
+height/colour map pair, `tools/preview.py` flies it on the PC with the game's
+own renderer, and **the disk carries two of them** — mission one over
+`maps/island.yaml` and mission two over `maps/plains.yaml`, both resident in
+attic RAM at once. That is the thing the whole exercise was for: two generated
+maps are 487 KB crunched against 661 KB for the one hand-drawn pair, so a disk
+that held one world now holds two with room to spare. `mission.bin` is still
+not written; the hand-drawn pair in `resources/` is no longer built into
+anything. See "As built" at the end for what the tools do and what was learned
+making them.
 
 This covers **build-time map generation only**. Runtime (on-device) generation
 is an explicit future possibility, not part of this phase — see "Out of scope"
@@ -526,6 +529,11 @@ Worth knowing:
 ### Next, in order
 
 1. `mission.bin`, and with it the item coordinates the previewer collects.
-2. A Makefile knob for which map pair the disk is built from. Note that
-   `convmap.py` hands sprites any free index including 3..15, which the design
-   reserves; worth settling before a generated map ships.
+2. ~~A Makefile knob for which map pair the disk is built from~~ — done, and
+   further than asked: `MAP_YAMLS` names one mission file per map slot and the
+   disk carries them all. The open question underneath it is settled too.
+   `convmap.py --shared maps/palette.yaml` reserves the whole shared ramp *and*
+   the low sixteen before the sprites are allocated, so sprites can no longer
+   take an index below 16 — and, more to the point, every map hands them the
+   same slots, which is what lets one set of sprite files serve every map on
+   the disk. Without it a figure changes colour with the mission.

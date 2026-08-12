@@ -2,11 +2,13 @@
 
 ## Where it is
 
-Two missions, end to end: title, mission list, briefing, flight, debrief.
-Mission one finds the lost hiker on the pyramid at 46.713N 8.110E — get within
-ten cells with them on screen and press `SPACE`. Mission two drops an EpiPen to
-a pair of hikers on the lake shore at 46.597N 8.227E — get within five cells
-and press `RETURN`. The briefing gives the fix and the panel gives your own.
+Two missions, end to end: title, mission list, briefing, flight, debrief —
+**and each over its own generated world**, both resident at once on one disk.
+Mission one finds the lost hiker on the step pyramid of the island at 46.687N
+8.106E — get within ten cells with them on screen and press `SPACE`. Mission
+two drops an EpiPen to a pair of hikers by a lake on the plains at 46.522N
+8.081E — get within five cells and press `RETURN`. The briefing gives the fix
+and the panel gives your own.
 
 A flight can end four ways. The job done; the one EpiPen released in the wrong
 place; the drone flown into a hill, which only sport mode allows; or the
@@ -28,7 +30,8 @@ Build knobs, all in the Makefile:
 | | |
 |---|---|
 | `PROFILE=0` | no per-column instrumentation; use it for timing |
-| `FLYNOW=1` | skip the menus; a headless run needs it to render anything at all, since it cannot press a key |
+| `FLYNOW=n` | skip the menus and fly mission n; a headless run needs it to render anything at all, since it cannot press a key, and `FLYNOW=2` is the only way one reaches the second map |
+| `REPORT=n` | hold the startup benchmark report n seconds instead of 20 |
 | `HGT_SIZE`, `COL_SIZE` | map resolutions, powers of two from 256 to 1024 |
 | `make release` | not a knob but a target: the `PROFILE=0` disk, into `release/sar-latest.d81` |
 
@@ -82,6 +85,11 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
 - One billboard, one depth. Several at different depths need either a clip
   step per sprite (another pass of the march) or a real per-column depth
   buffer. Sorting them and snapshotting at the nearest is probably enough.
+- **A third map, or a third mission.** Both are cheap now: a map is a YAML
+  file, a line in the Makefile's `MAP_YAMLS` and `MAP_COUNT` in `loader.h`
+  (there is a spare 2 MB attic slot and 270 KB spare on the disk), and a
+  mission is a table entry naming one. What is *not* cheap is a third figure —
+  see the palette budget in Resources.
 - **On-device map generation, step 2: the C port.** Step 1 is done —
   `tools/genmap.py` is integers now (`tools/fixed.py` is the arithmetic), so
   what it computes is what a 45GS02 would. Next is a stage-one PRG that
