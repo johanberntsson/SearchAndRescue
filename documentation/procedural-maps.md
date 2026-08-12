@@ -276,7 +276,10 @@ doesn't foreclose it:
 - On-device / runtime procedural generation itself. Possible future step
   if the build-time tool proves out and terrain variety turns out to
   matter for the game — deferred, not designed yet, but see above for
-  what to keep in mind now so it stays feasible later.
+  what to keep in mind now so it stays feasible later. **Costed since:
+  `documentation/on-device-maps.md` puts it at 20-30 seconds against the
+  minute the game currently spends loading a map off the disk, and says
+  which four parts are actually hard.**
 - Live/interactive map editing inside the Python previewer.
 - Automatic item placement/snapping (flat-ground search, biome
   constraints) — items are placed manually by eye while flying.
