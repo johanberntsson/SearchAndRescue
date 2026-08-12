@@ -2,3 +2,7 @@ build/
 maps/*.png
 maps/*.marks.yaml
 __pycache__/
+# xemu leaves these in the working directory after a headless run.
+out.png
+mem.bin
+*.swp

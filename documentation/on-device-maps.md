@@ -1,33 +1,55 @@
 # Generating maps on the MEGA65 — is it feasible?
 
-**Short answer: yes, and it should be faster than loading a map from disk.**
-The arithmetic below puts a full 1024x1024 colour map and 512x512 heightmap at
-**roughly 20-30 seconds** of generation, against the **~60 seconds** the game
-currently spends reading and decrunching 661 KB of them off the d81. Every
-figure here is an estimate built from this project's own measured per-operation
-costs (see Performance in `CLAUDE.md`), not a measurement of a generator that
-exists — call it good to a factor of two, which is enough to answer "feasible",
-not enough to promise a number.
+**Short answer: yes, it will work — but do it for the disk, not for the
+clock.** The arithmetic below puts a full 1024x1024 colour map and 512x512
+heightmap at **roughly 20-30 seconds** of generation. Every figure is an
+estimate built from this project's own measured per-operation costs (see
+Performance in `CLAUDE.md`), not a measurement of a generator that exists —
+call it good to a factor of two, which is enough to answer "feasible", not
+enough to promise a number.
 
-The interesting part is that the cost is not where it looks. The generator is
-not competing against zero, it is competing against a minute of disk; and it
-buys a d81 that holds *every* mission's maps in a few hundred bytes each
-instead of one mission's in 661 KB.
+## What it has to beat — measured, and not what this document first assumed
 
-## What it has to beat
+The first draft of this page compared generation against "~60 seconds of
+loading" taken from `CLAUDE.md`, and concluded it would be *faster*. **That was
+the wrong comparison**, and measuring it is what showed why: the sixty seconds
+belongs to the hand-drawn map, and the thing an on-device generator would
+replace is a *generated* one — which crunches four times smaller.
 
-| | today | generated on device |
+Timed in xemu at real speed, screenshotting a boot at 6, 9, 12, 18 and 24
+seconds (`-headless` without `-sleepless`, one run at a time, because four
+emulators at once distort each other's timing):
+
+| | crunched | loads in |
 |---|---|---|
-| disk per map pair | 661 KB crunched | ~100 bytes of mission struct |
-| time from boot to flight | ~60 s, nearly all of it loading | ~20-30 s, estimated |
-| maps per d81 | one | as many as there are missions |
+| generated island, h512 c1024 | **152 KB** | **9-12 s** |
+| hand-drawn D1/C1W, same sizes | 661 KB | ~44 s at that rate |
+
+About 15 KB a second, Kernal read and exomizer decrunch together. **Procedural
+maps crunch 4.4x better than the hand-drawn pair** — 6.8:1 against 2.2:1 on the
+colour map — because they are smooth by construction and spend 130 palette
+entries where the hand-drawn one spends 184. The generator has been quietly
+paying for itself on disk since the day it worked.
+
+So the honest table is:
+
+| | maps as files today | generated on device |
+|---|---|---|
+| disk per mission | ~152 KB crunched | ~100 bytes of mission struct |
+| time before the flight | 9-12 s, measured | 20-30 s at full size, estimated |
+| missions per d81 | about five | as many as you care to write |
 | exomizer in the loop | yes | no |
 | `convmap.py` in the loop | yes | no — the generator writes the planes |
 
-The second row is the one that decides it, and it is not close enough to be
-obvious in advance: this is a real experiment, not a formality. But the
-downside case — generation lands at 60 s and only breaks even on time — still
-wins the other four rows.
+**Generation loses the time row and wins the disk row**, and the disk row is
+the one that was worth having in the first place: the whole point of the YAML
+pipeline is more missions than a disk can hold as pixels. Five is not many.
+
+There is a version that wins both, and it is the resolution trade below:
+generate the height field at 512x512 — which is what ships anyway — and paint
+the colour map from it. That is four times less noise and four times less
+flood, under ten seconds all in, and it beats the disk on both counts. It costs
+bit-identity with `genmap.py`, which is a decision to take deliberately.
 
 ## Where the time goes
 
@@ -43,7 +65,7 @@ estimate is.
 | stage | cycles/px | seconds | note |
 |---|---|---|---|
 | fbm, 5 octaves | 150-400 | 4-10 | the dominant term; see below |
-| percentile stretch | 50 | 1.3 | a 256-bucket histogram pass, then apply |
+| percentile stretch | 50 | 1.3 | a 1024-bucket histogram pass, then apply |
 | ridged fold, island mask | 40 | 1.0 | both are 256-entry lookups |
 | hills | — | 0.3 | 16 stamps of a few thousand pixels |
 | lakes | — | 1-2 | priority flood, ~1000 cycles a cell taken |
@@ -182,9 +204,59 @@ now has in hand is a few thousand cycles, not a file.
 4. `mission.bin` becomes the generator's input rather than the game's — the
    game keeps reading the item block out of it.
 
-Before any of that, **measure DMA from chip RAM to attic RAM**. `src/bench_asm.s`
-measures attic-to-chip (17.8 cycles a byte, seven times slower than
-chip-to-chip) and the reverse direction has never been measured. The whole
-"write the planes" line in the table above assumes it is not another surprise;
-it is twenty minutes of work to find out, on a machine that has already been
-wrong about attic RAM twice.
+## Where the port has got to
+
+**Step 0, the DMA measurement: instrumented, and xemu cannot answer it.**
+`P_DMA_TOATTIC` is a slot in `src/profile.h` now, timed beside the other two
+directions and printed by both `tools/profread.py` and the on-screen report.
+Under xemu all three read 2.59 cycles a byte and chip and attic RAM read alike,
+which is the emulator not modelling the attic bus exactly as `CLAUDE.md` warns
+— so **this one needs a run on the real machine**: boot any build, read
+`COPY CHIP-ATTIC` off the startup report. The line is there and rendering.
+
+**Step 1, fixed point: the arithmetic is in, the pipeline is half ported.**
+
+- `tools/fixed.py` is the arithmetic: Q0.16, one multiply-and-shift, 257-entry
+  tables for sqrt/tanh/gamma, an exact digit-by-digit `isqrt`, and xorshift32
+  with the three draws the generator makes. `python3 tools/fixed.py` checks
+  each routine against the float it replaces and prints the error in height
+  units and colour steps: **worst 0.007 height units, and sqrt exact to 0.003**.
+- `tools/genfixed.py` is the pipeline, in integers, as far as the hills:
+  lattice hash, value noise, fbm with its stretch and fold, the island mask,
+  the macro shape, the hills. It is **a second file on purpose and only until
+  it is finished** — the game on the disk and the reference screenshot are not
+  to move while this is unproven. `python3 tools/genfixed.py` compares it
+  against `genmap.py` over all three example missions.
+- Against the float generator **given the same draws**, the terrain agrees to
+  **0.00-0.39 of one height unit in 120** — under the quantisation the map
+  ships at — and the island's coastline moves on 0.001% of its pixels.
+
+Three things that cost a debugging round each, and would have cost more in C:
+
+- **the comparison has to feed both sides the same draws.** PCG64 and
+  xorshift32 build different maps however good the arithmetic is; the first
+  comparison reported 8 height units of "error" that was nothing but the seeds
+  re-rolling. `SameDraws` in `genfixed.py` answers `genmap.Stream`'s interface
+  out of the xorshift, which leaves the arithmetic as the only difference.
+- **`isqrt`'s domain is 32 bits and the first caller blew straight past it.**
+  Asking `hypot` for sixteen fractional bits hands the root 2^45; it silently
+  returns the root of what fits under 2^30, every disc profile came out as
+  garbage, and the hills grew twenty height units past the map's range. Disc
+  distances are measured at 8 fractional bits now — a 256th of a pixel — and
+  the function raises rather than lying.
+- **the percentile stretch's bucket width lands on the map's heights.** A
+  256-bucket histogram put the mountains map a systematic 0.77 height units
+  below the float version — a bias, not noise, because both ends of the stretch
+  move and everything scales between them. 1024 buckets costs 4 KB and a fifth
+  of the error.
+
+Still float, in pipeline order: lakes, rivers, the pyramid, and the whole of
+`colourise` — which is the largest of them and the one with the two remaining
+transcendentals in it.
+
+And the one measurement that is still owed: **DMA from chip RAM to attic RAM
+on real hardware**. The benchmark is written and printed (step 0 above), but
+attic-to-chip is 17.8 cycles a byte on the real machine against 2.45
+chip-to-chip, and xemu reports all three the same. The "write the planes" line
+in the table assumes the reverse direction is not a third surprise, on a
+machine that has already been wrong about attic RAM twice.

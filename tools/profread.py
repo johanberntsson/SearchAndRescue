@@ -11,7 +11,7 @@ import struct
 import sys
 
 MAGIC = b"\xDE\xAD\xBE\xEF"
-TIMES = ["other", "column", "sky", "sprite"] + ["bench%d" % i for i in range(14)]
+TIMES = ["other", "column", "sky", "sprite"] + ["bench%d" % i for i in range(15)]
 COUNTS = ["frames", "samples", "spans", "span pixels", "sky pixels", "bad readings"]
 
 # Two groups, each with its own empty-loop baseline: the compiler's loop
@@ -26,7 +26,7 @@ ASM_BENCH = [("map sample, scattered", 5, 6),
              ("span pixel, one byte write", 9, 10)]
 # Timed per block rather than per iteration, and reported as throughput.
 DMA_NAMES = [("copy, chip to chip", 11), ("copy, attic to chip", 12),
-             ("fill, chip RAM", 13)]
+             ("copy, chip to attic", 13), ("fill, chip RAM", 14)]
 
 CPU_HZ = 40_500_000
 

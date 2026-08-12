@@ -285,6 +285,13 @@ void profile_bench(void)
     dma_copy(ATTIC_BASE, FB_A, DMA_BYTES);
   profile_add32(P_DMA_ATTIC, t);
 
+  // The other direction, which nothing in the game does and a map generator
+  // writing its planes into attic RAM would do for every byte it produces.
+  t = profile_now32();
+  for (i = 0; i < DMA_ITERATIONS; i++)
+    dma_copy(FB_A, ATTIC_BASE, DMA_BYTES);
+  profile_add32(P_DMA_TOATTIC, t);
+
   t = profile_now32();
   for (i = 0; i < DMA_ITERATIONS; i++)
     dma_fill(FB_A, 0, DMA_BYTES);
@@ -359,6 +366,8 @@ void profile_report(uint8_t seconds)
          per_byte100(P_DMA_CHIP) / 100, per_byte100(P_DMA_CHIP) % 100);
   printf(" COPY ATTIC-CHIP   %u.%02u\n",
          per_byte100(P_DMA_ATTIC) / 100, per_byte100(P_DMA_ATTIC) % 100);
+  printf(" COPY CHIP-ATTIC   %u.%02u\n",
+         per_byte100(P_DMA_TOATTIC) / 100, per_byte100(P_DMA_TOATTIC) % 100);
   printf(" FILL CHIP         %u.%02u\n",
          per_byte100(P_DMA_FILL) / 100, per_byte100(P_DMA_FILL) % 100);
 

@@ -52,7 +52,10 @@ enum {
   P_WRITE_CHIP, // span pixel, byte write at a stride of 8
   P_WRITE_ATTIC,
   P_DMA_CHIP,   // bulk moves, timed per block rather than per iteration
-  P_DMA_ATTIC,
+  P_DMA_ATTIC,   // attic -> chip
+  P_DMA_TOATTIC, // chip -> attic, which is the direction a map generator
+                 // writing into attic RAM would pay. See
+                 // documentation/on-device-maps.md.
   P_DMA_FILL,
   P_SLOTS
 };
