@@ -260,7 +260,7 @@ measure, paint" three passes rather than ten.
   **0.00-0.39 of one height unit in 120** — under the quantisation the map
   ships at — and the island's coastline moves on 0.001% of its pixels.
 
-Three things that cost a debugging round each, and would have cost more in C:
+Six things that cost a debugging round each, and would have cost more in C:
 
 - **the comparison has to feed both sides the same draws.** PCG64 and
   xorshift32 build different maps however good the arithmetic is; the first

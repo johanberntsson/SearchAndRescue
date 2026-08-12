@@ -101,9 +101,21 @@ def _tanh_table(limit):
     return np.round(np.tanh(x) * ONE).astype(np.int64)
 
 
-def _gamma_table(gamma):
-    """x**gamma over 0..1 at 257 points, in Q0.16."""
-    x = np.arange(TABLE + 1, dtype=np.float64) / TABLE
+def gamma_table(gamma, top=1.0):
+    """x**gamma over 0..`top` at 257 points, in Q0.16.
+
+    **`top` is not decoration.** The ramp's input runs past 1.0 -- it is a
+    height over the map's 99th percentile, so the top one per cent of the
+    terrain is above it by construction -- and a table that stops at 1.0
+    saturates exactly the pixels that should be reaching the top of the ramp.
+    Read at 0..2 instead, and a summit goes where the float put it; read at
+    0..1 and a flatland's hilltops come out the colour of its middle slopes,
+    which is what they did until this was found.
+
+    `top` must be a power of two so the caller's normalisation is a shift.
+    The output passes ONE for x > 1 and is int32 on the machine.
+    """
+    x = np.arange(TABLE + 1, dtype=np.float64) / TABLE * top
     return np.round(x ** gamma * ONE).astype(np.int64)
 
 
@@ -298,7 +310,7 @@ def _selftest():
     x = rng.integers(-3 * ONE, 3 * ONE, 10000)
     worst(tanh(x), np.tanh(x / ONE), "tanh", "colour shades", 6)
 
-    gamma = _gamma_table(1.8)
+    gamma = gamma_table(1.8)
     worst(lookup(gamma, a), (a / ONE) ** 1.8, "gamma 1.8 by table",
           "colour steps", 21)
 
