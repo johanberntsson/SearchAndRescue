@@ -553,6 +553,19 @@ country is, not how much of it there is** — the world is always 256 cells
 across, and this says how many landforms fit in it. It moves every length in
 the generator, including the steepness references the rock colouring and the
 sun are judged against, because doubling a landform's width halves its slopes.
+**An `items:` entry can be terrain.** A `pyramid` is terraformed straight into
+both maps — heights to roof height, colours to the palette's `masonry` band,
+which is lit by the same sun as the ground — so the renderer never learns that
+anything unusual is there and it costs nothing per frame. `size` is
+`small|medium|large`, cut around the one in `C1W.png`. The rule to know before
+changing its shape: **a terrace narrower than a map cell is not there.** The
+heightmap ships box-averaged to 512 and the march samples half a cell at best,
+so the first version's pixel-and-a-half steps came out of the air as a smooth
+grey mound; terraces are two cells now, a cell of riser and a cell of tread,
+and the riser wears the lighter course because a stepped face seen from the air
+is nearly edge on. Item types genmap cannot build are refused rather than
+dropped, and the previewer pins only the ones it does not build.
+
 Nothing generated is on the disk yet — the Makefile still names
 `resources/D1.png` — and `mission.bin` is not written.
 `documentation/procedural-maps.md` has the design, what is built, and the traps

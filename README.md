@@ -54,7 +54,9 @@ reproducibly from a seed. The terrain is **lit by a sun in the west**, the way
 the hand-drawn map is, which is what makes a heightfield read as country rather
 than as a coloured contour map: the land ramp is 21 elevation steps of six
 shades each, and which shade a pixel gets is how fast the ground falls towards
-the light. `tools/preview.py` then flies one on the PC **with the game's own
+the light. Landmarks are terrain too: a `pyramid` in the mission's `items` is
+terraformed into both maps, terrace by terrace, and costs the renderer nothing
+because there is nothing there but ground. `tools/preview.py` then flies one on the PC **with the game's own
 renderer** — the same march, projection, map sampling and flight model, at the
 same 12.5 frames a second, with the constants read out of `src/` rather than
 copied — so terrain can be judged from the air and item coordinates noted down

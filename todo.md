@@ -83,10 +83,11 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   step per sprite (another pass of the march) or a real per-column depth
   buffer. Sorting them and snapshotting at the nearest is probably enough.
 - **Procedural maps, stage three.** The generator and the previewer are both
-  done (see Done). Next is `mission.bin` — the pre-parsed struct the game reads
-  instead of hardcoded coordinates, which is what the previewer's `M` key
-  exists to fill in — and then a Makefile knob for which map pair the disk is
-  built from. `documentation/procedural-maps.md` has the order and the open
+  done, and the items that are terrain are built (see Done). Next is
+  `mission.bin` — the pre-parsed struct the game reads instead of hardcoded
+  coordinates, and the home of the items that are *not* terrain, which is what
+  the previewer's `M` key exists to fill in — and then a Makefile knob for
+  which map pair the disk is built from. `documentation/procedural-maps.md` has the order and the open
   question about sprite palette indices below 16.
 
 ## Decisions already settled
@@ -171,6 +172,17 @@ Do not re-litigate these without new measurements.
   the mission YAML wants, which is where item coordinates will come from; items
   already in the file are drawn as pins clipped against the march's own y
   buffer. tkinter and Pillow, no new dependency. Nothing in `src/` changed.
+- **Landmarks are terrain.** A `pyramid` in a mission's `items` is terraformed
+  into both maps by `genmap.py` — a square stack of terraces, the site levelled
+  to the median of what it covers, heights to roof height and colours to the
+  palette's `masonry` band, lit by the same sun as the ground it stands on. It
+  costs the renderer nothing, because there is nothing there but ground.
+  `size` is `small|medium|large`, cut around the one in `C1W.png`; the island
+  has a medium one at 422,481. What governs the shape is that **a terrace
+  narrower than a map cell is not there** — the heightmap ships averaged to 512
+  and the march samples a cell at most ranges — so terraces are two cells, one
+  of riser and one of tread, and the riser wears the lighter course because a
+  stepped face from the air is nearly edge on.
 - **Sunlight and scale in the generator.** Generated terrain is lit by a sun
   due west and on the horizon, which is what `resources/C1W.png` measures as —
   its luminance correlates 0.69 with the east-west gradient and 0.04 with the

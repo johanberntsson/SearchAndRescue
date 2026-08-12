@@ -12,6 +12,12 @@ general:
   scale: medium
   ruggedness: rolling
 
-# Placed by hand in the previewer once there is one; parsed and checked today,
-# written to mission.bin in the next stage.
-items: []
+# Placed by hand in the previewer, in map pixels -- a quarter of a cell at the
+# default 1024. A pyramid is terraformed straight into the two maps by
+# genmap.py; mission.bin, for the items that are not terrain, is the next
+# stage.
+items:
+  - type: pyramid
+    x: 422
+    y: 481
+    size: medium

@@ -38,6 +38,7 @@ from PIL import Image, ImageTk
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import convmap                                            # noqa: E402
+import genmap                                             # noqa: E402
 
 # The build's defaults, and what the maps are sampled down to before anything
 # is drawn -- so the preview shows the resolution that ships, not the 1024x1024
@@ -397,10 +398,20 @@ def draw_markers(view, c, march, maps, cam, sine, items, size):
     whether a spot is visible from where the pilot will be flying.
     """
     for item in items:
-        # YAML coordinates are map pixels at the size genmap wrote, which is a
-        # quarter of a cell at 1024 -- so the 8.8 position is exact.
-        ix = (item["x"] * 256 // (size // convmap.CELLS)) & 0xFFFF
-        iy = (item["y"] * 256 // (size // convmap.CELLS)) & 0xFFFF
+        # Nothing is pinned that genmap.py builds into the terrain. A pyramid
+        # is already there to be seen, in the maps themselves; a pin on top of
+        # it would only hide the thing it was pointing at, and the question a
+        # marker answers -- can this be spotted from the air -- the structure
+        # answers for itself.
+        if item["type"] in genmap.ITEMS:
+            continue
+        # YAML coordinates are map pixels at genmap.py's DEFAULT_SIZE, which is
+        # a quarter of a cell -- so the 8.8 position is exact. Not the size of
+        # the map actually loaded: an item is at a place in the world, and
+        # --size is a resolution knob that must not move it.
+        axis = genmap.DEFAULT_SIZE // convmap.CELLS
+        ix = (item["x"] * 256 // axis) & 0xFFFF
+        iy = (item["y"] * 256 // axis) & 0xFFFF
 
         dx, dy = to_int16(ix - cam.x), to_int16(iy - cam.y)
         if max(abs(int(dx)), abs(int(dy))) > c.SPR_Z_FAR:
@@ -562,13 +573,17 @@ class Preview:
     def mark(self):
         cam = self.flight.cam
         _, lat, lon, _, _ = self.flight.readout()
-        axis = self.size // convmap.CELLS
+        # At genmap.py's DEFAULT_SIZE, not the size of the map loaded: a mark
+        # is a place in the world, and it has to mean the same thing whatever
+        # resolution this happens to be flying.
+        axis = genmap.DEFAULT_SIZE // convmap.CELLS
         x, y = (cam.x * axis) >> 8, (cam.y * axis) >> 8
         entry = {"x": int(x), "y": int(y), "lat": round(lat, 3),
                  "lon": round(lon, 3), "alt": int(cam.height)}
         self.marks.append(entry)
 
-        block = (f"  - type: CHANGEME\n    x: {entry['x']}\n    y: {entry['y']}"
+        block = (f"  - type: CHANGEME\n    size: medium\n"
+                 f"    x: {entry['x']}\n    y: {entry['y']}"
                  f"      # {entry['lat']:.3f}N {entry['lon']:.3f}E, "
                  f"alt {entry['alt']}\n")
         print(block, end="", flush=True)
@@ -608,7 +623,7 @@ class Preview:
         cam = self.flight.cam
         heading, lat, lon, _, _ = self.flight.readout()
         names = ("SLO", "NRM", "SPT")
-        axis = self.size // convmap.CELLS
+        axis = genmap.DEFAULT_SIZE // convmap.CELLS   # what a mark is in
         self.line1.set(
             f"ALT {cam.height:4d}   HDG {heading:3d}   "
             f"LAT {lat:.3f}N  LON {lon:.3f}E   SPD {names[self.flight.speed_mode]}")

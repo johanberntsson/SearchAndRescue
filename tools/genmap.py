@@ -175,6 +175,11 @@ SUN_REF = 0.02
 # elevation ramp: six shades across a smooth dome is six visible bands.
 SUN_MOTTLE = 0.55
 
+# The bands the code asks the palette file for by name: the land ramp in
+# ascending order, then the two that are not elevation at all.
+LAND_BANDS = ("shore", "lowland", "highland", "peak")
+BANDS = LAND_BANDS + ("water", "masonry")
+
 # The land ramp is walked with a gamma, so its top bands are the top few per
 # cent of the relief rather than an even slice of it. Linear put snow on a
 # fifth of every map: the ramp is a set of bands with names, and "peak" has to
@@ -671,6 +676,114 @@ def stamp_river(h, water, level, cy, cx, radius, run, standing):
     level[box] = np.where(wet, run, level[box])
 
 
+# --- the built things ---------------------------------------------------
+
+# Half the base and how tall, in pixels and in height units at DEFAULT_SIZE --
+# a map is 120 units tall and 1024 pixels across, so four pixels are a map cell
+# and `medium` is 24 cells across and 10 tall. Measured off the pyramid in
+# resources/C1W.png, which is about 100 pixels across and 51 units from the
+# grass to the top platform: `medium` is that pyramid and the other two are a
+# size either side of it. The height is about half the base in both, which is
+# what makes the slope read as built rather than as a hill.
+#
+# **`scale` does not touch these.** It is how big the country is; a building is
+# a building, and the whole point of putting a landmark on a distant-scale map
+# is that it stands over country that got smaller.
+PYRAMID = {
+    "small":  (32, 28),
+    "medium": (48, 42),
+    "large":  (64, 56),
+}
+
+# A terrace is two map cells: one of riser and one of tread. That is a floor,
+# not a taste -- **the renderer cannot see anything finer.** Built first with
+# eight terraces of a pixel and a half each, the pyramid came out of the air as
+# a smooth grey mound: the heightmap ships box-averaged to 512, the march
+# samples half a cell at best and one cell for most of its range, and a terrace
+# narrower than a cell is gone twice over before it reaches the screen. At two
+# cells the steps survive both, and the colour carries them the rest of the way
+# -- the riser band is a whole cell of the darker course, so a ray that lands on
+# one reads terrace even where the geometry has averaged smooth.
+TERRACE = 8              # pixels at DEFAULT_SIZE: two map cells
+RISER = 4                # of which this much is the riser's own band
+
+# The item types this file knows how to build, and the sizes each takes. An
+# item type that is only a mission object -- a survivor, a landing site -- will
+# come through here with no entry and go straight to mission.bin; there are
+# none of those yet, so an unknown type is a typo and is refused.
+ITEMS = {"pyramid": PYRAMID}
+
+
+def place_items(h, water, items, size):
+    """Terraform the built things into the terrain.
+
+    Returns a float array: -1 where nothing is built, and otherwise which
+    course of stone that pixel wears -- 0 for a riser, 1 for a tread.
+
+    A pyramid is a square, axis-aligned stack of terraces, which is the whole
+    of it: the site is levelled to the median of what it covers, each terrace
+    is a TERRACE-wide tread and a `height / steps` riser, and the heightfield
+    renderer does the rest.
+
+    **Coordinates are map pixels at DEFAULT_SIZE**, a quarter of a cell, and
+    are scaled with the map like every other length here -- so `--size` stays
+    what its comment claims, a resolution knob that does not move anything.
+    Read as pixels of whatever was generated, the same YAML put the pyramid a
+    hundred cells away at `--size 512`, which happened to land it in the sea
+    and say so; somewhere dry it would have been silent.
+    """
+    scale = size / DEFAULT_SIZE
+    built = np.full(h.shape, -1.0)
+    for n, item in enumerate(items):
+        if item["type"] != "pyramid":
+            continue
+        half, height = PYRAMID[item["size"]]
+        terrace = max(2, round(TERRACE * scale))
+        riser = max(1, round(RISER * scale))
+        steps = max(2, round(half * scale) // terrace)
+        half = steps * terrace
+        height /= HEIGHT_MAX
+        cy, cx = round(item["y"] * scale), round(item["x"] * scale)
+        if not (0 <= cx < size and 0 <= cy < size):
+            sys.exit(f"item {n} (pyramid) at {item['x']},{item['y']} is off a "
+                     f"{DEFAULT_SIZE}-pixel map")
+
+        span = np.arange(-half, half + 1)
+        ys, xs = (cy + span) % size, (cx + span) % size
+        box = np.ix_(ys, xs)
+        if water[box].any():
+            sys.exit(f"item {n} (pyramid) at {item['x']},{item['y']} stands in "
+                     f"water; move it or shrink it -- it covers "
+                     f"{round((2 * half + 1) / scale)} pixels of the map")
+
+        # Chebyshev distance in whole pixels, so a terrace's contour is a
+        # square: how far in from the edge, in terraces. Tier 1 is the plinth
+        # at the outer edge and `steps` is the top platform, so the whole
+        # footprint is built ground and there is no zero-height course to
+        # leave a seam.
+        out = np.maximum(np.abs(span)[:, None], np.abs(span)[None, :])
+        tier = np.clip((half - out) // terrace + 1, 1, steps)
+        # The riser's own band is the outer part of each terrace: a whole map
+        # cell of it, which is what a ray can actually land on. It takes the
+        # *lighter* course and the tread the darker one, which is both what the
+        # hand-drawn pyramid does and what a sun this low means -- a wall
+        # catches it and a floor does not. It is also the way round that shows:
+        # from the air you see a stepped face nearly edge on, so the risers are
+        # most of what is on the screen and the treads are the lines between.
+        band = ((half - out) % terrace) < riser
+
+        # The site is levelled to the median of what it covers -- part cut,
+        # part fill, which is how you level a site -- but never so high that
+        # the top runs into HEIGHT_MAX. Clipping there would flatten the top
+        # courses into one, and a step pyramid without its top steps is a
+        # spoil heap; cutting the platform deeper into the hill keeps the
+        # shape, which is the thing worth keeping.
+        base = min(float(np.median(h[box])), 1.0 - height)
+        h[box] = base + height * tier / steps
+        built[box] = np.where(band, 1.0, 0.0)
+    return built
+
+
 # --- colour -------------------------------------------------------------
 
 def load_palette(path):
@@ -689,6 +802,11 @@ def load_palette(path):
     """
     with open(path) as f:
         pal = yaml.safe_load(f)
+
+    missing = [b for b in BANDS if b not in (pal.get("bands") or {})]
+    if missing:
+        sys.exit(f"{path}: no band(s) {', '.join(missing)}. Every band this "
+                 f"file names is one the generator asks for by name")
 
     shades = pal.get("shades")
     if not shades:
@@ -788,7 +906,7 @@ def sunlight(h, spec):
     return 0.5 - 0.5 * np.tanh(rise / (SUN_REF * spec["feature"]))
 
 
-def colourise(h, bed, water, level, spec, pal, stream):
+def colourise(h, bed, water, level, built, spec, pal, stream):
     """Height, slope, sun and water into palette indices, and the palette.
 
     The land bands are one contiguous ramp, so the whole of the land decision
@@ -806,7 +924,7 @@ def colourise(h, bed, water, level, spec, pal, stream):
     shades = pal["shades"]
     rgb = [(0, 0, 0)] * 256
     ramp = []
-    for name in ("shore", "lowland", "highland", "peak"):
+    for name in LAND_BANDS:
         entries, colours = band_colours(pal, spec["climate"], name)
         for e, c in zip(entries, colours):
             ramp.append(e)
@@ -819,8 +937,10 @@ def colourise(h, bed, water, level, spec, pal, stream):
     # The top of the ramp is the map's own high ground rather than a constant,
     # so flatlands use the whole ramp instead of coming out uniformly shore
     # coloured. The 99th percentile and not the maximum: one hill peak should
-    # not spend the top half of the ramp on a dozen pixels.
-    land = h[~water]
+    # not spend the top half of the ramp on a dozen pixels. Built ground is
+    # left out of it -- a pyramid is not the country's high ground, and
+    # counting it would push the whole terrain ramp down to make room.
+    land = h[~water & (built < 0)]
     top = np.percentile(land, 99) if land.size else 1.0
     sea = spec["sea"]
     t = (h - sea) / max(top - sea, 1e-6)
@@ -841,11 +961,28 @@ def colourise(h, bed, water, level, spec, pal, stream):
         2.0 * value_noise(h.shape[0], h.shape[0] // 16, stream.salt()) - 1.0)
     step = np.clip(step.astype(int), 0, len(ramp) - 1)
 
-    face = sunlight(h, spec) * len(shades) + SUN_MOTTLE * (
+    sun = sunlight(h, spec) * len(shades)
+    face = sun + SUN_MOTTLE * (
         2.0 * value_noise(h.shape[0], h.shape[0] // 16, stream.salt()) - 1.0)
     face = np.clip(face.astype(int), 0, len(shades) - 1)
 
     indices = np.asarray(ramp, np.uint8)[step] + face.astype(np.uint8)
+
+    # Masonry is the same idea as the land ramp with one course of stone for
+    # the other axis: the sun is the one the terrain uses, so a terrace riser
+    # takes the same extreme shade a cliff would and the structure is lit into
+    # the country rather than pasted on it. The mottle is deliberately not
+    # applied -- dressed stone is not vegetation, and a dither across a flat
+    # tread is the one thing that would say "terrain" about it.
+    stone, scolours = band_colours(pal, spec["climate"], "masonry")
+    for e, c in zip(stone, scolours):
+        for l, m in enumerate(shades):
+            rgb[e + l] = lit(c, m)
+    course = np.clip((built * len(stone)).astype(int), 0, len(stone) - 1)
+    dressed = np.clip(sun.astype(int), 0, len(shades) - 1).astype(np.uint8)
+    indices = np.where(built >= 0,
+                       np.asarray(stone, np.uint8)[course] + dressed,
+                       indices)
 
     # Water is shaded by how deep it is over the bed the terrain would have
     # had, which is why the bed is kept before the surface is flattened onto
@@ -893,15 +1030,23 @@ def read_mission(path):
             sys.exit(f"{path}: general.{key} is '{spec[key]}', "
                      f"expected one of {', '.join(sorted(allowed))}")
 
-    # Items are placed by hand in the previewer and read by the game out of
-    # mission.bin -- neither of which exists yet. Checked here anyway so a
-    # typo is caught now rather than in whatever writes that file.
+    # Items are placed by hand in the previewer. The ones this file knows how
+    # to build are terraformed into the maps here; the rest are for
+    # mission.bin, which does not exist yet, and are checked anyway so a typo
+    # is caught now rather than in whatever writes that file.
     for n, item in enumerate(doc.get("items") or []):
         if not isinstance(item, dict) or "type" not in item:
             sys.exit(f"{path}: item {n} has no type")
+        kind = item["type"]
+        if kind not in ITEMS:
+            sys.exit(f"{path}: item {n} is a '{kind}', expected one of "
+                     f"{', '.join(sorted(ITEMS))}")
         for axis in ("x", "y"):
             if not isinstance(item.get(axis), int):
-                sys.exit(f"{path}: item {n} ({item['type']}) has no integer {axis}")
+                sys.exit(f"{path}: item {n} ({kind}) has no integer {axis}")
+        if item.get("size") not in ITEMS[kind]:
+            sys.exit(f"{path}: item {n} ({kind}) is size '{item.get('size')}', "
+                     f"expected one of {', '.join(sorted(ITEMS[kind]))}")
     return spec, doc.get("items") or []
 
 
@@ -985,7 +1130,11 @@ def main():
     bed = h.copy()
     h = np.where(water, level, h)
 
-    indices, rgb = colourise(h, bed, water, level, spec, pal, stream)
+    # Last, and after the water: a built thing is not weathered by anything the
+    # generator does, and nothing may flood it or cut a channel through it.
+    built = place_items(h, water, items, size)
+
+    indices, rgb = colourise(h, bed, water, level, built, spec, pal, stream)
     heights = np.clip(h * HEIGHT_MAX, 0, 255).round().astype(np.uint8)
 
     outdir = args.outdir or folder
@@ -1001,9 +1150,14 @@ def main():
           f"{len(np.unique(indices))} palette entries used")
     print(f"  {hname}")
     print(f"  {cname}")
-    if items:
-        print(f"  {len(items)} item(s) parsed, not yet written "
-              f"(mission.bin is the next stage)")
+    for n, item in enumerate(items):
+        scale = size / DEFAULT_SIZE
+        ground = int(heights[round(item["y"] * scale),
+                             round(item["x"] * scale)])
+        print(f"  item {n}: {item['size']} {item['type']} at "
+              f"{item['x']},{item['y']} (cell {item['x'] * CELLS // DEFAULT_SIZE},"
+              f"{item['y'] * CELLS // DEFAULT_SIZE}), {ground} high. Built into "
+              f"the maps; mission.bin is the next stage")
 
 
 if __name__ == "__main__":

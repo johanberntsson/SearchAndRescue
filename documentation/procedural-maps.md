@@ -78,6 +78,7 @@ general:
 
 items:
   - type: pyramid
+    size: medium         # small | medium | large
     x: 580
     y: 345
   - type: house
@@ -93,6 +94,28 @@ Note the `<feature>` / `<feature>-size` pattern is uniform across all
 three: `rivers`/`river-size`, `hills`/`hills-size`, `lakes`/`lakes-size` —
 the first controls how many, the second how big each one is. Same shape,
 same parsing code, for all three feature types.
+
+Items carry a `size` on the same pattern — named steps, not a number — and
+what the sizes are is per item type, since "large" means nothing in the
+abstract. A pyramid's are `small | medium | large`, cut around the one in
+`resources/C1W.png`.
+
+### Items that are terrain
+
+An item is one of two things, and the type says which:
+
+- **built into the maps.** A pyramid is not an object standing on the
+  terrain, it *is* terrain: `genmap.py` terraforms it into both maps —
+  heights to roof height, colours to dressed stone — and the renderer never
+  learns that anything unusual is there. Nothing else in the pipeline has to
+  change, and it costs no frame time at all.
+- **carried to `mission.bin`.** A survivor, a landing site: a position the
+  game reads. None of these exist yet, so `genmap.py` refuses an item type
+  it does not know how to build rather than silently dropping it.
+
+The previewer draws a pin for the second kind only. A pin on a pyramid would
+hide the thing it was pointing at, and "can this be spotted from the air" is
+a question the structure answers for itself.
 
 ### `id` — required
 
@@ -276,8 +299,9 @@ file and a disk is the Makefile still naming `resources/D1.png`. The generated
 maps are build products and are not in git; the YAML and the palette are.
 
 Everything in the schema above is implemented as written, plus a `--size`
-(default 1024, powers of two) and a `--palette`. `items` is parsed and
-validated but goes nowhere yet.
+(default 1024, powers of two) and a `--palette`. `items` are validated, and
+the ones that are terrain — a `pyramid`, so far — are built into the two maps;
+what the game will read out of `mission.bin` still goes nowhere.
 
 ### What the numbers mean
 
@@ -377,6 +401,19 @@ Three details:
   neighbours that are genuinely downhill on the blurred field, and let the
   noise choose *among those*. It cannot stall and it cannot loop, because the
   field falls at every step.
+- **A terrace narrower than a map cell is not there.** The pyramid was built
+  first with eight terraces of a pixel and a half, which is what the
+  hand-drawn one measures as at 1024 — and it came out of the air as a smooth
+  grey mound. The heightmap ships box-averaged to 512 and the march samples
+  half a cell at best and a whole one for most of its range, so a step that
+  fine is gone twice over before it reaches the screen. Every terrace is two
+  map cells now, one of riser and one of tread, and the riser gets a whole
+  cell of its own lighter course so that a ray landing on it reads *terrace*
+  even where the geometry has averaged smooth. Which way round matters too:
+  seen from the air a stepped face is nearly edge on, so the risers are most
+  of what is on the screen and the treads are the dark lines between them —
+  the same way the hand-drawn pyramid is painted, and the same way a sun on
+  the horizon would light it.
 - **A lake that stops early stands above the land beside it.** The flood ends
   on its area budget or on `LAKE_RISE`, and the level was then taken from the
   highest cell it had swallowed — but the frontier is still holding cells
