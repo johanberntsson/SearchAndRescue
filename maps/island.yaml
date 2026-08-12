@@ -9,6 +9,7 @@ general:
   hills-size: small
   lakes: few
   lakes-size: small
+  scale: medium
   ruggedness: rolling
 
 # Placed by hand in the previewer once there is one; parsed and checked today,

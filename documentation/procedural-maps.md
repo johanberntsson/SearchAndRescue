@@ -73,6 +73,7 @@ general:
   hills-size: small      # small | large
   lakes: few             # none | few | many
   lakes-size: small      # small | large
+  scale: medium          # near | medium | distant
   ruggedness: rolling    # smooth | rolling | rugged | jagged
 
 items:
@@ -136,6 +137,25 @@ and attic RAM slot.
 - `climate` selects which palette is used (see below) — it does not need
   a different height algorithm, though cold could bias toward exposed
   rock/snow at altitude if wanted later.
+- `scale` is how big the country is, not how much of it there is. The world
+  is always 256 cells across; this says how many landforms fit in it, from
+  `near` (a couple of big ones) to `distant` (a lot of small ones). It is the
+  knob the hand-drawn `resources/C1W.png` needs and does not have — its pyramid
+  is huge against its lakes, so it is plainly drawn at a "near" scale, and
+  nothing in the YAML could ask for that. Every length the generator knows goes
+  through it: the noise lattice, hill and river radii, lake areas, the flow
+  blur, and the steepness the rock colouring and the sun are judged against.
+  Two things that took a false start each to get right, both about keeping the
+  fields independent of each other:
+  - `scale` must **hold the finest noise octave still** while it moves the
+    coarsest, or zooming in smooths the surface texture out as well as
+    enlarging the landforms — which is `ruggedness`'s job, not this one. It
+    adds an octave when it halves the base lattice.
+  - it must **scale the steepness references too**. Doubling a landform's
+    width halves its slopes, so a near map with an absolute reference comes out
+    uniformly green and unshaded however dramatic its shape, and a distant one
+    comes out all cliff and shadow. That is scale deciding how the map is
+    *lit*, which is not what the word means.
 - `ruggedness` is a modifier on top of `type`'s base shape, not a
   replacement for it — it controls the noise octave count/amplitude
   layered onto whatever macro shape `type` already produced (a `rugged
@@ -266,21 +286,61 @@ heightmap's 0..118, so generated terrain flies with the same altitudes and the
 same `GROUND_GAP` the flight model was tuned against.
 
 The palette is `maps/palette.yaml`, and the ramp is the whole of the colour
-decision: water at 16..23 shaded by depth, then **one contiguous 40-step land
-ramp at 24..63** — shore, lowland, highland, peak — indexed by elevation, plus
-a push for slope and a coarse noise dither. Where the band boundaries fall is
-a matter of what colours the climate puts there and nothing the code knows
-about. Two consequences worth keeping:
+decision: water at 16..23 shaded by depth, then a land ramp at 24..149 —
+shore, lowland, highland, peak — indexed by elevation, plus a push for slope, a
+coarse noise dither, and **which way the ground faces the sun**. Where the band
+boundaries fall is a matter of what colours the climate puts there and nothing
+the code knows about. Three consequences worth keeping:
 
 - the ramp is normalised to each map's own relief, or a flatland would come out
   one flat colour; that alone would crown *every* map with a bare summit, so
   each `type` also declares a **ceiling** — how far up the ramp its high ground
   is allowed to reach. Mountains earn the peak bands, a plain tops out in the
   greens.
-- a generated map uses **48 palette entries against the hand-drawn one's ~170**,
-  which leaves `convmap.py` 143 free rather than 12. The palette budget that
-  currently limits the game to two figures is a property of the *hand-drawn*
-  colourmap, not of the engine.
+- the land ramp is **two dimensional**: 21 elevation steps of 6 shades each, so
+  a step's six entries are one colour lit six ways and the index is the step's
+  base plus the face. Flat ground lands on the middle shade, whose multiplier is
+  1.00, so level country comes out in exactly the colours the climate names and
+  the shading only adds faces either side of them.
+- a generated map uses **about 130 palette entries against the hand-drawn one's
+  184**, which leaves `convmap.py` around 60 free rather than 12 — four more
+  figures. The palette budget that limits the game to two figures is a property
+  of the *hand-drawn* colourmap, not of the engine, and shading it costs half
+  the difference rather than all of it.
+
+### The sun
+
+Shading is what makes a heightfield read as terrain from the air rather than as
+a coloured contour map, and the hand-drawn map has it and a generated one did
+not. What it does was measured rather than guessed: in `resources/C1W.png`,
+luminance correlates **0.69 with the east-west height gradient and 0.04 with
+the north-south one**, and spans about 0.45x to 1.35x within one elevation
+band. That is a strong light, due west, on the horizon.
+
+So `genmap.py` shades by how fast the ground *falls towards the sun* — one dot
+product of the gradient with a horizontal direction — rather than by a Lambert
+term against a surface normal. The Lambert version was written first and is
+worth knowing about: a normal needs the relief exaggerated into cell units
+before it means anything, and that exaggeration then interacts with each
+`type`'s own height range, so one constant put 71% of a mountain range in the
+two end shades and left a plain with no shading at all. Rise-towards-the-sun
+against a single reference steepness behaves the same on all three maps.
+
+Three details:
+
+- **the sign is the whole thing.** A face that *rises* towards the sun is the
+  one turning its back on it. Getting it backwards lights the map from the east
+  and nothing about the picture says so — it just looks subtly wrong, and the
+  correlation against C1W is what caught it.
+- **tanh, not a clip.** The interesting terrain is the gentle two-thirds around
+  flat; a linear ramp steep enough to shade *that* piles every real hillside up
+  in the end shades. At the tuned reference each of the three example maps
+  spends 2 to 6 per cent of its land in each end shade.
+- **both dithers are in units of what they dither** — the elevation one in
+  steps, the shading one in shades — because the ramp lost half its steps to
+  the shading and a dither in ramp fractions would have quietly halved with it.
+  Separate noise fields, or the same pixels sit at the top of their step and
+  the top of their shade and it reads as texture rather than dither.
 
 ### Traps found on the way
 
@@ -317,6 +377,23 @@ about. Two consequences worth keeping:
   neighbours that are genuinely downhill on the blurred field, and let the
   noise choose *among those*. It cannot stall and it cannot loop, because the
   field falls at every step.
+- **A lake that stops early stands above the land beside it.** The flood ends
+  on its area budget or on `LAKE_RISE`, and the level was then taken from the
+  highest cell it had swallowed — but the frontier is still holding cells
+  *lower* than that, and they stay dry. The lake keeps its shape and gains a
+  rim it is pouring over. It is worst where the sea blocks the fill, because a
+  coastal basin runs out of budget instead of reaching a shore, and it is
+  invisible in plan view: from the air it is a row of dark blocks standing out
+  of the sea at the waterline, several units proud of the beach, appearing and
+  disappearing as the march samples them. Cut the level back to the lowest cell
+  left on the frontier — the point the basin would actually spill at — and drop
+  the cells the lower level no longer covers.
+- **The same rule for a river: cut, never build up.** A channel disc laid
+  across a slope sets its whole width to the run, which raises the downhill
+  half, and the river ends up running along the top of a low wall of its own
+  water. Only wet the pixels whose ground is already at or above the run. The
+  centre always is — the run was taken `RIVER_DEPTH` below it — so this can
+  narrow a channel but cannot break one.
 - **A pool at the end of a river cannot be flooded against live water.** It is
   surrounded by that river's own channel, so the "a basin cannot grow into
   standing water" rule walls it in at one pixel. Block on the water as it stood

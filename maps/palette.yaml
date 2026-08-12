@@ -10,26 +10,53 @@
 # border and screen colour, 1 and 2 are the panel ink (a text character takes
 # its colour from colour RAM, which is a four-bit field, so panel ink has to
 # live down here), and the rest are left for the same kind of use.  224-239 are
-# the sky gradient, 240/241 the reserved HUD pair, and everything from 64 up is
-# the pool tools/convmap.py hands to the sprite sheets -- which is why the land
-# ramp stops at 63 rather than spreading over everything that is free.
+# the sky gradient and 240/241 the reserved HUD pair; everything the bands below
+# do not claim is the pool tools/convmap.py hands to the sprite sheets, fifteen
+# entries to a figure.
 #
 # The land bands are contiguous and in ascending order on purpose: shore,
-# lowland, highland and peak are one 40-step elevation ramp that genmap.py
-# indexes with a single add, and the band boundaries only decide where the
-# colours change character.  Keep them adjacent if you re-cut them.
+# lowland, highland and peak are one elevation ramp that genmap.py indexes with
+# a single add, and the band boundaries only decide where the colours change
+# character.  Keep them adjacent if you re-cut them.
+#
+# **A land band's `count` is elevation steps, and each step owns one entry per
+# entry in `shades` below**, so the band spans `count * len(shades)` indices
+# starting at `base`: step s, shade l is at `base + s * len(shades) + l`.  The
+# ramp is therefore 21 elevation steps in 126 indices, which with the eight
+# water shades leaves 74 free for the sprite pool -- four figures' worth.
+#
+# The hand-drawn map this budget was cut against uses 184 entries, so spending
+# most of the palette on terrain is what it has always looked like; what is new
+# is that the second dimension is *lighting* rather than more elevation.  Twenty
+# one elevation steps against the forty there used to be is not a loss the eye
+# can find, because the shading now carries the shape.
 
 bands:
-  # Water is shaded by depth, deepest at the first index.
-  water:    {base: 16, count: 8}
-  # The land ramp, low to high. 40 shades from 24 to 63.
-  shore:    {base: 24, count: 4}
-  lowland:  {base: 28, count: 16}
-  highland: {base: 44, count: 12}
-  peak:     {base: 56, count: 8}
+  # Water is shaded by depth, deepest at the first index -- and by nothing else:
+  # a water surface is flat, so there is no normal for the sun to catch, and
+  # these eight entries are eight indices rather than eight steps.
+  water:    {base: 16, count: 8, shaded: false}
+  # The land ramp, low to high: 21 elevation steps, 6 shades each, 24..149.
+  shore:    {base: 24,  count: 3}
+  lowland:  {base: 42,  count: 8}
+  highland: {base: 90,  count: 6}
+  peak:     {base: 126, count: 4}
+
+# What the sun does to a band's colour, darkest face to brightest.  A multiplier
+# below 1 scales the colour; above 1 it is a lerp that far toward white by
+# (m - 1), because a snow peak has nowhere brighter to go and multiplying only
+# clips it flat.  **Flat ground lands exactly on the 1.00 entry**, so the stops
+# below are still the colours a level plain comes out in, and the shading only
+# adds faces to either side of them.
+#
+# The range is measured off resources/C1W.png, whose shading spans about 0.45x
+# to 1.35x within one elevation band -- so this is a strong effect, not a hint.
+# Keep 1.00 at index len(shades)//2: genmap.py puts flat ground at the middle
+# entry and does not look for the neutral one.
+shades: [0.44, 0.62, 0.80, 1.00, 1.12, 1.24]
 
 # Each climate gives every band a list of at least two RGB stops, interpolated
-# evenly across the band's indices.  The band names are shared, so their
+# evenly across the band's elevation steps.  The band names are shared, so their
 # meaning is elevation, not vegetation: "lowland" is forest in a temperate
 # climate, dry savannah in a hot one, and tundra in a cold one, and "peak" is
 # snow in two of the three and sun-bleached rock in the other.

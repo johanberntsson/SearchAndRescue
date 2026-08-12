@@ -9,7 +9,7 @@ so the check needs no emulator and takes a couple of seconds:
     $ python3 tools/checkview.py
     view: 318x152 of 320 at (82,104), 2x   (PAL clips the last column)
     palette: worst colour 1.0 from an entry
-    camera: cell 115,115 angle 0 height 162, sub-cell 192,46 by search
+    camera: cell 99,105 angle 0 height 162, sub-cell 64,4 by search
     0 of 48336 palette indices differ -- OK
 
 The previewer is a second implementation of `src/voxel_asm.s`, and a second
@@ -51,7 +51,7 @@ import preview as P                                       # noqa: E402
 
 REFERENCE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "documentation", "reference", "island-x115-y115-a0-h162.png")
+    "documentation", "reference", "island-x99-y105-a0-h162.png")
 
 # A colour in the screenshot should land exactly on the palette entry that put
 # it there; xemu's rendering of the VIC-IV palette is a unit or so out, which
@@ -65,7 +65,7 @@ def camera_from_name(path):
     m = re.search(r"-x(\d+)-y(\d+)-a(\d+)-h(-?\d+)", os.path.basename(path))
     if not m:
         sys.exit(f"{path}: no camera in the filename, and no --at given. "
-                 f"Name it like island-x115-y115-a0-h162.png, from the panel's "
+                 f"Name it like island-x99-y105-a0-h162.png, from the panel's "
                  f"LON/LAT/HDG/ALT.")
     return [int(v) for v in m.groups()]
 

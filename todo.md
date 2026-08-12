@@ -171,6 +171,18 @@ Do not re-litigate these without new measurements.
   the mission YAML wants, which is where item coordinates will come from; items
   already in the file are drawn as pins clipped against the march's own y
   buffer. tkinter and Pillow, no new dependency. Nothing in `src/` changed.
+- **Sunlight and scale in the generator.** Generated terrain is lit by a sun
+  due west and on the horizon, which is what `resources/C1W.png` measures as —
+  its luminance correlates 0.69 with the east-west gradient and 0.04 with the
+  north-south one. The land ramp is two dimensional now, 21 elevation steps of
+  6 shades, and a shade is how fast the ground falls *towards* the sun rather
+  than a Lambert term against a normal: that was tried first and could not suit
+  a mountain range and a plain with one constant. `scale: near|medium|distant`
+  is the second half of it — how big the country is, not how much of it there
+  is — and it moves every length the generator knows, including the steepness
+  the rock colouring and the sun are judged against, since doubling a
+  landform's width halves its slopes. A generated map now spends about 130
+  palette entries, leaving around 60 for figures.
 - **Procedural map generation, stage one.** `tools/genmap.py` turns a mission
   YAML — type, climate, ruggedness, rivers/hills/lakes and their sizes — into
   the same height and colour PNGs `convmap.py` already eats, reproducibly from

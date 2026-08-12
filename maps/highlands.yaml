@@ -9,6 +9,7 @@ general:
   hills-size: small
   lakes: few
   lakes-size: large
+  scale: near
   ruggedness: rugged
 
 items: []

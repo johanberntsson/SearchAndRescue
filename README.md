@@ -48,9 +48,13 @@ wrong place.
 
 Off to the side, and not on the disk yet: **maps can now be generated instead of
 drawn.** `tools/genmap.py` turns a short YAML description — island or mountains
-or flatlands, a climate, how many rivers and lakes and hills, how rugged — into
-the same height/colour PNG pair the converter already reads, reproducibly from
-a seed. `tools/preview.py` then flies one on the PC **with the game's own
+or flatlands, a climate, how many rivers and lakes and hills, how rugged, at
+what scale — into the same height/colour PNG pair the converter already reads,
+reproducibly from a seed. The terrain is **lit by a sun in the west**, the way
+the hand-drawn map is, which is what makes a heightfield read as country rather
+than as a coloured contour map: the land ramp is 21 elevation steps of six
+shades each, and which shade a pixel gets is how fast the ground falls towards
+the light. `tools/preview.py` then flies one on the PC **with the game's own
 renderer** — the same march, projection, map sampling and flight model, at the
 same 12.5 frames a second, with the constants read out of `src/` rather than
 copied — so terrain can be judged from the air and item coordinates noted down

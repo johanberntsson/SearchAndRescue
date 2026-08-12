@@ -538,21 +538,41 @@ will say so rather than quietly painting terrain in a sprite colour.
 mission YAML in `maps/` into `hmapNN.png`/`cmapNN.png` — the same two shapes
 `convmap.py` reads — from one seeded RNG stream, so a seed and a YAML file
 reproduce a map byte for byte. `maps/palette.yaml` is the shared index ramp:
-water at 16..23 by depth, then one contiguous 40-step land ramp at 24..63, with
-the RGB behind those indices chosen by the mission's `climate`. Nothing
-generated is on the disk yet — the Makefile still names `resources/D1.png` —
-and the previewer and `mission.bin` are not written.
+water at 16..23 by depth, then a land ramp at 24..149 that is **21 elevation
+steps of 6 sun shades each**, with the RGB behind those indices chosen by the
+mission's `climate`. About 130 entries against the hand-drawn map's 184, so
+`convmap.py` still has around 60 free for figures.
+
+Two knobs of that are worth knowing before touching the generator. **The sun is
+due west and on the horizon**, because that is what the hand-drawn map measures
+as (luminance correlates 0.69 with the east-west gradient and 0.04 with the
+north-south one); shading is how fast the ground falls *towards* it, not a
+Lambert term against a normal, which was tried and could not be tuned to suit
+mountains and plains at once. And **`scale: near|medium|distant` is how big the
+country is, not how much of it there is** — the world is always 256 cells
+across, and this says how many landforms fit in it. It moves every length in
+the generator, including the steepness references the rock colouring and the
+sun are judged against, because doubling a landform's width halves its slopes.
+Nothing generated is on the disk yet — the Makefile still names
+`resources/D1.png` — and `mission.bin` is not written.
 `documentation/procedural-maps.md` has the design, what is built, and the traps
 found building it. The one to know before touching the water: **a river
 measured against the live map digs itself a canyon** — each disc flattens the
 ground ahead of the walk, so the walk reads its own channel floor and cuts
 again, and thirty steps later it is below sea level, flattened to the sea plane
 and painted in the darkest water there is. It looks like a black line ruled
-across the map. Measure against a pristine copy. The others: a lake flood will
-flood the ocean; a river arriving at the coast will raise the sea; meander
-noise may only choose between neighbours that already run downhill, never
-decide whether the river goes on; fold ridged noise once at the end, not per
-octave.
+across the map. Measure against a pristine copy. The second one to know is
+that **water is only ever cut into the ground, never built up out of it**: a
+lake whose flood stopped on its area budget took its level from the highest
+cell it had swallowed while the frontier still held lower ones, so it stood
+several units above the beach beside it — a row of dark blocks out of the sea
+at the waterline, invisible in plan view and obvious from the air. A river disc
+crossing a slope did the same to its downhill half. The level is cut back to
+the lowest cell left on the frontier, and a channel only wets ground already at
+or above its run. The others: a lake flood will flood the ocean; a river
+arriving at the coast will raise the sea; meander noise may only choose between
+neighbours that already run downhill, never decide whether the river goes on;
+fold ridged noise once at the end, not per octave.
 
 **`tools/preview.py` flies a generated map on the PC, and it is this renderer
 rather than a lookalike.** The band schedule, the 8.8 position update with its
