@@ -73,6 +73,40 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   scaled by frame time — and that is **withdrawn**, not deferred. Two things
   survive it, both in Open and both later: a joystick *beside* the keyboard,
   and speed changes that accelerate and brake rather than snapping.
+- **A heat camera.** A view mode that makes a person stand out from the
+  terrain, which is the actual job of a search drone and something this
+  renderer can do for almost nothing: the shared ramp means terrain owns known
+  indices (water 16..23, land 24..149, masonry above that) and each figure owns
+  fifteen of its own, so a thermal view is a **palette swap** — the terrain
+  ramp to a cold gradient, the figure's fifteen to white-hot — and not a
+  drawing change. `vic4_set_range` at the toggle, nothing per frame, and the
+  march never learns about it. Keep the loaded palette to restore from, the way
+  `weather_set` restores a clear sky rather than recomputing one. A key to arm
+  it, and the panel should say so, as sport mode does.
+- **Sound.** There is none at all in `src/` today. Wanted at least a drone hum
+  under a flight — the MEGA65's two SIDs, a voice or two, pitch tracking the
+  speed mode so opening the throttle is audible. Cheap by construction: a
+  handful of register writes when something changes, nothing per frame. After
+  that, the moments worth hearing are the four endings, the cargo release and
+  the low battery.
+- **Snow, as a third weather.** It should be the rain loop with different
+  constants rather than a second system: `weather.c` already has 48 drops in
+  four layers, their state in `LOW_FREE`, and speed/length/colour derived from
+  `i & 3`. Snow is slower, shorter, paler, and drifts sideways — with the
+  *wind's* direction, ideally, which rain does not currently use. The overcast
+  sky it wants is already there. Watch the two budgets: it must reuse the
+  drop arrays (the low free RAM is down to 80 bytes) and it wants its own
+  palette entries, which is where rain's use of 240/241 — the pair reserved for
+  a HUD — has to be settled.
+- **A mission flown in a gale.** The wind is already a launch-time roll of
+  `WIND_MIN..WIND_MAX` (3..10, printed as 1..5 m/s) in `main.c`; a mission
+  that is *hard because of the weather* wants those as a mission-table field,
+  like `cargo` and `weather` — same pattern, and the panel readout already
+  tells the pilot what they are up against. Two things to think about first:
+  it stacks with sport mode's lack of terrain following, which is where a gale
+  gets genuinely dangerous, and `WIND_MPS` is a scale rather than a conversion,
+  so a gale's number has to stay honest against the 1..5 the other missions
+  print.
 - More of the game. `documentation/vision.md` has the design; the two
   missions are the first pieces of it. A third is a table entry and a sprite
   sheet, and there is now room for it: generated maps under `--shared` leave
@@ -187,8 +221,11 @@ Do not re-litigate these without new measurements.
   `cstack`, which is 4096 bytes on a program with no recursion and shallow
   calls — worth measuring with a canary before trusting a smaller one.
 - No HUD over the 3D view. `vision.md` wants an artificial horizon, battery,
-  GPS and signal strength. Palette 240/241 are reserved for it; `hud.c` did
-  exactly this kind of pixel drawing and is in git history if wanted back.
+  GPS and signal strength. `hud.c` did exactly this kind of pixel drawing and
+  is in git history if wanted back. **The two overlay palette entries it was
+  promised are spent**: 240 is the overview crosshair and both are the rain's
+  two depths, so a HUD needs entries of its own out of the free pool — which a
+  generated map leaves 32 of, shared with the figures.
 - `Z_STEP0`, not `HGT_SIZE`, is the lever for near-field detail. A 0.25-cell
   band in front (5x16: 0.25/0.5/1/2/4) reaches 124 cells for 80 samples
   instead of 64 — about 25% more march, ~11 ms — and it is the only thing that

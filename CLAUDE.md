@@ -279,9 +279,11 @@ is only a four-bit field** even in 16-bit character mode — so panel ink has
 to be one of the first sixteen palette entries, which is where the terrain
 colours live. `tools/convmap.py` reserves 1 and 2 by moving the terrain
 colours that were there out to unused slots; palette 0 is the screen colour
-and serves as the paper. Palette entries 240 and 241 stay reserved for a
-future pixel-drawn overlay over the 3D view, where a byte per pixel means any
-of the 256 entries will do.
+and serves as the paper. Palette entries 240 and 241 are `convmap.py`'s
+overlay pair, for things drawn *over* a picture rather than sampled out of a
+map — and both are taken: 240 is the overview crosshair and the two together
+are the rain's near and far depths. A further overlay needs entries out of the
+free pool, not these.
 
 ## The game
 
