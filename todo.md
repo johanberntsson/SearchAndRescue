@@ -156,7 +156,10 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   on the PC. Six checkpoints, one run each, no guessing. Hills are done too
   (`0A1B2AA5`, 0.53 s, right first time), so stage one is 18.78 seconds and
   **the next pass is water** -- the priority flood, the least 6502-shaped code
-  in the generator. `documentation/on-device-maps.md` has the
+  in the generator -- though **measuring it first shrank it**: the island has
+  16 minima, 8 candidates, a heap never over 221 entries and 466 cells
+  flooded, against the tens of thousands the costing assumed. Half of it is
+  done (`76AC0EB9`): the candidates are found. What is left is the flood. `documentation/on-device-maps.md` has the
   costing, every measurement, the handover mechanism and the traps.
 - ~~`stretch` needs a decision before it can be ported~~ **settled**: it clips
   to 65535 now, so a field value fits the uint16 the device stores it in. See

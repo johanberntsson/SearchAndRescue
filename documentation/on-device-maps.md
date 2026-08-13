@@ -198,10 +198,16 @@ generated and painted in one streaming pass. Three passes over the field is the
 shape to design for: build, measure, paint.
 
 **3. The flood fills.** The lake flood is a priority queue plus a visited set,
-which is the least 6502-shaped code in the generator. At 256x256 it is an 8 KB
-bitmap and a heap of a few thousand 4-byte entries, both in chip RAM, and about
-a thousand cycles per cell taken. That is affordable. At 1024x1024 it is not
-obviously so, which is the strongest argument for doing the water coarse.
+which is the least 6502-shaped code in the generator.
+
+> **Measured, and much smaller than this feared.** The island at 512x512 has
+> **16 local minima, 8 candidates after the median cut, a heap that never
+> exceeds 221 entries, and 466 cells flooded** across its three lakes. The
+> paragraph below assumed tens of thousands of minima to argsort and worried
+> about a 128 KB visited set; the real structures are hundreds of bytes. The
+> argument for doing the water coarse is therefore much weaker than it looked,
+> and the memory anxiety does not survive the numbers. One script, before any
+> code — the same move that should precede every remaining pass.
 
 **4. Verifying it.** This is the one with no existing answer — though the
 handover block below is now a worked example of the shape the answer takes. `-dumpmem` writes
@@ -692,6 +698,38 @@ Stage one is **18.78 seconds**, of which about three are `field_checksum` —
 scaffolding that reads the whole field back purely to verify. The passes that
 write the field checksum it as they go and pay nothing.
 
+### Step 8, where a lake could go: 76AC0EB9
+
+The dry local minima and the median cut that keeps the lower half as lake
+candidates — the first half of the water pass. 6.29 s, matching the PC
+(`--stage minima`, checksummed as positions rather than as a field, since that
+is what it produces).
+
+Two passes, because the median cannot be known until every minimum has been
+seen. Neither stores every minimum: the first only counts them into the
+histogram, the second keeps the ones under the cut.
+
+**A three-row window in chip RAM is what makes it bearable** — the structural
+advice at the top of this document, finally used. Eight neighbours a cell would
+otherwise be eight reads out of attic RAM, the expensive direction; streamed a
+row at a time they are chip reads and the field is touched once a pass.
+
+**The work union now carries six things at six different times**: the edge
+caches, the stretch's histogram, the mask's two rows, the texture lattice, the
+dome, and now the window and the candidate list. Each is placed where the one
+before it has finished. This is the pattern for everything that follows — the
+working set is bigger than the program, and always will be — and the placements
+have to be commented with what they sit past, because they are not obvious:
+the histogram runs four bytes into the union's second half, so the window
+starts a row further on than the natural place.
+
+At 6.29 s it is a third of stage one, and it is C over a quarter of a million
+cells twice. That makes it the obvious next thing to move into assembly, with
+the checksum already in place to prove the move changes nothing.
+
+Stage one is **25.05 seconds** with it, of which about three are the
+verification checksum.
+
 ### What is left of the pipeline
 
 In order, with what each needs that is new:
@@ -700,7 +738,7 @@ In order, with what each needs that is new:
 |---|---|
 | ~~island mask~~ | done — see step 6 |
 | ~~hills~~ | done — see step 7 |
-| **water** | the priority flood, which is the least 6502-shaped code in the generator |
+| **water** | half done — the candidates are found (step 8); the flood itself is a heap of at most a few hundred entries and a visited set |
 | colour | gradients, the ramp, the sun, two dithers, and the palette |
 | planes | nothing: writing them in the layout `voxel_asm.s` addresses is what the generator does anyway |
 
