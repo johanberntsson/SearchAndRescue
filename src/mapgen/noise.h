@@ -15,7 +15,11 @@ void noise_init(void);
 
 // Build the field into attic RAM. Returns Fletcher's checksum of it, the two
 // wrapping 16-bit sums packed as b<<16 | a, which is what tools/fbmcheck.py
-// prints for the same map.
+// prints for the same map at `--stage octaves`.
 uint32_t noise_run(void);
+
+// Rescale it between its own 0.5th and 99.5th percentiles, in place. Returns
+// the checksum again -- `--stage stretch` on the PC side.
+uint32_t noise_stretch(void);
 
 #endif

@@ -200,7 +200,14 @@ int main(void)
   // Seconds and hundredths, from a tick count that would overflow a
   // multiply by 100. tps/100 is the ticks in a hundredth of a second.
   printf("     %lu.%02lu SECONDS\n", SECS(ticks), HUNDREDTHS(ticks));
-  printf("     CHECKSUM %04X%04X\n\n", (uint16_t)(sum >> 16), (uint16_t)sum);
+  printf("     CHECKSUM %04X%04X\n", (uint16_t)(sum >> 16), (uint16_t)sum);
+
+  start = profile_now32();
+  sum = noise_stretch();
+  ticks = start - profile_now32();
+  printf("     STRETCH %lu.%02lu S  %04X%04X\n\n",
+         SECS(ticks), HUNDREDTHS(ticks),
+         (uint16_t)(sum >> 16), (uint16_t)sum);
 
   // **What stage one costs, which is not what the noise costs.** The wait
   // below is the difference between this and a stopwatch at the machine, and

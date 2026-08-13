@@ -12,7 +12,13 @@ report.** That is the verification method
 `documentation/on-device-maps.md` asks for, and it is meant to be run on the
 first day of every stage of the port rather than after the first mystery.
 
-    python3 tools/fbmcheck.py maps/island.yaml [--size 512]
+    python3 tools/fbmcheck.py maps/island.yaml [--size 512] [--stage STAGE]
+
+`--stage` says how far down the pipeline to go, and the stages are the ones the
+device has ported so far -- `octaves` for the weighted octave sum and `stretch`
+for that put through the percentile stretch. Each new pass gets a stage here on
+the day it is written, so that every one of them has a number to be checked
+against rather than only the last.
 
 The checksum is Fletcher's, over the field in the order the device writes it
 (row by row, x fastest), with both accumulators taken mod 65536 rather than
@@ -44,6 +50,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("mapfile")
     ap.add_argument("--size", type=int, default=512)
+    ap.add_argument("--stage", default="stretch", choices=("octaves", "stretch"))
     args = ap.parse_args()
 
     spec, _items = genmap.read_map(args.mapfile)
@@ -58,10 +65,12 @@ def main():
     stream = F.Stream(spec["seed"])
     field = genmap.fbm_octaves(args.size, octaves, int(gain * F.ONE), stream,
                                base=base)
+    if args.stage == "stretch":
+        field = genmap.stretch(field)
 
     print(f"{args.mapfile}: size {args.size}, base {base}, "
           f"octaves {octaves}, gain {int(gain * F.ONE)}, seed {spec['seed']}")
-    print(f"checksum {fletcher(field):08X}")
+    print(f"stage {args.stage}: checksum {fletcher(field):08X}")
 
 
 if __name__ == "__main__":

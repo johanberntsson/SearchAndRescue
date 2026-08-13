@@ -60,14 +60,29 @@ static uint32_t amps[OCT];
 static uint16_t wtab[WTAB];
 static uint16_t woff[OCT];
 
+// The stretch's histogram: 1024 buckets of the field, six bits of a value to a
+// bucket. Keep in step with BUCKETSHIFT in tools/genmap.py -- the bucket width
+// lands directly on the map's heights, which is why it is 1024 and not 256.
+#define BUCKETSHIFT 6
+#define BUCKETS     (int)(ONE >> BUCKETSHIFT)
+
 // **The two lattice rows an output row sits between, interpolated along x and
-// kept.** This is the whole of why the inner loop is two multiplies and not
-// four: `top` and `bot` depend on the lattice row, not the pixel row, so they
-// are good for the `step` output rows that share a lattice row -- and when it
-// does change, the new top is the old bot, so a pointer swap and one rebuild
-// covers it. 8 KB, which is what the 32 KB has to spare and what the shorter
-// weight table above pays for.
-static uint16_t edge_a[OCT][SIZE], edge_b[OCT][SIZE];
+// kept, and the histogram that shares their memory.** The caches are why the
+// octave loop is two multiplies a pixel and not four: `top` and `bot` depend on
+// the lattice row, not the pixel row, so they are good for the `step` output
+// rows that share a lattice row -- and when it does change, the new top is the
+// old bot, so a pointer swap and one rebuild covers it.
+//
+// The union is the same bargain the loader's staging buffer strikes with the
+// sprite's: **the two are never live at the same moment.** The caches are dead
+// the instant the field is finished, and the histogram is not read until the
+// pass after that. It matters because 8 KB and 4 KB do not both fit -- stage
+// one has under 4 KB of its 32 spare with the caches in it.
+static union {
+  uint16_t edge[2][OCT][SIZE];
+  uint32_t hist[BUCKETS + 1];
+} work;
+
 static uint16_t *e_top[OCT], *e_bot[OCT];
 static uint16_t e_row[OCT];   // which lattice row e_top holds
 #define E_NONE 0xFFFF
@@ -89,15 +104,20 @@ __zpage uint32_t nz_amp;
 __zpage uint16_t nz_t, nz_b, nz_d, nz_n;
 __zpage uint8_t nz_chunks;
 
-// ... and the store pass's, in src/mapgen/store_asm.s. The two checksum
-// accumulators live here rather than in noise_run because they carry across
-// every row of the field.
+// ... and the store and stretch passes', in store_asm.s and stretch_asm.s. The
+// two checksum accumulators live here rather than in a caller because they
+// carry across every row of the field. nz_recip is the weight reciprocal for
+// the store pass and the stretch's own afterwards: the two never overlap, and
+// zero page has nothing to spare.
 uint8_t __far *__attribute__((zpage)) nz_out;
+uint32_t *__attribute__((zpage)) nz_hist;
 __zpage uint32_t nz_recip;
-__zpage uint16_t nz_sum_a, nz_sum_b;
+__zpage uint16_t nz_sum_a, nz_sum_b, nz_lo, nz_ptr;
 
 void noise_blend(void);
 void noise_store(void);
+void stretch_hist(void);
+void stretch_apply(void);
 
 // The lattice hash. genmap.py does this in integers already -- it is the one
 // part of the generator that was portable from the start -- so this is the
@@ -163,8 +183,8 @@ void noise_init(void)
       wtab[wo + x] = smoothstep16((uint16_t)(x << (FRACBITS - sh)));
     wo = (uint16_t)(wo + step);
 
-    e_top[o] = edge_a[o];
-    e_bot[o] = edge_b[o];
+    e_top[o] = work.edge[0][o];
+    e_bot[o] = work.edge[1][o];
     e_row[o] = E_NONE;
 
     amps[o] = amp;
@@ -279,3 +299,66 @@ uint32_t noise_run(void)
 // field; but it re-rolls every map by up to one part in 65536, so it is a
 // decision to take deliberately and to check the PNGs against, not a detail
 // to settle in the C.
+
+// --- the percentile stretch ------------------------------------------------
+//
+// `stretch` from tools/genmap.py: rescale the field so that its 0.5th
+// percentile is 0 and its 99.5th is 1.0, both found by histogram because the
+// machine cannot sort a quarter of a million values -- and neither would want
+// to, since a histogram gives both cut points in one pass.
+//
+// **This is the "measure" of build, measure, paint**, and it is why the
+// pipeline cannot be one streaming pass: nothing can be painted until the
+// whole field has been looked at. Three passes over the field is the shape,
+// and this is the second and third of them.
+
+// The value num/den of the way up the field, in Q0.16. Interpolating inside
+// the bucket is not a nicety: this number scales the whole field, so a bucket
+// of error moves every pixel. One divide, and only twice a map.
+static uint32_t percentile(uint32_t want)
+{
+  uint32_t cum = 0, below = 0, inside;
+  uint16_t b;
+
+  for (b = 0; b < BUCKETS; b++) {
+    below = cum;
+    cum += work.hist[b];
+    if (cum >= want)
+      break;
+  }
+
+  inside = work.hist[b];
+  return ((uint32_t)b << BUCKETSHIFT)
+       + (inside ? ((want - below) << BUCKETSHIFT) / inside : 0);
+}
+
+uint32_t noise_stretch(void)
+{
+  uint32_t lo, hi, span;
+  uint16_t y, b;
+
+  for (b = 0; b <= BUCKETS; b++)
+    work.hist[b] = 0;
+
+  nz_hist = work.hist;
+  for (y = 0; y < SIZE; y++) {
+    nz_out = (uint8_t __far *)(NOISE_FIELD + (uint32_t)y * (SIZE * 2));
+    stretch_hist();
+  }
+
+  lo = percentile((uint32_t)SIZE * SIZE * 5 / 1000);
+  hi = percentile((uint32_t)SIZE * SIZE * 995 / 1000);
+  span = hi > lo ? hi - lo : 1;
+
+  nz_lo = (uint16_t)lo;
+  nz_recip = recip32(span);
+  nz_sum_a = 0;
+  nz_sum_b = 0;
+
+  for (y = 0; y < SIZE; y++) {
+    nz_out = (uint8_t __far *)(NOISE_FIELD + (uint32_t)y * (SIZE * 2));
+    stretch_apply();
+  }
+
+  return (uint32_t)nz_sum_b << 16 | nz_sum_a;
+}
