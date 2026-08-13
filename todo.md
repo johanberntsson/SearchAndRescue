@@ -25,6 +25,10 @@ overview map, 12.5 fps (`PROFILE=0`, default map sizes; the rain costs 0.68 ms
 of that on mission two). The march is 160 rays; each fills the two pixels it
 owns.
 
+**The disk boots in two stages.** `AUTOBOOT.C65` is stage one, which prepares
+attic RAM and hands the machine to `SAR`; it is the frame the on-device map
+generator goes in, and today it carries a proof block instead. See Done.
+
 Build knobs, all in the Makefile:
 
 | | |
@@ -127,14 +131,15 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   (there is a spare 2 MB attic slot and 270 KB spare on the disk), and a
   mission is a table entry naming one. What is *not* cheap is a third figure —
   see the palette budget in Resources.
-- **On-device map generation, step 2: the C port.** Step 1 is done —
-  `tools/genmap.py` is integers now (`tools/fixed.py` is the arithmetic), so
-  what it computes is what a 45GS02 would. Next is a stage-one PRG that
-  generates one 512x512 field into attic RAM, times itself with `src/profile.c`
-  and prints a checksum the PC tool can match: that one experiment settles the
-  dominant term of the estimate and proves the two-stage boot at once.
+- **On-device map generation, step 2: `fbm` in stage one.** Steps 1 and 2a are
+  done — `tools/genmap.py` is integers (`tools/fixed.py` is the arithmetic), and
+  **the two-stage boot works**: `AUTOBOOT.C65` is stage one, it fills attic RAM,
+  chains to `SAR` with ozmoo's keyboard-queue trick, and the game finds every
+  byte of it. So the next experiment measures only itself: one 512x512 field
+  generated into attic RAM, timed with `src/profile.c`, checksummed against the
+  PC. That settles the dominant term of the estimate.
   `documentation/on-device-maps.md` has the costing, the measured budget it has
-  to beat, and the traps the rewrite turned up.
+  to beat, the handover mechanism, and the traps the rewrite turned up.
 - **Procedural maps, stage three.** The generator and the previewer are both
   done, and the items that are terrain are built (see Done). Next is
   **`mission.bin`, and it is a different file from `map.bin`** — a mission has
@@ -219,7 +224,10 @@ Do not re-litigate these without new measurements.
   96.5% full** (80 bytes). The easy reclaims are spent: the staging buffers
   are merged and everything movable is already at $1600. The next lever is
   `cstack`, which is 4096 bytes on a program with no recursion and shallow
-  calls — worth measuring with a canary before trusting a smaller one.
+  calls — worth measuring with a canary before trusting a smaller one. **This
+  is no longer optional**: adding the handover check overran the link by 15
+  bytes before it was trimmed, so the next thing the game gains has to pay for
+  itself out of `cstack` or out of something else being deleted.
 - No HUD over the 3D view. `vision.md` wants an artificial horizon, battery,
   GPS and signal strength. `hud.c` did exactly this kind of pixel drawing and
   is in git history if wanted back. **The two overlay palette entries it was
@@ -239,6 +247,19 @@ Do not re-litigate these without new measurements.
 
 ## Done
 
+- **The two-stage boot.** The disk holds two programs: `AUTOBOOT.C65` is stage
+  one (`src/mapgen/`), which prepares attic RAM and hands the machine to `SAR`,
+  the game. It exists because the game already fills the 32 KB at $2001 and a
+  generator is several times the code a *loader* is — and it works because
+  **attic RAM survives a program load**. Measured on the disk: 16384 bytes
+  written by stage one, every one of them identical when the game read them
+  back. The chain is **ozmoo's restart trick** — the command goes in the C65's
+  keyboard queue at $02B0 (count at $D0, not the C64's $0277/$C6) and the
+  screen editor types `RUN"SAR"` for us after `main` returns. Two routes that
+  fight Calypsi rather than the machine were abandoned for it, both written up
+  in `documentation/on-device-maps.md`. What stage one writes today is a proof
+  block, not a map; `src/handover.c` is scaffolding and goes when a real map
+  proves the handover by being flyable.
 - **Two maps on one disk, one per mission.** Mission one is flown over
   `maps/island.yaml` and mission two over `maps/plains.yaml`, both generated,
   both resident in attic RAM at once. **This was impossible with a drawn map**:

@@ -26,9 +26,13 @@ neighbouring pixels; see Performance.
 
 ## Build and run
 
+**The disk carries two programs now.** `AUTOBOOT.C65` is *stage one*
+(`src/mapgen/`), which prepares attic RAM and then hands the machine to `SAR`,
+the game. See The two-stage boot.
+
 ```sh
 make run          # build build/sar.d81 and boot it in xemu
-make prg          # skip the disk, run the PRG directly (no resources available)
+make prg          # skip the disk and stage one, run the game PRG directly
 make PROFILE=0    # without the per-column instrumentation; use this for timing
 make FLYNOW=1     # skip the title and menus, launch straight into mission 1
 make FLYNOW=2     # ... or mission 2, the only headless way to reach its map
@@ -546,6 +550,58 @@ Calypsi figure and four times what the terrain span fill costs in assembly.
 That is the obvious next optimisation and has not been done: at any distance
 you would actually search from it is a fraction of a millisecond, and only
 flying right up to somebody makes it visible in the frame time.
+
+## The two-stage boot
+
+The disk holds two programs. `AUTOBOOT.C65` is **stage one**, `src/mapgen/`,
+which the ROM boots; it prepares attic RAM and then chains to `SAR`, the game.
+They share nothing but the disk and `src/handover.h`, which is the contract for
+the block stage one leaves behind.
+
+**Why two programs.** The game already fills the 32 KB at `$2001` — 97.6%, about
+790 bytes free — and a map generator is several times the code a *loader* is.
+The two are never live at the same moment and **attic RAM survives a program
+load**, so stage one can fill the attic and vanish. It pays twice: stage one
+owns the whole 32 KB and banks 1, 4 and 5, because no framebuffer or screen
+table exists yet, and the game eventually loses the loader and the exomizer
+decruncher. `documentation/on-device-maps.md` has the costing.
+
+**The chain is ozmoo's restart trick**: the command goes in the keyboard queue,
+`main` returns, BASIC prints `READY` and the screen editor reads the queue as
+though somebody had typed `RUN"SAR"`. Four things about it:
+
+- the C65's queue is **`$02B0` with the count at `$D0`**, not the C64's
+  `$0277`/`$C6`. ozmoo's own MEGA65 build uses the C64 pair because it runs the
+  machine in C64 mode; this game runs under BASIC 65.
+- `RUN"SAR"` is nine bytes, so the whole line fits the sixteen-byte queue.
+  ozmoo prints its command to the screen and queues only the RETURN, because
+  its line is longer than that.
+- the screen does **not** have to be cleared first. The editor executes the
+  logical line the cursor is on and `READY` leaves it at the start of a fresh
+  one, so stage one's report scrolls out of the way by itself — worth keeping,
+  since it is all there is to look at if the handover fails.
+- **a pure-BASIC stage one would need a `NEW` before the `RUN`.** A PRG chained
+  this way does not: `RUN"file"` resets the pointers itself.
+
+The two routes not taken are written up in `on-device-maps.md`, both of which
+fight Calypsi rather than the machine: a second BASIC line cannot be squeezed
+past the fixed `SYS 8206` stub (`mega65-plain.scm` pins `startup` at `$200E`
+and the library's stub section is `root`), and a loader of our own has nowhere
+to stand while 32 KB is loaded over it.
+
+**The name on disk is the contract.** `GAME_NAME` in `src/mapgen/mapgen.c` has
+to match the Makefile's `$(PRG)` basename, because `diskutil.rb` names a file
+on disk after its host file.
+
+What stage one writes today is a proof block, not a map: a raster-drawn seed
+and 16 KB of xorshift, which the game compares byte for byte and reports on its
+boot screen (`STAGE ONE <seed>`, `NO STAGE ONE`, or `CORRUPT`). Two details
+that are not decoration, because **attic RAM is not cleared by a reset**: the
+seed is drawn rather than fixed, so the block cannot pass its own test forever,
+and the game clears the magic once it has read it, so a stale block reads as
+absent. Note xemu is deterministic and hands out seed 27756 every boot, so the
+freshness only really means something on hardware. `src/handover.c` is
+scaffolding and goes when a real map proves the handover by being flyable.
 
 ## Resources
 

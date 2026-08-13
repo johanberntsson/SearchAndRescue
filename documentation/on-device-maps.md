@@ -195,7 +195,8 @@ bitmap and a heap of a few thousand 4-byte entries, both in chip RAM, and about
 a thousand cycles per cell taken. That is affordable. At 1024x1024 it is not
 obviously so, which is the strongest argument for doing the water coarse.
 
-**4. Verifying it.** This is the one with no existing answer. `-dumpmem` writes
+**4. Verifying it.** This is the one with no existing answer — though the
+handover block below is now a worked example of the shape the answer takes. `-dumpmem` writes
 **chip RAM only**, so it cannot see a map in attic RAM at all, and `checkview`
 compares a rendered *picture*, which would catch a broken generator but not
 tell you where. The answer that costs nothing: have the generator compute a
@@ -339,5 +340,69 @@ screenshot was of a map that no longer exists, so it was retaken.
 
 **Step 1 is done.** What is left is the machine itself: `fixed.py` and then the
 pipeline into C, one routine at a time, each with the checksum verification
-above — starting with `fbm`, the experiment that settles the dominant term of
-the estimate and proves the two-stage boot at the same time.
+above.
+
+**Step 2a, the two-stage boot: done, and it is not the same job as the
+generator.** The plan above bundled "prove the boot" with "port `fbm`", on the
+grounds that one experiment settles both. Splitting them was worth it: the boot
+is a mechanism that either works or does not, and having it proved means the
+first real generator pass can be judged on its own numbers rather than on
+whether the machine came back at all.
+
+`AUTOBOOT.C65` is stage one now (`src/mapgen/`) and the game is `SAR` on the
+same disk. Stage one writes a block into attic RAM and chains; the game reads
+it back and reports on its boot screen. Measured: **`STAGE ONE 27756`, all
+16384 bytes identical after the program load.** Started on its own the game
+says `NO STAGE ONE` and carries on, which is what `make prg` does.
+
+### How the handover is done, and the two routes not taken
+
+**The chain is ozmoo's restart trick** (`z_ins_restart`, `asm/disk.asm`): put
+the command in the keyboard queue, return to BASIC, and let the screen editor
+read it as though somebody had typed it. On the C65 that queue is **`$02B0`
+with the count in zero page at `$D0`** — *not* the C64's `$0277`/`$C6`, which
+is what ozmoo's own MEGA65 build uses, because that build runs the machine in
+C64 mode and this game runs under BASIC 65. `RUN"SAR"` is nine bytes, so the
+whole line fits the sixteen-byte queue and the editor echoes it; ozmoo prints
+its command to the screen and queues only the RETURN because its line is longer
+than that and needs cursor movement in it.
+
+The screen need not be cleared first. The editor executes the logical line the
+cursor is on, and BASIC's `READY` leaves it at the start of a fresh one, so
+stage one's report simply scrolls out of the way — which is worth keeping,
+since it is the only thing on screen if the handover fails. **A pure-BASIC
+stage one would need a `NEW` before the `RUN`**; a PRG chained this way does
+not, because `RUN"file"` resets the pointers itself.
+
+Two routes were being built towards before that, and both fight the toolchain
+rather than the machine:
+
+- **a second BASIC line in stage one's own stub.** BASIC would run `10 SYS
+  8206` and then `20 RUN"SAR"` with no keyboard queue involved, but Calypsi's
+  stub is fixed: `mega65-plain.scm` pins `startup` at `$200E`, exactly the
+  thirteen bytes `10 SYS 8206` occupies, and the library's `programStart`
+  section is `root`, so overriding the `.pubweak __program_root_section` does
+  not remove it. It needs a private linker script and a private stub, to buy
+  what the keyboard queue gives for nothing.
+- **stage one doing the Kernal `LOAD` itself.** The game is 32 KB at `$2001`
+  and stage one is at `$2001`, so the loading code has to be somewhere the
+  incoming program will not land on — and the only spare chip RAM in the 64 K
+  window is `$1600-$1EFF`, which is exactly the region that must not be used
+  across a Kernal disk call. The ROM does the whole thing after we are gone
+  instead.
+
+### What it cost the 32 KB, and what that says
+
+The game-side check is scaffolding, written to be deleted: no checksum field,
+because generating the stream and comparing every byte is both stronger and
+smaller, and one format string behind a table rather than a `printf` per case.
+Even so **the link failed by 15 bytes** on the first attempt, with `cstack`'s
+4096 unable to place. It fits now with `cstack` untouched, but that is the
+margin: the measurement `todo.md` asks for — a canary in `cstack` on a program
+with no recursion — is on the critical path for the generator, not a
+nice-to-have. It is also exactly the pressure the split is meant to relieve, in
+the other direction: stage one has the whole 32 KB to itself.
+
+Next is `fbm` in stage one — one 512x512 field into attic RAM, timed with
+`src/profile.c`, checksummed against the PC. That now measures only what it is
+meant to.

@@ -70,6 +70,17 @@ else. And the arithmetic is the MEGA65's own — Q0.16 integers, reciprocals,
 tables, histograms instead of sorts — because the next step is to generate the
 maps on the machine itself; `documentation/on-device-maps.md` costs that out.
 
+**The disk boots in two stages, which is the frame the generator will go in.**
+`AUTOBOOT.C65` is stage one: it prepares attic RAM and then hands the machine
+to `SAR`, the game. Two programs rather than one because the game already fills
+the 32 KB it is given and a generator is far more code than the *loader* it
+would replace — and it works because attic RAM survives a program load, so
+stage one can fill it and vanish. Handing over is done the way
+[ozmoo](https://github.com/johanberntsson/ozmoo) restarts itself: put
+`RUN"SAR"` in the keyboard queue and let the screen editor type it once BASIC
+is back. Stage one writes a proof block for now, and the game says on its boot
+screen whether every byte of it arrived.
+
 `tools/preview.py` flies one on the PC **with the game's own
 renderer** — the same march, projection, map sampling and flight model, at the
 same 12.5 frames a second, with the constants read out of `src/` rather than
