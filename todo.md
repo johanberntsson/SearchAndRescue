@@ -148,14 +148,16 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
 - ~~`stretch` needs a decision before it can be ported~~ **settled**: it clips
   to 65535 now, so a field value fits the uint16 the device stores it in. See
   Done for what that cost.
-- **Loading the game is 31 seconds on hardware against 23 in xemu**, and that
-  8-second gap is now the *only* place the machine is slower than the emulator
+- **Loading the game and its resources is the larger half of the boot now**,
+  around 24 seconds of the 36, and it is the *only* place the machine is
+  slower than the emulator
   -- it is a real drive against an instant one. Johan's suggestion is to
   exomizer the game the way the maps already are; `src/exo_asm.s` is the
   decruncher and it is stage one that would need a copy of it. Worth doing once
   the generator is real, since the maps stop being files then and most of those
-  31 seconds goes with them. A whole boot is 50 seconds on hardware today,
-  against roughly 95 before the rewrite.
+  24 seconds goes with them. A whole boot is **36 seconds** on hardware today
+  -- 12 to the handover and 24 more to the title -- against roughly 95 before
+  the rewrite.
 - **Procedural maps, stage three.** The generator and the previewer are both
   done, and the items that are terrain are built (see Done). Next is
   **`mission.bin`, and it is a different file from `map.bin`** — a mission has

@@ -50,7 +50,7 @@ So the honest table is:
 | `convmap.py` in the loop | yes | no — the generator writes the planes |
 
 The first row is now a fact rather than a projection: the disk carries the
-island at 152 KB and the plains at 335 KB, both resident in attic RAM at once,
+island at 159 KB and the plains at 334 KB, both resident in attic RAM at once,
 and the game switches between them for 512 bytes of plane table. A generated
 map varies more than expected -- the plains are twice the island, being all
 small features and dither where the island is mostly flat sea -- so "about
@@ -557,11 +557,15 @@ instant one. That is the next thing worth attacking, by crunching the game the
 way the maps already are, and it disappears anyway once the generator is real
 and the maps stop being files.
 
-The whole boot is 50 seconds on hardware, against roughly 95 before this work.
+**A whole boot on hardware is 36 seconds**, against roughly 95 before this
+work: 12 to the handover -- about 9.4 of generating, 4 of looking at the report
+and the ROM's own start -- and 24 more to the title screen. The generator is
+now a third of the boot and the disk is two thirds of it, which is the reverse
+of where this started.
 
 **And the generator only does one map.** The disk carries two, and the game
 still loads both off it; when the generator covers both it will be about 19
-seconds of generating against the 31 of loading it replaces. That is the
+seconds of generating against the 24 of loading it replaces. That is the
 comparison that actually decides whether on-device generation is worth booting
 into, and it is close enough that the passes still to be ported -- stretch,
 mask, hills, water, colour -- matter to the answer.
