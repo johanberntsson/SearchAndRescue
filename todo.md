@@ -146,8 +146,12 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   in C and the per-pixel loop in assembly straight away**, never the loop in C
   first; and keep a checksum per stage, because it is what lets an optimisation
   be proved not to change the output. The stretch is done -- 1.98 s, `081B1D88`
-  both sides, right first try with those rules applied -- so stage one is 11.43
-  seconds and the next pass is the island mask. `documentation/on-device-maps.md` has the
+  both sides, right first try with those rules applied -- as is the type's floor
+  and range after it (`580E8476`), folded into the same pass rather than given
+  one of its own. Stage one is 12.10 seconds. **The next pass is the island
+  mask**, and it is the largest of the five left: it needs a per-pixel square
+  root, table and normalisation both, which nothing in the generator has
+  wanted yet. `documentation/on-device-maps.md` has the
   costing, every measurement, the handover mechanism and the traps.
 - ~~`stretch` needs a decision before it can be ported~~ **settled**: it clips
   to 65535 now, so a field value fits the uint16 the device stores it in. See

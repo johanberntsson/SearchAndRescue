@@ -610,9 +610,38 @@ Three things it settled that the next passes inherit:
   pass.** The reciprocal goes in once and never moves, as the store pass's
   weight does. The clip then costs only a test of the product's top four bytes.
 
-Stage one is **11.43 seconds**: 9.26 of noise, 1.98 of stretch, 0.19 of
-everything else — the lattices, the weight tables and the handover block, which
-are worth knowing are negligible before anybody optimises them.
+### Step 5, the type's floor and range: folded, not added
+
+`base_terrain` puts the stretched field onto the type's own elevation range —
+`floor + scale(n, range)`. It went into the paint pass rather than getting one
+of its own, which is the "fold passes together" rule applied for the first
+time, and it cost **0.66 s** against the second or so a fresh pass over the
+field would have. `580E8476` both sides (`--stage shape`).
+
+The ridged fold that belongs between the stretch and the affine is **not**
+implemented, and that is deliberate rather than forgotten: the island is not
+ridged and the device still has one map's parameters hard-coded, so it goes in
+when a map file is read. It is not an idle case — it is the fold that re-rolled
+the highlands when the stretch's ceiling moved.
+
+Stage one is **12.10 seconds**: 9.28 of noise, 2.64 of stretch and shape, 0.18
+of everything else — the lattices, the weight tables and the handover block,
+which are worth knowing are negligible before anybody optimises them.
+
+### What is left of the pipeline
+
+In order, with what each needs that is new:
+
+| pass | new machinery |
+|---|---|
+| **island mask** | a per-pixel `sqrt` — the table plus its normalisation — and one more value-noise octave for the coastline's wobble |
+| hills | disc stamps, an exact `isqrt`, and placement draws |
+| water | the priority flood, which is the least 6502-shaped code in the generator |
+| colour | gradients, the ramp, the sun, two dithers, and the palette |
+| planes | nothing: writing them in the layout `voxel_asm.s` addresses is what the generator does anyway |
+
+The mask is next and is the largest single step of the five, because the square
+root is per pixel and nothing else in the generator has needed one yet.
 
 What that means for the plan:
 
