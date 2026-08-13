@@ -98,17 +98,18 @@ CANARY:     .equ 0xa5
 ; BASIC itself.
 ROMMAP:     .equ 0xd030
 ROM_BASIC:  .equ 0x10
+ROM_C000:   .equ 0x20
 
             .public basic_in
 
 basic_in:   lda     ROMMAP
-            ora     #ROM_BASIC
+            ora     #ROM_BASIC | ROM_C000
             sta     ROMMAP
             rts
 
 __low_level_init:
             lda     ROMMAP
-            and     #~ROM_BASIC & 0xff
+            and     #~(ROM_BASIC | ROM_C000) & 0xff
             sta     ROMMAP
 
             lda     #.byte0 (.sectionStart cstack)

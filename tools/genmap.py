@@ -754,7 +754,12 @@ def place_items(h, water, items, size):
         tier = np.clip((half - out) // terrace + 1, 1, steps)
         band = ((half - out) % terrace) < riser
 
-        base = min(percentile(h[box], 1, 2), ONE - height)
+        # **MASK, not ONE.** The cap exists so the apex cannot go over 1.0,
+        # and against ONE it lands on exactly 1.0 -- seventeen bits, which the
+        # uint16 a field value is stored in cannot hold. One step lower is a
+        # part in 65536 of the range, and it is the same decision stretch()
+        # takes a few hundred lines up.
+        base = min(percentile(h[box], 1, 2), MASK - height)
         h[box] = base + (height * tier) // steps
         built[box] = np.where(band, ONE, 0)
     return built

@@ -29,6 +29,10 @@ device has ported so far:
               is an intermediate rather than a stage of the map
     rivers    ... carved. Two checksums, of the terrain and of the level, since
               carving moves both
+    built     ... with the water flattened into the terrain and the map file's
+              items terraformed in. Two checksums, the terrain and the
+              built mask
+    colour    ... turned into palette indices, which is what the renderer eats
     lakes     ... flooded. The checksum is of the *water level* field, which is
               -1 where the ground is dry, the sea level where it is sea, and
               the lake's surface where a basin filled -- so it carries both
@@ -69,7 +73,8 @@ def main():
     ap.add_argument("--size", type=int, default=512)
     ap.add_argument("--stage", default="shape",
                     choices=("octaves", "stretch", "shape", "terrain", "hills",
-                             "minima", "lakes", "flow", "rivers"))
+                             "minima", "lakes", "flow", "rivers",
+                             "built", "colour"))
     args = ap.parse_args()
 
     spec, _items = genmap.read_map(args.mapfile)
@@ -82,15 +87,48 @@ def main():
     # genmap.py reaches the same call, which for the octave sum means freshly
     # seeded: base_terrain is the first thing generate() does.
     stream = F.Stream(spec["seed"])
-    if args.stage in ("terrain", "hills", "minima", "lakes", "flow", "rivers"):
+    if args.stage in ("terrain", "hills", "minima", "lakes", "flow", "rivers",
+                      "built", "colour"):
         # genmap.py's own function, so the mask and the draw order after it
         # cannot drift from what the maps are actually built with.
         spec["lattice"] = base
         spec["feature"] = scale["feature"]
         spec["sea"] = genmap.TYPES[spec["type"]]["sea"]
         field = genmap.base_terrain(args.size, spec, stream)
-        if args.stage in ("hills", "minima", "lakes", "flow", "rivers"):
+        if args.stage in ("hills", "minima", "lakes", "flow", "rivers",
+                          "built", "colour"):
             genmap.add_hills(field, spec, stream, int(spec["sea"] * F.ONE))
+        if args.stage in ("built", "colour"):
+            import numpy as np
+            sea = int(spec["sea"] * F.ONE)
+            water = field <= sea
+            level = np.where(water, sea, -1)
+            genmap.fill_lakes(field, water, level, spec, stream)
+            genmap.carve_rivers(field, water, level, spec, stream)
+            water |= field <= sea
+            level = np.where(water & (level < sea), sea, level)
+            bed = field.copy()
+            field = np.where(water, level, field)
+            built = genmap.place_items(field, water, _items, args.size)
+            if args.stage == "built":
+                print(f"{args.mapfile}: {int((built >= 0).sum())} built cells")
+                # -1 unbuilt, 0 tread, 1 riser: `built` itself is ONE on a
+                # riser, which does not fit the word the device stores it in,
+                # and masking it to 16 bits would make it indistinguishable
+                # from a tread.
+                flag = np.where(built < 0, 0xFFFF, np.where(built > 0, 1, 0))
+                print(f"stage built: terrain {fletcher(field):08X} "
+                      f"mask {fletcher(flag):08X}")
+                return
+            folder = __import__("os").path.dirname(
+                __import__("os").path.abspath(args.mapfile))
+            pal = genmap.load_palette(__import__("os").path.join(folder,
+                                                                 "palette.yaml"))
+            idx, _rgb = genmap.colourise(field, bed, water, level, built,
+                                         spec, pal, stream)
+            print(f"{args.mapfile}: colour indices")
+            print(f"stage colour: checksum {fletcher(idx.astype(int)):08X}")
+            return
         if args.stage in ("flow", "rivers"):
             import numpy as np
             sea = int(spec["sea"] * F.ONE)

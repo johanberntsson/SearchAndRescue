@@ -14,8 +14,9 @@
 ;;; ever written by the program itself, after __low_level_init has banked BASIC
 ;;; out -- so the question does not arise. Code and initialised data stay low.
 ;;;
-;;; The ROM at $C000 is left mapped. It is another 4 KB and the C65 keeps parts
-;;; of its kernel there, so it is a separate decision from this one.
+;;; $C000-$CFFF is banked out with it, for 12 KB in all. The KERNAL at $E000
+;;; stays: printf goes through it and the interrupt vectors live in it, which
+;;; is what keeps this free of SEI and a handler of our own.
 
 (define memories
   '((memory program
@@ -25,7 +26,7 @@
     ;; so all-or-nothing does not place. What goes here is chosen in the source
     ;; with HIGH_BSS, and the first tenant is the 8 KB work union.
     (memory highram
-            (address (#xa000 . #xbfff)) (type any)
+            (address (#xa000 . #xcfff)) (type any)
             (section highbss))
     (memory zeroPage (address (#x2 . #x7f)) (type ram) (qualifier zpage)
             (section (registers #x2)))

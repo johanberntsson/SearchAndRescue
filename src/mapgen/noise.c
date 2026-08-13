@@ -114,6 +114,9 @@ static uint32_t amps[OCT];
 static uint16_t wtab[WTAB];
 static uint16_t woff[OCT];
 
+// Under the banked-out ROMs at $A000-$CFFF: see mega65-sar.scm.
+#define HIGH_BSS __attribute__((section("highbss")))
+
 // The stretch's histogram: 1024 buckets of the field, six bits of a value to a
 // bucket. Keep in step with BUCKETSHIFT in tools/genmap.py -- the bucket width
 // lands directly on the map's heights, which is why it is 1024 and not 256.
@@ -137,8 +140,6 @@ static uint16_t woff[OCT];
 // single thing stage one owns -- so it is the one that moves. See
 // mega65-sar.scm, and src/mapgen/kernal.s for the register that banks BASIC
 // out before the C runtime touches anything.
-#define HIGH_BSS __attribute__((section("highbss")))
-
 HIGH_BSS static union {
   uint16_t edge[2][OCT][SIZE];
   uint32_t hist[BUCKETS + 1];
@@ -150,7 +151,7 @@ static uint16_t e_row[OCT];   // which lattice row e_top holds
 
 // One row of the octave sum, at Q8.16 -- the sum reaches several times ONE
 // before it is normalised. In chip RAM on purpose: see above.
-static uint32_t acc[SIZE];
+HIGH_BSS static uint32_t acc[SIZE];
 
 static uint32_t weight_recip;
 
@@ -159,7 +160,7 @@ static uint32_t weight_recip;
 // coming out of attic RAM and 9.54 going in, which is a fraction of that -- and
 // once a row is in chip RAM the arithmetic on it is near addressing.
 // documentation/on-device-maps.md has the measured rates.
-static uint16_t rowbuf_a[SIZE], rowbuf_b[SIZE];
+HIGH_BSS static uint16_t rowbuf_a[SIZE], rowbuf_b[SIZE];
 
 static void row_in(uint16_t *dst, uint32_t src)
 {
@@ -1651,5 +1652,167 @@ uint32_t rivers_carve(uint32_t *level_sum)
     }
     *level_sum = (uint32_t)lb << 16 | la;
   }
+  return (uint32_t)b << 16 | a;
+}
+
+// --- the water flattened in, and the things built on top -------------------
+//
+// **The flatten is finished and verified; the pyramid is not, and
+// `built_place` is not called.** water_flatten alone gives C1E23E90, which is
+// exactly the PC's, so the half of this that matters to every later pass is
+// right. items_place is wrong somewhere in its heights: the site's median is
+// exact (50095, and the cap 42598 after the MASK decision below), the built
+// mask is exact (F7260E72), and the terrain is not -- at the apex the device
+// has 5311 where the PC has 65535 and at the rim 49140 against 46420. Since
+// the base and the mask are both right, the fault is in the tier-to-height
+// step and nowhere else, which is four lines to read with fresh eyes.
+//
+// Two things found on the way that are already fixed and worth keeping:
+//
+//   - **`(uint32_t)span * span / 2` reached the callee as zero.** Computed
+//     into a uint32_t variable first it is 2401, and the percentile went from
+//     0 to the exact 50095. Mixed widths in one expression, which is the
+//     family CLAUDE.md warns about twice already.
+//   - **the pyramid's cap is MASK, not ONE.** It exists so the apex cannot go
+//     over 1.0, and against ONE it lands on exactly 1.0 -- seventeen bits.
+//     tools/genmap.py takes the same decision now, the same one stretch()
+//     takes; the maps were re-rolled and checkview still passes, so the
+//     renderer's reference is unaffected.
+//
+// Two small passes that stand between the rivers and the colour.
+//
+// **Water surfaces are flat**, and that is the only reason a lake is a lake:
+// the renderer has no idea what water is, so a body of it is a body of equal
+// heights. `bed` keeps the ground underneath, because the colour shades water
+// by how deep it is.
+//
+// **A built thing is not weathered by anything the generator does**, which is
+// why it goes last -- nothing may flood it or cut a channel through it.
+#define BED_FIELD   (MAP_SLOT(1) + 0x80000UL)
+#define BUILT_FIELD (MAP_SLOT(1) + 0x100000UL)
+
+#define PYR_CY      137        // the map file's 274, at half scale
+#define PYR_CX      213        // ... and its 426
+#define PYR_HALF    24
+#define PYR_TERRACE 4
+#define PYR_RISER   2
+#define PYR_STEPS   6
+#define PYR_HEIGHT  22937UL    // 42 of HEIGHT_MAX's 120, in Q0.16
+
+static void water_flatten(void)
+{
+  uint16_t x, y;
+
+  for (y = 0; y < SIZE; y++) {
+    uint32_t hoff = NOISE_FIELD + (uint32_t)y * (SIZE * 2);
+    uint32_t loff = LEVEL_FIELD + (uint32_t)y * (SIZE * 2);
+
+    row_in(rowbuf_a, hoff);
+    row_in(rowbuf_b, loff);
+    row_out(BED_FIELD + (uint32_t)y * (SIZE * 2), rowbuf_a);
+
+    for (x = 0; x < SIZE; x++) {
+      uint16_t lv = rowbuf_b[x];
+
+      // carving can cut ground down to the sea, which makes it water
+      if (lv == DRY && rowbuf_a[x] <= SEA)
+        lv = (uint16_t)SEA;
+      if (lv != DRY) {
+        if (lv < SEA)
+          lv = (uint16_t)SEA;
+        rowbuf_a[x] = lv;
+      }
+      rowbuf_b[x] = lv;
+    }
+    row_out(hoff, rowbuf_a);
+    row_out(loff, rowbuf_b);
+  }
+}
+
+// The pyramid. Its site is levelled to the median of what it covers, which is
+// the same 1024-bucket histogram the stretch uses -- a ninth of a height unit,
+// finer than the terraces being levelled for.
+static void items_place(void)
+{
+  int16_t dy, dx;
+  uint16_t b, base;
+  uint32_t cum = 0;
+
+  dma_fill(BUILT_FIELD, 0xFF, 0);        // 64 KB a call; the field is eight
+  for (b = 1; b < 8; b++)
+    dma_fill(BUILT_FIELD + (uint32_t)b * 0x10000UL, 0xFF, 0);
+
+  for (b = 0; b <= BUCKETS; b++)
+    work.hist[b] = 0;
+  for (dy = -PYR_HALF; dy <= PYR_HALF; dy++) {
+    uint16_t yy = (uint16_t)(PYR_CY + dy) & SIZE_MASK;
+
+    row_in(rowbuf_a, NOISE_FIELD + (uint32_t)yy * (SIZE * 2));
+    for (dx = -PYR_HALF; dx <= PYR_HALF; dx++)
+      work.hist[rowbuf_a[(uint16_t)(PYR_CX + dx) & SIZE_MASK] >> BUCKETSHIFT]++;
+  }
+  {
+    uint32_t cells = (uint32_t)(2 * PYR_HALF + 1) * (2 * PYR_HALF + 1);
+
+    base = (uint16_t)percentile(cells / 2);
+  }
+  // MASK, not ONE: against ONE the apex lands on exactly 1.0, which is
+  // seventeen bits. The same decision the stretch takes.
+  if (base > (uint16_t)(0xFFFFUL - PYR_HEIGHT))
+    base = (uint16_t)(0xFFFFUL - PYR_HEIGHT);
+
+  for (dy = -PYR_HALF; dy <= PYR_HALF; dy++) {
+    uint16_t yy = (uint16_t)(PYR_CY + dy) & SIZE_MASK;
+    uint16_t ady = (uint16_t)(dy < 0 ? -dy : dy);
+
+    row_in(rowbuf_a, NOISE_FIELD + (uint32_t)yy * (SIZE * 2));
+    row_in(rowbuf_b, BUILT_FIELD + (uint32_t)yy * (SIZE * 2));
+    for (dx = -PYR_HALF; dx <= PYR_HALF; dx++) {
+      uint16_t xx = (uint16_t)(PYR_CX + dx) & SIZE_MASK;
+      uint16_t adx = (uint16_t)(dx < 0 ? -dx : dx);
+      uint16_t out = ady > adx ? ady : adx;
+      uint16_t inset = (uint16_t)(PYR_HALF - out);
+      uint16_t tier = (uint16_t)(inset / PYR_TERRACE + 1);
+      uint32_t rise;
+
+      if (tier > PYR_STEPS)
+        tier = PYR_STEPS;
+      // **Worked out into a variable, not folded into the store.** The
+      // percentile's `want` was written as one mixed-width expression a few
+      // lines up and reached the callee as zero; the same shape here is not
+      // worth finding out about twice.
+      rise = PYR_HEIGHT * (uint32_t)tier / PYR_STEPS;
+      rowbuf_a[xx] = (uint16_t)(base + rise);
+      // 0xFFFF unbuilt, 0 tread, 1 riser. genmap.py stores ONE for a riser,
+      // which is seventeen bits; a flag carries the same information and the
+      // colour turns it back into ONE where it needs a fraction.
+      rowbuf_b[xx] = (inset % PYR_TERRACE) < PYR_RISER ? 1 : 0;
+    }
+    row_out(NOISE_FIELD + (uint32_t)yy * (SIZE * 2), rowbuf_a);
+    row_out(BUILT_FIELD + (uint32_t)yy * (SIZE * 2), rowbuf_b);
+  }
+}
+
+uint32_t built_place(uint32_t *mask_sum)
+{
+  uint16_t a = 0, b = 0, ma = 0, mb = 0;
+  uint16_t x, y;
+
+  water_flatten();
+  items_place();
+
+  for (y = 0; y < SIZE; y++) {
+    row_in(rowbuf_a, NOISE_FIELD + (uint32_t)y * (SIZE * 2));
+    for (x = 0; x < SIZE; x++) {
+      a = (uint16_t)(a + rowbuf_a[x]);
+      b = (uint16_t)(b + a);
+    }
+    row_in(rowbuf_a, BUILT_FIELD + (uint32_t)y * (SIZE * 2));
+    for (x = 0; x < SIZE; x++) {
+      ma = (uint16_t)(ma + rowbuf_a[x]);
+      mb = (uint16_t)(mb + ma);
+    }
+  }
+  *mask_sum = (uint32_t)mb << 16 | ma;
   return (uint32_t)b << 16 | a;
 }

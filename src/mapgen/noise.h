@@ -52,4 +52,8 @@ uint32_t flow_build(void);
 // the water level's, since carving moves both: `--stage rivers`.
 uint32_t rivers_carve(uint32_t *level_sum);
 
+// Flatten the water into the terrain, keep the bed, and terraform the map
+// file's items in: `--stage built`.
+uint32_t built_place(uint32_t *mask_sum);
+
 #endif

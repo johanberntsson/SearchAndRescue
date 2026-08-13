@@ -261,6 +261,8 @@ int main(void)
            (uint16_t)(lv >> 16), (uint16_t)lv);
   }
 
+  // built_place is written but its pyramid is not right yet, and it is not
+  // called. See the note above it in src/mapgen/noise.c.
   // **What stage one costs, which is not what the noise costs.** The wait
   // below is the difference between this and a stopwatch at the machine, and
   // without the line printed here that difference looked like generator time.
