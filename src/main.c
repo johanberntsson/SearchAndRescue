@@ -1,5 +1,6 @@
 #include <stdio.h>
 
+#include "handover.h"
 #include "input.h"
 #include "loader.h"
 #include "mission.h"
@@ -435,6 +436,16 @@ int main(void)
   // So the only place a resource can be read is here, before both, which is
   // why the loading bar is printed rather than drawn.
   screens_boot();
+
+  // What stage one left in attic RAM, before anything else touches it. The
+  // maps still come off the disk below; this only proves the handover works,
+  // which is what the generator will be hung on. See src/handover.h.
+  {
+    uint16_t seed = 0;
+    handover_result got = handover_check(&seed);
+    screens_handover(got, seed);
+  }
+
   if (load_resources(screens_loading)) {
     screens_load_failed(loader_error(), loader_error_file());
     for (;;)

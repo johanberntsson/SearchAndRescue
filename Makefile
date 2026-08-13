@@ -39,8 +39,22 @@ OBJS     = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS)) \
            $(patsubst src/%.s,$(BUILD)/%.o,$(ASRCS))
 
 ELF      = $(BUILD)/sar.elf
-PRG      = $(BUILD)/autoboot.c65
+# The game is no longer what the ROM boots. **Stage one is**, and it chains to
+# this by name -- see GAME_NAME in src/mapgen/mapgen.c, which has to agree with
+# the basename here, since diskutil.rb names a file on disk after its host
+# file. `SAR` on disk.
+PRG      = $(BUILD)/sar
 D81      = $(BUILD)/sar.d81
+
+# Stage one: the program that prepares attic RAM and then hands the machine to
+# the game. It is a separate program because the game already fills the 32 KB
+# at $2001, and because attic RAM survives a program load, which is the whole
+# mechanism. src/mapgen/ is deliberately outside the src/*.c glob above so the
+# two never link into each other. See documentation/on-device-maps.md.
+GEN_SRCS = $(wildcard src/mapgen/*.c)
+GEN_OBJS = $(patsubst src/mapgen/%.c,$(BUILD)/mapgen/%.o,$(GEN_SRCS))
+GEN_ELF  = $(BUILD)/mapgen.elf
+GEN_PRG  = $(BUILD)/autoboot.c65
 # One sprite sheet per figure the game can stand in the world, in the order
 # src/sprite.c numbers them: 0 the lost hiker, 1 the pair by the lake. They are
 # converted together because they share the one on-screen palette.
@@ -67,7 +81,9 @@ all: $(D81)
 run: $(D81)
 	xemu-xmega65 -besure -8 $(D81)
 
-# Quick turnaround for tests that do not need the resource files.
+# Quick turnaround for tests that do not need the resource files. This runs
+# the *game* on its own, with no stage one in front of it -- which is also the
+# case the handover check is meant to report as absent rather than hang on.
 prg: $(PRG)
 	xemu-xmega65 -besure -prg $(PRG)
 
@@ -97,10 +113,25 @@ $(ELF): $(OBJS)
 	ln6502 $(LDFLAGS) -o $@ $(LINKFILE) $(OBJS)
 
 # -o names the ELF; ln6502 writes the PRG beside it under the same stem.
-# The MEGA65 ROM only autoboots a file called autoboot.c65, and diskutil.rb
-# names the file on disk after the host file, so rename it here.
+# diskutil.rb names the file on disk after the host file, so both programs are
+# copied to the basename they should carry there.
 $(PRG): $(ELF)
 	cp $(BUILD)/sar.prg $@
+
+$(BUILD)/mapgen:
+	mkdir -p $@
+
+$(BUILD)/mapgen/%.o: src/mapgen/%.c $(wildcard src/*.h) $(wildcard src/mapgen/*.h) \
+                     $(CONFIG_STAMP) | $(BUILD)/mapgen
+	cc6502 $(CFLAGS) -c -o $@ $<
+
+$(GEN_ELF): $(GEN_OBJS)
+	ln6502 $(LDFLAGS) -o $@ $(LINKFILE) $(GEN_OBJS)
+
+# The MEGA65 ROM only autoboots a file called autoboot.c65, and that is stage
+# one now.
+$(GEN_PRG): $(GEN_ELF)
+	cp $(BUILD)/mapgen.prg $@
 
 comma := ,
 empty :=
@@ -137,10 +168,10 @@ $(RES) &: $(GEN_MAPS) $(SPRITES) tools/convmap.py maps/palette.yaml \
 
 # tools/diskutil.rb refuses to overwrite a file that already exists on the image,
 # so the image is always built from scratch.
-$(D81): $(PRG) $(RES)
+$(D81): $(GEN_PRG) $(PRG) $(RES)
 	rm -f $@
 	ruby tools/diskutil.rb $@ -name "search and rescue" -id sr \
-	    -writeprg -copyf1 $(PRG) \
+	    -writeprg -copyf1 $(GEN_PRG) $(PRG) \
 	    -writeseq -copyf1 $(RES)
 
 # The disk to hand out. PROFILE=0 drops the per-column instrumentation, which

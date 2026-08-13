@@ -9,6 +9,8 @@
 
 #include <stdint.h>
 
+#include "handover.h"
+
 // Loading, on the ROM's own text screen, because the disk cannot be read once
 // vic4_init has run -- a Kernal open fails outright afterwards. So these
 // three print rather than draw, and they are the only screens that do.
@@ -16,6 +18,7 @@
 // The bar only ever grows, one character at a time, so it needs no cursor
 // control: printing is enough.
 void screens_boot(void);
+void screens_handover(handover_result got, uint16_t seed);
 void screens_loading(uint8_t percent);
 void screens_load_failed(const char *why, const char *file);
 

@@ -80,6 +80,18 @@ void screens_boot(void)
   bar_drawn = 0;
 }
 
+// One line on the boot screen saying whether stage one handed anything over.
+// It is printed before the loading bar starts, which is the last moment a
+// printf is allowed -- see the startup order in CLAUDE.md.
+void screens_handover(handover_result got, uint16_t seed)
+{
+  // One format string and a table rather than a printf per case: the 32K has
+  // about 790 bytes spare and three formats spend a fifth of it on wording.
+  static const char *const said[] = {"STAGE ONE", "NO STAGE ONE", "CORRUPT"};
+
+  printf("\n     %s %u\n     ", said[got], seed);
+}
+
 void screens_loading(uint8_t percent)
 {
   uint8_t want;
