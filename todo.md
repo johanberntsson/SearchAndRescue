@@ -145,13 +145,9 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   first; and keep a checksum per stage, because it is what lets an optimisation
   be proved not to change the output. `documentation/on-device-maps.md` has the
   costing, every measurement, the handover mechanism and the traps.
-- **`stretch` needs a decision before it can be ported**, and it is the very
-  next pass. It ends with `np.clip(..., 0, ONE)` and ONE is 65536, which does
-  not fit the uint16 a field value is stored in -- the top half per cent of the
-  map lands exactly there. `tools/fixed.py`'s own rule says ONE is only ever an
-  intermediate, so clipping to 65535 on both sides is probably right, but it
-  re-rolls every map by up to one part in 65536 and wants the PNGs diffed
-  before and after.
+- ~~`stretch` needs a decision before it can be ported~~ **settled**: it clips
+  to 65535 now, so a field value fits the uint16 the device stores it in. See
+  Done for what that cost.
 - **Loading the game is 31 seconds on hardware against 23 in xemu**, and that
   8-second gap is now the *only* place the machine is slower than the emulator
   -- it is a real drive against an instant one. Johan's suggestion is to
@@ -267,6 +263,16 @@ Do not re-litigate these without new measurements.
 
 ## Done
 
+- **The generator's ceiling is 65535, not 65536** -- `stretch` clipped to ONE,
+  which is seventeen bits and wraps in the uint16 the device stores a field
+  value in. Clipping a step lower costs a sixth of a hundredth of a height unit
+  and **re-rolled two of the three maps**: the island is bit-identical (the
+  checkview reference still passes) but the plains' and highlands' lakes moved,
+  and mission two's fix went from 16% water within five cells to none. It is
+  46.658N 008.149E now. The mountains case has a tidy cause -- the ridged fold
+  sends ONE to 0 and MASK to 2, so the clipped peaks stop being the perfect
+  minima lake placement picks from. **Check every mission fix against the PNGs
+  after anything that re-rolls a map**; `src/mission.c` carries the note.
 - **The noise inner loop in assembly: 54.38 to 9.26 seconds in xemu**, and
   `17DFF8E6` at every step of the way. Three changes, in order of what they
   bought: caching the two lattice rows an output row sits between, which is a C
