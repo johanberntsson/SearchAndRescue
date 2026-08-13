@@ -26,7 +26,9 @@
 // keyboard queue below exactly as a pilot would type it, so it has to match
 // the Makefile's $(PRG) basename -- diskutil.rb names a file on disk after
 // its host file.
-#define GAME_NAME "SAR"
+// Stage one hands to stage two, which hands to the game. See
+// src/mapgen2/main.c for why the generator is two programs.
+#define NEXT_NAME "MG2"
 
 // How long the report stays up before the handover, so that a headless run can
 // screenshot it and somebody at a real machine can read it. `make HOLD=n` sets
@@ -273,9 +275,17 @@ int main(void)
            (uint16_t)(mk >> 16), (uint16_t)mk);
   }
 
-  // colour_build is written and **does not fit**. See the note above it in
-  // src/mapgen/noise.c: stage one's 32 KB is full, and the answer is the
-  // second generator program the design has always had in reserve.
+  // Leave the stream where stage two must pick it up: the draws it makes for
+  // its dithers have to follow stage one's last one exactly.
+  {
+    uint8_t __far *r = (uint8_t __far *)HANDOVER_RND;
+    uint32_t st = rnd_state();
+
+    r[0] = (uint8_t)st;
+    r[1] = (uint8_t)(st >> 8);
+    r[2] = (uint8_t)(st >> 16);
+    r[3] = (uint8_t)(st >> 24);
+  }
   // **What stage one costs, which is not what the noise costs.** The wait
   // below is the difference between this and a stopwatch at the machine, and
   // without the line printed here that difference looked like generator time.
@@ -305,6 +315,6 @@ int main(void)
   // and BASIC's READY leaves it at the start of a fresh one -- so the report
   // above scrolls up out of the way rather than being read back. Keeping it
   // means a failed handover leaves something on screen to look at.
-  chain(GAME_NAME);
+  chain(NEXT_NAME);
   return 0;
 }

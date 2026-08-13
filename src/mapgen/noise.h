@@ -4,11 +4,8 @@
 
 #include <stdint.h>
 
-// Where the field goes: the front of the spare map slot. 512x512 Q0.16 values
-// is 512 KB of the slot's 2 MB. The handover block sits well past it -- see
-// HANDOVER_BASE in src/handover.h, which is offset for exactly this reason.
-#include "../loader.h"
-#define NOISE_FIELD MAP_SLOT(2)
+// The field layout is shared with stage two, which paints what this leaves.
+#include "fields.h"
 
 // Draw the lattices and the offsets, in genmap.py's order. Call once.
 void noise_init(void);
@@ -56,8 +53,5 @@ uint32_t rivers_carve(uint32_t *level_sum);
 // file's items in: `--stage built`.
 uint32_t built_place(uint32_t *mask_sum);
 
-// Turn the finished terrain into palette indices, which is what the renderer
-// eats: `--stage colour`.
-uint32_t colour_build(void);
 
 #endif

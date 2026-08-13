@@ -33,3 +33,8 @@ uint16_t rnd_below(uint16_t n)
   // -- and reading two rather than four is the point of doing it this way.
   return (uint16_t)MATH.multout[4] | ((uint16_t)MATH.multout[5] << 8);
 }
+
+uint32_t rnd_state(void)
+{
+  return state;
+}

@@ -111,6 +111,9 @@ static inline uint32_t recip32(uint32_t d)
 void rnd_seed(uint32_t seed);
 uint32_t rnd_next(void);
 
+// Where the stream has got to, so one program can hand it to the next.
+uint32_t rnd_state(void);
+
 // A uniform value in 0..n-1, as (rnd * n) >> 32 rather than a modulo: the top
 // word of one multiply, where a remainder would be a divide.
 uint16_t rnd_below(uint16_t n);

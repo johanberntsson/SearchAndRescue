@@ -81,6 +81,17 @@ GEN_OBJS = $(patsubst src/mapgen/%.c,$(BUILD)/mapgen/%.o,$(GEN_SRCS)) \
            $(BUILD)/profile.o $(BUILD)/dma.o
 GEN_ELF  = $(BUILD)/mapgen.elf
 GEN_PRG  = $(BUILD)/autoboot.c65
+
+# Stage two: colour and the planes. A second generator program because stage
+# one's 32 KB is full -- see src/mapgen2/main.c. It shares the random stream,
+# the banking and the clock with stage one and nothing else; attic RAM carries
+# the fields between them.
+GEN2_SRCS = $(wildcard src/mapgen2/*.c)
+GEN2_OBJS = $(patsubst src/mapgen2/%.c,$(BUILD)/mapgen2/%.o,$(GEN2_SRCS)) \
+            $(BUILD)/mapgen/rnd.o $(BUILD)/mapgen/kernal.o \
+            $(BUILD)/profile.o $(BUILD)/dma.o
+GEN2_ELF = $(BUILD)/mg2.elf
+GEN2_PRG = $(BUILD)/mg2
 # One sprite sheet per figure the game can stand in the world, in the order
 # src/sprite.c numbers them: 0 the lost hiker, 1 the pair by the lake. They are
 # converted together because they share the one on-screen palette.
@@ -160,6 +171,20 @@ $(BUILD)/mapgen/%.o: src/mapgen/%.s $(wildcard src/*.h) $(wildcard src/mapgen/*.
                      $(CONFIG_STAMP) | $(BUILD)/mapgen
 	as6502 $(ASFLAGS) -o $@ $<
 
+$(BUILD)/mapgen2:
+	mkdir -p $@
+
+$(BUILD)/mapgen2/%.o: src/mapgen2/%.c $(wildcard src/*.h) \
+                      $(wildcard src/mapgen/*.h) $(wildcard src/mapgen2/*.h) \
+                      src/mapgen/tables.h $(CONFIG_STAMP) | $(BUILD)/mapgen2
+	cc6502 $(CFLAGS) -c -o $@ $<
+
+$(GEN2_ELF): $(GEN2_OBJS)
+	ln6502 $(LDFLAGS) --cstack-size $(CSTACK_GEN) -o $@ mega65-plain.scm $(GEN2_OBJS)
+
+$(GEN2_PRG): $(GEN2_ELF)
+	cp $(BUILD)/mg2.prg $@
+
 $(GEN_ELF): $(GEN_OBJS)
 	ln6502 $(LDFLAGS) --cstack-size $(CSTACK_GEN) -o $@ $(GEN_LINKFILE) $(GEN_OBJS)
 
@@ -203,10 +228,10 @@ $(RES) &: $(GEN_MAPS) $(SPRITES) tools/convmap.py maps/palette.yaml \
 
 # tools/diskutil.rb refuses to overwrite a file that already exists on the image,
 # so the image is always built from scratch.
-$(D81): $(GEN_PRG) $(PRG) $(RES)
+$(D81): $(GEN_PRG) $(GEN2_PRG) $(PRG) $(RES)
 	rm -f $@
 	ruby tools/diskutil.rb $@ -name "search and rescue" -id sr \
-	    -writeprg -copyf1 $(GEN_PRG) $(PRG) \
+	    -writeprg -copyf1 $(GEN_PRG) $(GEN2_PRG) $(PRG) \
 	    -writeseq -copyf1 $(RES)
 
 # The disk to hand out. PROFILE=0 drops the per-column instrumentation, which
