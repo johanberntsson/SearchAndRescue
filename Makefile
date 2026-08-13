@@ -19,6 +19,13 @@ FLYNOW  ?= 0
 # of 20. For a session at the real MEGA65, where that report is the only way to
 # read the attic RAM figures: `make REPORT=120`.
 REPORT  ?= 20
+# HOLD=n is the same for *stage one's* report, and it is a separate knob
+# because it is a separate pause in a separate program -- and because it is on
+# the critical path of every boot, where the game's is not. Four seconds is
+# long enough to see that the checksum is right and short enough not to be
+# mistaken for generator time, which is exactly what happened when it was
+# eight: `make HOLD=60` to actually read it at the machine.
+HOLD    ?= 4
 # Map resolutions, powers of two from 256 up to the source PNGs' 1024. Above
 # 256 the heightmap leaves chip RAM and the inner loop pays for it; the
 # colourmap is read once per span and is nearly free at any size. Both maps
@@ -26,7 +33,7 @@ REPORT  ?= 20
 HGT_SIZE ?= 512
 COL_SIZE ?= 1024
 SIZEFLAGS = -DWIDE=$(WIDE) -DHGT_SIZE=$(HGT_SIZE) -DCOL_SIZE=$(COL_SIZE) \
-            -DFLYNOW=$(FLYNOW) -DREPORT_SECONDS=$(REPORT)
+            -DFLYNOW=$(FLYNOW) -DREPORT_SECONDS=$(REPORT) -DSTAGE1_HOLD=$(HOLD)
 CFLAGS   = $(TARGET) -O2 --speed -DPROFILE_DETAIL=$(PROFILE) $(SIZEFLAGS)
 ASFLAGS  = $(TARGET) -DPROFILE_DETAIL=$(PROFILE) $(SIZEFLAGS)
 LDFLAGS  = $(TARGET) --output-format=prg
@@ -100,7 +107,7 @@ $(BUILD):
 # rebuild. Without it, `make PROFILE=0` and then `make` leaves every object
 # built against the wrong flag and the counters silently stay off -- and a
 # half-rebuilt WIDE change is a memory map that disagrees with itself.
-CONFIG_STAMP = $(BUILD)/config-$(PROFILE)-$(WIDE)-$(HGT_SIZE)-$(COL_SIZE)-$(FLYNOW)-$(REPORT).stamp
+CONFIG_STAMP = $(BUILD)/config-$(PROFILE)-$(WIDE)-$(HGT_SIZE)-$(COL_SIZE)-$(FLYNOW)-$(REPORT)-$(HOLD).stamp
 
 $(CONFIG_STAMP): | $(BUILD)
 	rm -f $(BUILD)/config-*.stamp

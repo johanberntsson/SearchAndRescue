@@ -28,11 +28,12 @@
 // its host file.
 #define GAME_NAME "SAR"
 
-// How long the report stays up before the handover, so that a headless run
-// can screenshot it and a real machine can be read. `make REPORT=n` sets it,
-// the same knob the game's benchmark report uses.
-#ifndef REPORT_SECONDS
-#define REPORT_SECONDS 20
+// How long the report stays up before the handover, so that a headless run can
+// screenshot it and somebody at a real machine can read it. `make HOLD=n` sets
+// it -- its own knob, not the game's REPORT, because this pause is on the
+// critical path of every boot and the game's is not.
+#ifndef STAGE1_HOLD
+#define STAGE1_HOLD 4
 #endif
 
 // The C65's keyboard queue, which is not the C64's at $0277/$C6 -- this runs
@@ -40,6 +41,12 @@
 // page at $D0.
 #define KEY_QUEUE ((volatile uint8_t *)0x02B0)
 #define KEY_COUNT (*(volatile uint8_t *)0x00D0)
+
+// Ticks to seconds and hundredths. The multiply by 100 a percentage would need
+// overflows 32 bits at this clock, so it divides by a hundredth of a second
+// instead; `tps` is the caller's, from profile_ticks_per_second().
+#define SECS(t)       ((t) / (tps / 100) / 100)
+#define HUNDREDTHS(t) ((t) / (tps / 100) % 100)
 
 // The raster, for a seed. Any of the low bits of it is a different number
 // every boot on hardware -- see handover.h.
@@ -143,28 +150,26 @@ static uint16_t proof_write(void)
 // what does not hold up.
 //
 // The raster is the clock here because the profiler's has been handed back to
-// the Kernal by now. $D012 is eight bits of a 312-line PAL frame, so a wrap is
-// about 0.82 of a frame rather than one -- the hold is roughly a fifth longer
-// than the seconds it is asked for, which for a "look at this" pause is close
-// enough to not be worth a division.
-static void hold(uint8_t seconds)
+// **It is timed off the profiler's clock, not the raster**, and that is a
+// correction rather than a refinement. Counting wraps of $D012 was wrong by a
+// factor nobody could predict from the source -- eight bits of a raster whose
+// line count is not what a VIC-II programmer expects -- so `REPORT=20` held
+// for something like eight seconds and the whole of stage one came out
+// mysterious. The clock is still ours here: kernal_ioinit hands the timers
+// back afterwards, not before.
+static void hold(uint8_t seconds, uint32_t tps)
 {
-  uint16_t frames = (uint16_t)seconds * 50;
-  uint8_t last = RASTER;
+  uint32_t start = profile_now32();
+  uint32_t want = tps * seconds;
 
-  while (frames) {
-    uint8_t r = RASTER;
-
-    if (r < last)  // the raster wrapped: one frame
-      frames--;
-    last = r;
-  }
+  while ((uint32_t)(start - profile_now32()) < want)
+    ;
 }
 
 int main(void)
 {
   uint16_t seed;
-  uint32_t start, ticks, tps;
+  uint32_t begin, start, ticks, tps;
   uint32_t sum;
 
   // BASIC's zero page, before anything of ours is put in it. See
@@ -175,13 +180,15 @@ int main(void)
   printf("\n\n     SEARCH AND RESCUE\n");
   printf("     STAGE ONE: MAP GENERATOR\n\n\n");
 
-  seed = proof_write();
-
-  // The clock. profile_init takes CIA2's timers, which is why kernal_ioinit
-  // has to put them back before the handover reads the disk.
+  // The clock first, so everything after it is timed. profile_init takes
+  // CIA2's timers, which is why kernal_ioinit has to put them back before the
+  // handover reads the disk.
   profile_init();
   profile_calibrate();
   tps = profile_ticks_per_second();
+  begin = profile_now32();
+
+  seed = proof_write();
 
   printf("     TERRAIN NOISE 512X512\n");
   noise_init();
@@ -192,15 +199,20 @@ int main(void)
 
   // Seconds and hundredths, from a tick count that would overflow a
   // multiply by 100. tps/100 is the ticks in a hundredth of a second.
-  {
-    uint32_t hundredths = ticks / (tps / 100);
-
-    printf("     %lu.%02lu SECONDS\n", hundredths / 100, hundredths % 100);
-  }
+  printf("     %lu.%02lu SECONDS\n", SECS(ticks), HUNDREDTHS(ticks));
   printf("     CHECKSUM %04X%04X\n\n", (uint16_t)(sum >> 16), (uint16_t)sum);
+
+  // **What stage one costs, which is not what the noise costs.** The wait
+  // below is the difference between this and a stopwatch at the machine, and
+  // without the line printed here that difference looked like generator time.
+  {
+    uint32_t all = begin - profile_now32();
+
+    printf("     STAGE ONE %lu.%02lu SECONDS\n", SECS(all), HUNDREDTHS(all));
+  }
   printf("     HANDOVER SEED %u\n", seed);
 
-  hold(REPORT_SECONDS);
+  hold(STAGE1_HOLD, tps);
 
   // Give the Kernal its timers back before anything asks it to read a disk --
   // and the handover is exactly that, since BASIC has to LOAD the game.

@@ -519,8 +519,25 @@ And the arithmetic trap that survives into assembly: **numpy's `>>` floors**, so
 a downward interpolation is `top - hi - (lo != 0)`. The product's low word is
 read for no other reason.
 
-**On the real machine it is not 11 seconds, it is 9.26 — the gap closed
-entirely.** Timed on a MEGA65 against xemu at the same two points:
+**Stage one prints its own total now, and it is not the same as the boot's.**
+`STAGE ONE 9.43 SECONDS` against `9.25` for the noise itself: everything else
+stage one does -- the handover proof block, the lattices, the weight tables --
+is 0.18 s. What is *not* in that figure is the ROM's boot and the report's
+pause, and those are what made a stopwatch at the machine read 19 seconds for a
+9-second job. **The pause was also mis-timed**: it counted wraps of `$D012`,
+which on this machine come about 122 times a second rather than the 61 a
+312-line VIC-II frame implies, so `REPORT=20` held for about eight seconds.
+It runs off the profiler's clock now -- which stage one still owns at that
+point, since the timers go back to the Kernal afterwards -- and it has its own
+knob, `make HOLD=n`, defaulting to four seconds because it is on the critical
+path of every boot where the game's report is not. `make HOLD=60` to read it at
+the machine.
+
+So a boot is roughly 2 s of ROM, 9.4 s of stage one, 4 s of looking at it, and
+then the game.
+
+**On the real machine the generator is not 11 seconds, it is 9.26 — the gap
+closed entirely.** Timed on a MEGA65 against xemu at the same two points:
 
 | | xemu | MEGA65 |
 |---|---|---|
@@ -541,6 +558,13 @@ way the maps already are, and it disappears anyway once the generator is real
 and the maps stop being files.
 
 The whole boot is 50 seconds on hardware, against roughly 95 before this work.
+
+**And the generator only does one map.** The disk carries two, and the game
+still loads both off it; when the generator covers both it will be about 19
+seconds of generating against the 31 of loading it replaces. That is the
+comparison that actually decides whether on-device generation is worth booting
+into, and it is close enough that the passes still to be ported -- stretch,
+mask, hills, water, colour -- matter to the answer.
 
 What is left is **`edge_build`**, the one loop that runs per lattice row rather
 than per pixel and is still C. At 1430 cycles a pixel overall with the blend
