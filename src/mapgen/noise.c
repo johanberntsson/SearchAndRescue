@@ -897,32 +897,7 @@ uint32_t minima_find(void)
   return (uint32_t)sum_b << 16 | a;
 }
 
-// --- water, part two: the flood -- **NOT FINISHED, AND NOT CALLED** ---------
-//
-// This is here because the diagnosis is worth more than the code, and both
-// would be lost by deleting it. `lakes_fill` is not called from
-// src/mapgen/mapgen.c: it produces the wrong answer and then hangs inside
-// flood_basin's main loop, which cannot iterate more than LAKE_BUDGET times,
-// so what it is really doing is running off something and crashing.
-//
-// **The C stack theory is dead.** Banking BASIC out gave stage one 11 KB of
-// headroom, so the stack was raised to 2048 and this behaves exactly the same.
-//
-// What the extra room did buy is a much sharper clue. Traced at the call site,
-// the flood is handed the right cell: candidate 4, at 233,192, and
-// `field_get` there reads 33856, which is correct. Traced one call deeper, the
-// first value popped off the heap -- which can only be the one just pushed --
-// comes back as **30528**. The low byte is right and the high byte is not:
-// 0x8440 read back as 0x7740. So a six-byte entry is written correctly and one
-// byte of it reads back wrong, which is not an algorithm fault and not the
-// sign-extension bug already fixed here.
-//
-// That is where the next attempt should start: put a known pattern through
-// key_put and key_field with nothing else running, and find out whether the
-// heap's memory is the problem or the compiler's addressing of it. The array
-// now lives at $A000 under the banked-out ROM, which is new since the bug was
-// first seen -- but the bug is older than the move, so that is a coincidence
-// to rule out rather than a suspect.
+// --- water, part two: the flood --------------------------------------------
 //
 // Three real bugs were found and fixed on the way here, all verified against
 // the PC by the intermediate-checksum method, and all worth keeping:
@@ -953,10 +928,18 @@ uint32_t minima_find(void)
 // The water level: -1 dry, the sea level where it is sea, the lake's surface
 // where a basin filled. Half a megabyte past the field, in the same slot.
 
-// Which cells the flood has already queued. A bit per cell is 32 KB, which is
-// the bottom of bank 1 -- stage one owns it, there being no framebuffer yet.
-// The octave lattices sit just above at CORNER_STORE.
-#define SEEN_BITS 0x10000UL
+// Which cells the flood has already queued: a bit per cell, so 32 KB.
+//
+// **Not in bank 1.** Its foot is CBDOS' buffers -- ozmoo's asm/constants.asm
+// has the span worked out, and the safe part of bank 1 is $18000-$1F7FF, which
+// is where the octave lattices are. Putting this at $10000 scribbled on the
+// disk system's state, and the symptom was not a wrong map: everything
+// generated correctly and then the handover came back `?DEVICE NOT PRESENT`,
+// because by then the Kernal could no longer talk to the drive.
+//
+// Bank 4 is free end to end while stage one is running: there is no
+// heightmap up there yet and no framebuffer anywhere.
+#define SEEN_BITS 0x40000UL
 
 static uint16_t heap_n, region_n;
 static uint8_t *heap_e;        // 6 bytes an entry: hh, y, x, big-endian
@@ -1028,7 +1011,7 @@ static int8_t key_cmp(const uint8_t *a, const uint8_t *b)
 // heights are terrain, which is over 0x8000 for half the map. The pop path
 // got away with it and the spill scan did not: a cell at 32771 was read as
 // 771 and every lake came out at the wrong level.
-static uint16_t key_field(const uint8_t *e, uint8_t at)
+static uint16_t key_field(const uint8_t *e, uint16_t at)
 {
   return (uint16_t)(((unsigned)e[at] << 8) | e[at + 1]);
 }

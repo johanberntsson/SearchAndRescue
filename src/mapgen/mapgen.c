@@ -235,8 +235,13 @@ int main(void)
          SECS(ticks), HUNDREDTHS(ticks),
          (uint16_t)(sum >> 16), (uint16_t)sum);
 
-  // The flood is written but does not work yet, and is not called. See the
-  // note above lakes_fill in src/mapgen/noise.c.
+  start = profile_now32();
+  sum = lakes_fill();
+  ticks = start - profile_now32();
+  printf("     LAKES %lu.%02lu S  %04X%04X\n\n",
+         SECS(ticks), HUNDREDTHS(ticks),
+         (uint16_t)(sum >> 16), (uint16_t)sum);
+
   // **What stage one costs, which is not what the noise costs.** The wait
   // below is the difference between this and a stopwatch at the machine, and
   // without the line printed here that difference looked like generator time.
