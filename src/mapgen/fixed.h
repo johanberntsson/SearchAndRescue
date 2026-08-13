@@ -47,6 +47,22 @@ static inline uint32_t mulhi32(uint32_t a, uint32_t b)
        | ((uint32_t)MATH.multout[4] << 16) | ((uint32_t)MATH.multout[5] << 24);
 }
 
+// The low thirty-two bits: a *plain* multiply, not a Q0.16 one, for the places
+// that scale by a small whole number rather than by a fraction.
+//
+// **`*` on two 32-bit operands is a 2203-cycle library call**, and the colour
+// pass had five of them in its pixel loop -- two squares and three by
+// constants of 21, 8 and 6. This is the same 85 cycles the fractional forms
+// above cost. The caller has to know its product fits: everything here does,
+// because these are heights and step counts, not the 64-bit intermediates
+// mulhi32 exists for.
+static inline uint32_t mul32(uint32_t a, uint32_t b)
+{
+  MATH.multina32 = a;
+  MATH.multinb32 = b;
+  return MATH.multout32;
+}
+
 // (a * b) >> 32: bytes 4 and 5 of the product. The box blur's reciprocal is a
 // Q0.32 value, so its window sum comes back out of the top half.
 static inline uint16_t mulhi32top(uint32_t a, uint32_t b)
@@ -112,7 +128,7 @@ void rnd_seed(uint32_t seed);
 uint32_t rnd_next(void);
 
 // Where the stream has got to, so one program can hand it to the next.
-void rnd_state(uint32_t *out);
+uint32_t rnd_state(void);
 
 // A uniform value in 0..n-1, as (rnd * n) >> 32 rather than a modulo: the top
 // word of one multiply, where a remainder would be a divide.

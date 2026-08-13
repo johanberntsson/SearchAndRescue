@@ -29,8 +29,8 @@ owns.
 is stage two; between them they run the **whole** map generator on the MEGA65 —
 terrain, water, items, colour and the planes, eleven passes, every one of them
 byte-identical to what `tools/genmap.py` computes on the PC. Then they hand the
-machine to `SAR`. It costs about four minutes, nearly all of it the colour
-pass, and the game does not fly the result yet. See Done.
+machine to `SAR`. It costs about two minutes -- 48.5 seconds for stage one and
+64 for stage two -- and the game does not fly the result yet. See Done.
 
 Build knobs, all in the Makefile:
 
@@ -166,18 +166,19 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   stage one's 32 KB would not hold them -- which is the split
   `documentation/on-device-maps.md` has had in reserve since the costing. All
   eleven passes agree with the PC bit for bit. What is left is time, below.
-- **The colour pass is 175.9 seconds and that is now the whole cost of the
-  generator.** Stage two is 181 s against stage one's 48.5, and `colour_build`
-  is 176 of it: about 27000 cycles a pixel where the costing said 250-350. The
-  arithmetic is still in C, and the reasons are ones this project has met
-  before -- five 32-bit library multiplies in the pixel loop (two squares and
-  three by small constants) at 2203 cycles each, one 32-bit library divide in
-  the sun, and the two dither lattices read through far pointers eight times a
-  pixel at ~86 cycles each. The hardware multiplier, shifts, and moving the
-  lattices into near RAM (they can share `hist`, which is dead after the
-  histogram pass) are the obvious first pass. **The checksum is what makes this
-  safe**, exactly as it was for stage one: anything that changes `D69C51D9` is
-  wrong.
+- **Colour is 58.5 seconds, down from 175.9**, and the checksum never moved --
+  which is what it is for. The hardware multiplier for five library multiplies
+  in the pixel loop, the two dither lattices moved from far pointers into near
+  RAM over the dead histogram, and a shift for their row step took it to 145;
+  **deciding water and masonry before the land ramp took it to 58.5**. That
+  last one is the lesson: `colourise` paints the land colour everywhere and
+  covers it with water because in numpy a `where` is free either way, and this
+  island is two thirds water -- 167745 pixels were paying for a ramp, a square
+  root, a sun and two dithers that the next line threw away. **Where the PC
+  version's shape is chosen for numpy, porting it faithfully ports the wrong
+  thing.** What is left is a pixel loop still in C at ~9000 cycles a pixel; the
+  32-bit library divide in `sunlight_at` and `sqrt16`'s normalising loop are
+  the cheap next steps, and assembly is the real one.
 - **The generator is 48.5 seconds for eight passes**, down from 66.6 -- rows
   moved by DMA, the blur's inner loops in assembly, and one scan taught to stop
   early. Every checksum came through untouched, which is what they were for.

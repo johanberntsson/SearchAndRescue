@@ -43,12 +43,30 @@
 // stock linker script gives. The banking stays in kernal.s because both
 // programs share the file, and it costs a register write either way.
 static uint16_t buf[7][SIZE];
-static uint32_t hist[BUCKETS + 1];
 
 // The dither lattices are 32 across, so a cell is 16 pixels and the weight is
 // smoothstep of a sixteenth -- sixteen entries, not the 512 a row would need.
-#define DITHER_SH 4
+#define DITHER_SH   4
+#define MOTTLE_SH   5                     // MOTTLE_PER is 32 at SIZE 512
+#define MOTTLE_PER  (1 << MOTTLE_SH)
+#define LATTICE     (MOTTLE_PER * MOTTLE_PER)
+
+#if MOTTLE_PER != SIZE / 16
+#error "the dither lattice is SIZE/16 across; fix MOTTLE_SH"
+#endif
+
 static uint16_t dwt[1 << DITHER_SH];
+
+// **The histogram and the two dither lattices are the same 4 KB**, because
+// they are never both alive: the histogram is finished the moment the ramp's
+// top is known, and the lattices are hashed after that. It is not a space
+// trick -- the program has room -- it is what lets the lattices be *near*.
+// They were far pointers in bank 1 and the pixel loop read them eight times a
+// pixel, at the flat ~15 cycles an attic read costs over a chip one.
+static union {
+  uint32_t hist[BUCKETS + 1];
+  uint16_t lattice[2][LATTICE];
+} work;
 
 // fixed.sqrt's table, derived here as stage one derives it: round(sqrt(i/256)
 // * ONE) is round(sqrt(i << 24)), so an exact integer root gets every entry
@@ -105,11 +123,11 @@ static uint32_t percentile(uint32_t want)
 
   for (b = 0; b < BUCKETS; b++) {
     below = cum;
-    cum += hist[b];
+    cum += work.hist[b];
     if (cum >= want)
       break;
   }
-  inside = hist[b];
+  inside = work.hist[b];
   return ((uint32_t)b << BUCKETSHIFT)
        + (inside ? ((want - below) << BUCKETSHIFT) / inside : 0);
 }
@@ -152,22 +170,17 @@ static void tables_build(void)
 // (ONE * ONE) / SLOPE_REF, worked out once rather than per pixel.
 static uint32_t recip_slope;
 
-// The two dither lattices, at the map's own size over 16.
-#define MOTTLE_PER  (SIZE / 16)
-
-static uint16_t __far *mottle_corner, *smottle_corner;
-
 // value noise at MOTTLE_PER, scaled and signed: scale(2n - ONE, amp), the same
 // shape the mask's wobble and the river's meander take.
-static int32_t dither_at(const uint16_t __far *corner, uint32_t amp,
+static int32_t dither_at(const uint16_t *corner, uint32_t amp,
                          uint16_t y, uint16_t x)
 {
   uint16_t stepmask = (uint16_t)((1 << DITHER_SH) - 1);
   uint16_t iy0 = y >> DITHER_SH, ix0 = x >> DITHER_SH;
   uint16_t iy1 = (uint16_t)(iy0 + 1) & (MOTTLE_PER - 1);
   uint16_t ix1 = (uint16_t)(ix0 + 1) & (MOTTLE_PER - 1);
-  const uint16_t __far *c0 = corner + (uint16_t)iy0 * MOTTLE_PER;
-  const uint16_t __far *c1 = corner + (uint16_t)iy1 * MOTTLE_PER;
+  const uint16_t *c0 = corner + (iy0 << MOTTLE_SH);
+  const uint16_t *c1 = corner + (iy1 << MOTTLE_SH);
   uint16_t wx = dwt[x & stepmask];
   uint16_t n = lerp16(lerp16(c0[ix0], c0[ix1], wx),
                       lerp16(c1[ix0], c1[ix1], wx), dwt[y & stepmask]);
@@ -303,14 +316,14 @@ uint32_t colour_build(void)
   // colour is normalised to the country rather than to the number 1.0 -- a
   // flatland would otherwise come out one flat green.
   for (i = 0; i <= BUCKETS; i++)
-    hist[i] = 0;
+    work.hist[i] = 0;
   for (y = 0; y < SIZE; y++) {
     row_in(win0, NOISE_FIELD + (uint32_t)y * (SIZE * 2));
     row_in(lvrow, LEVEL_FIELD + (uint32_t)y * (SIZE * 2));
     row_in(btrow, BUILT_FIELD + (uint32_t)y * (SIZE * 2));
     for (x = 0; x < SIZE; x++) {
       if (lvrow[x] == DRY && btrow[x] == DRY) {
-        hist[win0[x] >> BUCKETSHIFT]++;
+        work.hist[win0[x] >> BUCKETSHIFT]++;
         count++;
       }
     }
@@ -329,12 +342,10 @@ uint32_t colour_build(void)
   recip_slope = recip32(SLOPE_REF);
 
   // The two dither lattices, in genmap.py's draw order: the ramp's, then the
-  // sun's. In bank 1's safe span above the meander's.
-  mottle_corner = (uint16_t __far *)0x1B000UL;
-  smottle_corner = (uint16_t __far *)0x1C000UL;
+  // sun's. Over the histogram, which has just been read for the last time.
   for (i = 0; i < 2; i++) {
     uint32_t salt = rnd_next();
-    uint16_t __far *c = i ? smottle_corner : mottle_corner;
+    uint16_t *c = work.lattice[i];
     uint16_t k = 0, cy, cx;
 
     // Spelled out rather than `c[k++] = hash32(...)`: that shape is an
@@ -361,64 +372,17 @@ uint32_t colour_build(void)
     row_in(lvrow, LEVEL_FIELD + (uint32_t)y * (SIZE * 2));
     row_in(btrow, BUILT_FIELD + (uint32_t)y * (SIZE * 2));
 
+    // **Decided cheapest first, which genmap.py cannot be.** The Python writes
+    // the land colour for every pixel and then paints water and masonry over
+    // the top, because a numpy `where` costs the same either way. Here the
+    // overwritten work is real: this island is two thirds water, and every one
+    // of those 167745 pixels was paying for a ramp, a square root, a sun and
+    // two dithers that the next line threw away. Water needs a depth and
+    // nothing else; masonry needs the sun and nothing else. The order of the
+    // tests is the order of the overwrites, so the answer is identical.
     for (x = 0; x < SIZE; x++) {
-      uint16_t xl = (uint16_t)(x - 1) & SIZE_MASK;
-      uint16_t xr = (uint16_t)(x + 1) & SIZE_MASK;
-      int32_t ddy = (int32_t)dn[x] - up[x];
-      int32_t ddx = (int32_t)mid[xr] - mid[xl];
-      uint16_t hh = mid[x];
-      uint32_t t, sq, slope;
-      int32_t sun;
-      uint16_t step, face, idx;
+      uint16_t idx;
 
-      // the ramp: height over the country's own top, through the gamma
-      t = hh > (uint16_t)SEA ? mulhi32(hh - (uint16_t)SEA, recip_top) : 0;
-      t = lookup32(gamma_tab, (t > 2UL * ONE ? 2UL * ONE : t) / GAMMA_TOP);
-
-      // the slope pushes a pixel up it, so a cliff wears rock and a beach
-      // only forms where the shore is flat
-      {
-        uint32_t a2 = (uint32_t)(ddy < 0 ? -ddy : ddy);
-        uint32_t b2 = (uint32_t)(ddx < 0 ? -ddx : ddx);
-        uint32_t s2;
-
-        a2 *= a2;
-        b2 *= b2;
-        s2 = a2 + b2;
-        sq = (s2 < a2 || (s2 >> FRACBITS) > ONE) ? ONE : s2 >> FRACBITS;
-      }
-      slope = sqrt16(sq);                 // scale by (cell * ONE) / 2 is ONE
-      slope = mulhi32(slope, recip_slope);
-      if (slope > ONE)
-        slope = ONE;
-      t += mulhi32(slope, SLOPE_PUSH);
-      t = mulhi32(t, CEILING);
-
-      {
-        int32_t sc = (int32_t)(t * RAMP_LEN)
-                   + dither_at(mottle_corner, MOTTLE, y, x);
-
-        sc >>= FRACBITS;
-        step = sc < 0 ? 0 : (sc >= RAMP_LEN ? RAMP_LEN - 1 : (uint16_t)sc);
-      }
-
-      sun = (int32_t)sunlight_at(ddx) * SHADES;
-      {
-        int32_t sf = sun + dither_at(smottle_corner, SUN_MOTTLE, y, x);
-
-        sf >>= FRACBITS;
-        face = sf < 0 ? 0 : (sf >= SHADES ? SHADES - 1 : (uint16_t)sf);
-      }
-
-      idx = (uint16_t)(RAMP_BASE + SHADES * step + face);
-
-      if (btrow[x] != DRY) {
-        uint16_t dressed = (uint16_t)(sun >> FRACBITS);
-
-        if (dressed >= SHADES)
-          dressed = SHADES - 1;
-        idx = (uint16_t)(STONE_BASE + SHADES * btrow[x] + dressed);
-      }
       if (lvrow[x] != DRY) {
         uint32_t depth = lvrow[x] > bedrow[x]
                        ? mulhi32(lvrow[x] - bedrow[x], DEPTH_RCP) : 0;
@@ -426,10 +390,69 @@ uint32_t colour_build(void)
 
         if (depth > ONE)
           depth = ONE;
-        wsh = ((ONE - depth) * DEEP_LEN) >> FRACBITS;
+        wsh = mul32(ONE - depth, (uint32_t)DEEP_LEN) >> FRACBITS;
         if (wsh >= DEEP_LEN)
           wsh = DEEP_LEN - 1;
         idx = (uint16_t)(DEEP_BASE + wsh);
+      } else {
+        uint16_t xl = (uint16_t)(x - 1) & SIZE_MASK;
+        uint16_t xr = (uint16_t)(x + 1) & SIZE_MASK;
+        int32_t ddx = (int32_t)mid[xr] - mid[xl];
+        uint32_t lit = sunlight_at(ddx);
+        int32_t sun = (int32_t)mul32(lit, (uint32_t)SHADES);
+
+        if (btrow[x] != DRY) {
+          uint16_t dressed = (uint16_t)(sun >> FRACBITS);
+          uint16_t course = btrow[x];
+
+          if (dressed >= SHADES)
+            dressed = SHADES - 1;
+          idx = (uint16_t)(STONE_BASE + (course << 2) + (course << 1)
+                           + dressed);
+        } else {
+          int32_t ddy = (int32_t)dn[x] - up[x];
+          uint16_t hh = mid[x];
+          uint32_t t, sq, slope;
+          uint16_t step, face;
+
+          // the ramp: height over the country's own top, through the gamma
+          t = hh > (uint16_t)SEA ? mulhi32(hh - (uint16_t)SEA, recip_top) : 0;
+          t = lookup32(gamma_tab, (t > 2UL * ONE ? 2UL * ONE : t) / GAMMA_TOP);
+
+          // the slope pushes a pixel up it, so a cliff wears rock and a beach
+          // only forms where the shore is flat
+          {
+            uint32_t a2 = (uint32_t)(ddy < 0 ? -ddy : ddy);
+            uint32_t b2 = (uint32_t)(ddx < 0 ? -ddx : ddx);
+            uint32_t s2;
+
+            a2 = mul32(a2, a2);
+            b2 = mul32(b2, b2);
+            s2 = a2 + b2;
+            sq = (s2 < a2 || (s2 >> FRACBITS) > ONE) ? ONE : s2 >> FRACBITS;
+          }
+          slope = sqrt16(sq);             // scale by (cell * ONE) / 2 is ONE
+          slope = mulhi32(slope, recip_slope);
+          if (slope > ONE)
+            slope = ONE;
+          t += mulhi32(slope, SLOPE_PUSH);
+          t = mulhi32(t, CEILING);
+
+          {
+            int32_t sc = (int32_t)mul32(t, (uint32_t)RAMP_LEN)
+                       + dither_at(work.lattice[0], MOTTLE, y, x);
+
+            sc >>= FRACBITS;
+            step = sc < 0 ? 0 : (sc >= RAMP_LEN ? RAMP_LEN - 1 : (uint16_t)sc);
+          }
+          {
+            int32_t sf = sun + dither_at(work.lattice[1], SUN_MOTTLE, y, x);
+
+            sf >>= FRACBITS;
+            face = sf < 0 ? 0 : (sf >= SHADES ? SHADES - 1 : (uint16_t)sf);
+          }
+          idx = (uint16_t)(RAMP_BASE + (step << 2) + (step << 1) + face);
+        }
       }
       out[x] = (uint8_t)idx;
       a = (uint16_t)(a + idx);

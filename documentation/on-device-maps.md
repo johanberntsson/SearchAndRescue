@@ -903,14 +903,19 @@ dither lattices are hashed off wherever stage one's last draw left the state.
 Stage one leaves the word at `HANDOVER_RND` and stage two carries on.
 
 That word was wrong for five emulator runs, and the reason is worth recording
-because it is not a MEGA65 problem at all. `rnd_state()` returned a 32-bit
-static and Calypsi got the return wrong — the caller received the low half and
-0xFFFF above it. Every field checksum still passed, because the terrain is
-stage one's own and never crosses the gap; only the two dithers were wrong,
-which moves every land pixel by a shade or a step and leaves the map looking
-entirely plausible. Three rewrites went into the *move* — byte stores, a far
-store, a DMA — before anything printed the value at its source. **When a value
-is wrong after a move, print it at the source before touching the move.**
+because it is not a MEGA65 problem at all: **`mapgen.c` did not include
+`fixed.h`**, so `rnd_state()` had no prototype, so C assumed it returned `int`
+— sixteen bits here — and the high half never left the function. Every field
+checksum still passed, because the terrain is stage one's own and never crosses
+the gap; only the two dithers were wrong, which moves every land pixel by a
+shade or a step and leaves the map looking entirely plausible.
+
+Two rules came out of it. **When a value is wrong after a move, print it at the
+source before touching the move** — three rewrites went into the move (byte
+stores, a far store, a DMA) and all three moved the same wrong word. And
+**read the warnings**: the compiler said `implicit declaration of function
+'rnd_state'` on every one of those builds, and it links cleanly because the
+symbol is real.
 
 ### What is left of the pipeline
 
@@ -926,14 +931,40 @@ Nothing. In order, with what each needed that was new:
 | ~~colour~~ | done — in a second program (steps 13-14) |
 | ~~planes~~ | done — nothing new; the layout `voxel_asm.s` addresses is what the generator writes anyway |
 
-What is left is **time**. Stage one is 48.5 seconds for its eight passes and
-stage two is 181 for two, nearly all of it `colour_build` at 175.9 — around
-27000 cycles a pixel against the 250-350 this document costed, which is the
-usual Calypsi figure for arithmetic left in C. The pixel loop still has five
-32-bit library multiplies in it (two squares, three by small constants) at 2203
-cycles each and a 32-bit library divide, and reads its two dither lattices
-through far pointers. Those are the next thing to do, and the checksum is what
-makes them safe to do.
+What is left is **time**, and the first pass at it took colour from 175.9
+seconds to 58.5 with the checksum unchanged at every step — which is what the
+checksum is for. Three changes, smallest first:
+
+| | s | |
+|---|---|---|
+| as written | 175.9 | |
+| the hardware multiplier and near lattices | 145.0 | −18% |
+| a shift for the lattice row step | — | folded into the next |
+| **water and masonry decided first** | **58.5** | **−60%** |
+
+- **Five 32-bit library multiplies in the pixel loop** — two squares and three
+  by constants of 21, 8 and 6 — at 2203 cycles each against the multiplier's
+  85. `mul32` in `fixed.h` is the plain-product form beside `mulhi32`.
+- **The two dither lattices were far pointers**, read eight times a pixel at
+  the flat ~15 cycles an attic read costs over a chip one. They are near now,
+  over the histogram, which is dead by the time they are hashed. And their row
+  step `iy * MOTTLE_PER` was a 657-cycle library multiply by a constant power
+  of two, four times a pixel.
+- **The big one is not arithmetic at all.** `colourise` writes the land colour
+  for every pixel and paints water and masonry over the top, because in numpy a
+  `where` costs the same either way. On the machine the overwritten work is
+  real: this island is two thirds water, and 167745 pixels were each paying for
+  a ramp, a square root, a sun and two dithers that the next line discarded.
+  Deciding cheapest-first, in the order of the overwrites, gives the identical
+  answer for 40% of the cost. **Where the PC version's shape is chosen for
+  numpy, porting it faithfully ports the wrong thing.**
+
+What is left after that is a per-pixel loop still in C — about 9000 cycles a
+pixel averaged over the map — and the rule this port started with says the
+answer is assembly. Cheaper first: the 32-bit library divide in `sunlight_at`
+(the MEGA65 has a hardware divider at `$D768`, `MATH.divout_whole32`, which
+needs a settle delay that xemu will not tell the truth about), and `sqrt16`'s
+normalising loop.
 
 Water is next, and it is the one the costing has always flagged: a priority
 flood is a heap and a visited set, which is the least 6502-shaped code in the

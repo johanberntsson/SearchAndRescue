@@ -34,15 +34,15 @@ uint16_t rnd_below(uint16_t n)
   return (uint16_t)MATH.multout[4] | ((uint16_t)MATH.multout[5] << 8);
 }
 
-// **Out by pointer, not by return.** `return state;` compiled to a partial
-// load: the caller got the low half of the word and 0xFFFF in the high one,
-// whichever of the three ways it tried to store it. `rnd_next` returns a
-// uint32_t perfectly well, so it is returning *this* static that the compiler
-// gets wrong, and writing through a pointer takes the question away. It cost
-// stage two the whole colour pass -- the two dither lattices are hashed off
-// this word, so every pixel came out a shade or a step wrong while the
-// terrain, which is stage one's own and never crosses the gap, stayed exact.
-void rnd_state(uint32_t *out)
+// Where the stream has got to, so one program can hand it to the next.
+//
+// **Call this with fixed.h included.** Without the prototype C89 assumes a
+// function returns `int`, which here is sixteen bits: stage one handed stage
+// two the low half of the state and garbage above it, and generated a whole
+// map's colour off the wrong dither salts. Nothing warned at the link, because
+// the symbol is real -- only the compiler's warning about an implicit
+// declaration says anything at all, and it says it about the caller.
+uint32_t rnd_state(void)
 {
-  *out = state;
+  return state;
 }
