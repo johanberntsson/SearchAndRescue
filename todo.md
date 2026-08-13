@@ -28,8 +28,8 @@ owns.
 **The disk boots in two stages.** `AUTOBOOT.C65` is stage one, which prepares
 attic RAM and hands the machine to `SAR`; it is the frame the on-device map
 generator goes in, and it already generates one map's terrain noise there --
-about 11 seconds on hardware, byte-identical to what `tools/genmap.py`
-computes. The game does not fly it yet. See Done.
+9.26 seconds on hardware, byte-identical to what `tools/genmap.py` computes.
+The game does not fly it yet. See Done.
 
 Build knobs, all in the Makefile:
 
@@ -136,9 +136,10 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
 - **On-device map generation, step 4: the rest of the pipeline.** Steps 1 to 3
   are done -- the generator is integers, the two-stage boot works, and the
   terrain noise runs on the machine, **agrees with the PC byte for byte**
-  (`17DFF8E6` both sides, `tools/fbmcheck.py`) and has come down from 1m05s to
-  about 11 seconds estimated on hardware (54.38 to 9.26 in xemu). Next in
-  pipeline order: the percentile stretch, the island mask, hills, water,
+  (`17DFF8E6` both sides, `tools/fbmcheck.py`) and has come down from 1m05s on
+  hardware to **9.26 seconds, the same figure xemu gives** -- the emulator and
+  the machine agree exactly on assembly where they were 19.5% apart on C. Next
+  in pipeline order: the percentile stretch, the island mask, hills, water,
   colour, planes. Two rules learned getting here -- **write the structural win
   in C and the per-pixel loop in assembly straight away**, never the loop in C
   first; and keep a checksum per stage, because it is what lets an optimisation
@@ -151,11 +152,14 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   intermediate, so clipping to 65535 on both sides is probably right, but it
   re-rolls every map by up to one part in 65536 and wants the PNGs diffed
   before and after.
-- **Loading the game is 30 seconds on hardware**, and Johan's suggestion is to
-  exomizer it the way the maps already are. `src/exo_asm.s` is the decruncher;
-  it is stage one that would need a copy of it. Worth doing once the generator
-  is real, since the maps stop being files then and most of those 30 seconds
-  goes with them.
+- **Loading the game is 31 seconds on hardware against 23 in xemu**, and that
+  8-second gap is now the *only* place the machine is slower than the emulator
+  -- it is a real drive against an instant one. Johan's suggestion is to
+  exomizer the game the way the maps already are; `src/exo_asm.s` is the
+  decruncher and it is stage one that would need a copy of it. Worth doing once
+  the generator is real, since the maps stop being files then and most of those
+  31 seconds goes with them. A whole boot is 50 seconds on hardware today,
+  against roughly 95 before the rewrite.
 - **Procedural maps, stage three.** The generator and the previewer are both
   done, and the items that are terrain are built (see Done). Next is
   **`mission.bin`, and it is a different file from `map.bin`** — a mission has

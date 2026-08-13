@@ -9,13 +9,12 @@ call it good to a factor of two, which is enough to answer "feasible", not
 enough to promise a number.
 
 > **Read the estimate as an assembly estimate.** The first pass to be built,
-> the terrain noise, is correct on the machine and comes out 20x slower than
-> the figure below because it is written in C — 54 seconds in xemu, **1m05s on
-> a real MEGA65**, and 23 seconds even with its multiplies stubbed out to
-> nothing. See "Step 2b" at the end. Nothing here is wrong about the *machine*;
-> the numbers assume an inner loop of the kind `src/voxel_asm.s` is, and the C
-> compiler is a factor of 7 or 8 away from that on this project's own past
-> measurement.
+> the terrain noise, was 20x slower than the figure below when it was written
+> in C — 1m05s on a real MEGA65 — and is **9.26 seconds** now that its two
+> per-pixel loops are assembly, measured identically in xemu and on the machine.
+> See steps 2b and 3 at the end. Nothing here was ever wrong about the
+> *machine*: the numbers assume an inner loop of the kind `src/voxel_asm.s` is,
+> and the C compiler is a factor of 7 or 8 away from that.
 
 ## What it has to beat — measured, and not what this document first assumed
 
@@ -426,19 +425,25 @@ the machine that matters.
 
 **That 20% gap is itself a finding.** xemu's chip RAM timing was measured
 against hardware once before, on the renderer, and came out **4%** optimistic
-(11.6 fps against 11.0-11.2). On the generator's instruction mix it is **19.5%**
-— so the emulator's optimism is *workload-dependent* and 4% is not a constant to
-carry around. The difference is not the attic RAM writes, which are the obvious
-suspect and are not big enough: 512 KB of posted writes at +3 cycles is 1.6M
-cycles, four hundredths of a second. What is left is the mix itself — software
-stack indirection and $D770 accesses, sixteen multiplies a pixel of them. Worth
-re-measuring after the assembly rewrite, since that changes the mix completely.
+(11.6 fps against 11.0-11.2). On the C generator's instruction mix it is
+**19.5%** — so the emulator's optimism is *workload-dependent* and 4% is not a
+constant to carry around. The difference is not the attic RAM writes, which are
+the obvious suspect and are not big enough: 512 KB of posted writes at +3 cycles
+is 1.6M cycles, four hundredths of a second. What is left is the mix itself —
+software stack indirection and $D770 accesses, sixteen multiplies a pixel of
+them.
+
+**Re-measured after the assembly rewrite, the gap is zero** (step 3 below), which
+settles it: xemu models tight zero-page assembly accurately and the compiler's
+output badly, so a C measurement taken in the emulator is optimistic by an
+unknown amount and an assembly one can be trusted.
 
 On the same real-hardware boot: **about 30 seconds to load the game and its
 resources**, against the ~20 seconds measured in xemu. So a full two-stage boot
-on hardware today is roughly 65 + 30 seconds before the title screen, and the
-generator is the larger half of it — which is the whole argument for the next
-step. The startup benchmark table came out unchanged, so nothing else about the
+on hardware was roughly 65 + 30 seconds before the title screen, and the
+generator was the larger half of it — which was the whole argument for the next
+step. (After step 3 it is 50 seconds all in, and the generator is the *smaller*
+half.) The startup benchmark table came out unchanged, so nothing else about the
 machine moved, and the game plays as it did.
 
 The measurement is sound, and both halves of that were checked rather than
@@ -514,9 +519,28 @@ And the arithmetic trap that survives into assembly: **numpy's `>>` floors**, so
 a downward interpolation is `top - hi - (lo != 0)`. The product's low word is
 read for no other reason.
 
-9.26 s scaled by the 19.5% the real machine ran slower on the C version is
-about **11 seconds** — but that is arithmetic, not a measurement, and the
-instruction mix is exactly what changed, so it wants checking on the machine.
+**On the real machine it is not 11 seconds, it is 9.26 — the gap closed
+entirely.** Timed on a MEGA65 against xemu at the same two points:
+
+| | xemu | MEGA65 |
+|---|---|---|
+| boot to the end of stage one | 19 s | **19 s** |
+| ... to the game's title screen | 42 s | 50 s |
+
+So the emulator and the machine now agree exactly on the generator, where the C
+version had the machine 19.5% slower. **That is the strongest evidence yet that
+xemu's optimism is a property of the instruction mix and not of the emulator**:
+what it was mismodelling was the C code's software-stack indirection and its
+sixteen `$D770` accesses a pixel, and tight zero-page assembly it gets right —
+the same kind of code as the renderer's march, which it was within 4% on.
+
+The 8 seconds that are left are **all disk**: 23 seconds of loading the game and
+its resources in xemu against 31 on the machine, a real drive against an
+instant one. That is the next thing worth attacking, by crunching the game the
+way the maps already are, and it disappears anyway once the generator is real
+and the maps stop being files.
+
+The whole boot is 50 seconds on hardware, against roughly 95 before this work.
 
 What is left is **`edge_build`**, the one loop that runs per lattice row rather
 than per pixel and is still C. At 1430 cycles a pixel overall with the blend

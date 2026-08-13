@@ -940,14 +940,25 @@ The same run had the real machine at 11.0-11.2 fps against xemu's 11.6, so
 xemu's chip RAM timing is about 4% optimistic for the *renderer's* instruction
 mix.
 
-**That 4% is not a constant — it is a property of the code being run.** The map
-generator's noise loop, which stays in chip RAM just as much, measures 54.38 s
-in xemu against **1m05s on the real machine: 19.5% optimistic**. The attic RAM
-writes are not the explanation (512 KB of posted writes at +3 cycles is four
-hundredths of a second); what differs is the mix — software stack indirection
-and sixteen `$D770` accesses a pixel, against the march's tight zero-page
-assembly. So trust xemu for a *comparison* between two versions of the same
-code, and take any absolute figure to the real machine before believing it.
+**That 4% is not a constant — it is a property of the code being run**, and
+three measurements now bracket it:
+
+| | xemu | MEGA65 | |
+|---|---|---|---|
+| the renderer's march (assembly) | 11.6 fps | 11.0-11.2 | 4% optimistic |
+| the map generator's noise, in C | 54.38 s | 1m05s | **19.5%** |
+| the same, rewritten in assembly | 9.26 s | **9.26 s** | none |
+
+So **xemu models tight zero-page assembly accurately and the compiler's output
+badly** — what it gets wrong is software-stack indirection and heavy `$D770`
+traffic, not chip RAM. A C timing taken in the emulator is optimistic by an
+unknown amount; an assembly one can be trusted. (The attic writes are not the
+explanation: 512 KB of posted writes at +3 cycles is four hundredths of a
+second.)
+
+The one place the machine is still slower is **the disk**: the game and its
+resources load in 23 seconds under xemu and 31 on hardware, a real drive
+against an instant one.
 
 Real hardware has no `-dumpmem`, so `profile_report` prints the same memory
 table to the Kernal's text screen at startup and waits for a key (or 20
