@@ -536,16 +536,22 @@ the machine.
 So a boot is roughly 2 s of ROM, 9.4 s of stage one, 4 s of looking at it, and
 then the game.
 
-**On the real machine the generator is not 11 seconds, it is 9.26 — the gap
-closed entirely.** Timed on a MEGA65 against xemu at the same two points:
+**On the real machine the gap is no longer measurable.** Timed on a MEGA65
+against xemu at the same two points -- **by stopwatch, so give or take a few
+seconds either way**:
 
 | | xemu | MEGA65 |
 |---|---|---|
-| boot to the end of stage one | 19 s | **19 s** |
+| boot to the end of stage one | 19 s | 19 s |
 | ... to the game's title screen | 42 s | 50 s |
 
-So the emulator and the machine now agree exactly on the generator, where the C
-version had the machine 19.5% slower. **That is the strongest evidence yet that
+So whatever is left of the emulator's optimism on the generator is inside
+stopwatch error, where the C version had the machine 19.5% slower -- and *that*
+figure is safe from the same doubt, being 1m05s against 54.38 s, ten seconds
+apart. **The way to settle it exactly is on screen**: stage one prints its own
+time from the profiler's clock, so reading `STAGE ONE 9.43 SECONDS` off a real
+machine is a measurement rather than an estimate. Worth doing next time
+somebody is sitting at one. **That is the strongest evidence yet that
 xemu's optimism is a property of the instruction mix and not of the emulator**:
 what it was mismodelling was the C code's software-stack indirection and its
 sixteen `$D770` accesses a pixel, and tight zero-page assembly it gets right —
@@ -557,15 +563,17 @@ instant one. That is the next thing worth attacking, by crunching the game the
 way the maps already are, and it disappears anyway once the generator is real
 and the maps stop being files.
 
-**A whole boot on hardware is 36 seconds**, against roughly 95 before this
-work: 12 to the handover -- about 9.4 of generating, 4 of looking at the report
-and the ROM's own start -- and 24 more to the title screen. The generator is
-now a third of the boot and the disk is two thirds of it, which is the reverse
-of where this started.
+**A whole boot on hardware is about 36 seconds**, against roughly 95 before
+this work: 12 to the handover -- of which 9.43 is generating, measured, plus 4
+of looking at the report and the ROM's own start -- and some 24 more to the
+title screen. All of those but the 9.43 are stopwatch figures, and the 24 is a
+subtraction of two of them, so treat it as "the disk is about twice the
+generator" rather than as a number. The generator is now the smaller part of
+the boot, which is the reverse of where this started.
 
 **And the generator only does one map.** The disk carries two, and the game
 still loads both off it; when the generator covers both it will be about 19
-seconds of generating against the 24 of loading it replaces. That is the
+seconds of generating against the twenty-odd of loading it replaces. That is the
 comparison that actually decides whether on-device generation is worth booting
 into, and it is close enough that the passes still to be ported -- stretch,
 mask, hills, water, colour -- matter to the answer.

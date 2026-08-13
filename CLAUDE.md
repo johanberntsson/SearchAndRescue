@@ -947,7 +947,12 @@ three measurements now bracket it:
 |---|---|---|---|
 | the renderer's march (assembly) | 11.6 fps | 11.0-11.2 | 4% optimistic |
 | the map generator's noise, in C | 54.38 s | 1m05s | **19.5%** |
-| the same, rewritten in assembly | 9.26 s | **9.26 s** | none |
+| the same, rewritten in assembly | 9.26 s | no measurable difference | |
+
+The last row is a stopwatch comparison of whole boots and only says the gap is
+inside a few seconds; the 19.5% is safe from that doubt, being ten seconds wide.
+Stage one prints its own time from the profiler's clock, so reading it off a
+real machine would settle the last row properly.
 
 So **xemu models tight zero-page assembly accurately and the compiler's output
 badly** — what it gets wrong is software-stack indirection and heavy `$D770`
@@ -957,8 +962,8 @@ explanation: 512 KB of posted writes at +3 cycles is four hundredths of a
 second.)
 
 The one place the machine is still slower is **the disk**: the game and its
-resources load in 23 seconds under xemu and 31 on hardware, a real drive
-against an instant one.
+resources take roughly twice as long to load as the generator takes to run, and
+longer on hardware than under xemu -- a real drive against an instant one.
 
 Real hardware has no `-dumpmem`, so `profile_report` prints the same memory
 table to the Kernal's text screen at startup and waits for a key (or 20

@@ -137,8 +137,10 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   are done -- the generator is integers, the two-stage boot works, and the
   terrain noise runs on the machine, **agrees with the PC byte for byte**
   (`17DFF8E6` both sides, `tools/fbmcheck.py`) and has come down from 1m05s on
-  hardware to **9.26 seconds, the same figure xemu gives** -- the emulator and
-  the machine agree exactly on assembly where they were 19.5% apart on C. Next
+  hardware to **9.26 seconds in xemu**, with the machine no longer measurably
+  different where it was 19.5% slower on the C version. (Stage one prints its
+  own time now, so reading it off a real machine would settle that exactly --
+  the hardware comparisons so far are stopwatch ones.) Next
   in pipeline order: the percentile stretch, the island mask, hills, water,
   colour, planes. Two rules learned getting here -- **write the structural win
   in C and the per-pixel loop in assembly straight away**, never the loop in C
@@ -155,9 +157,9 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   exomizer the game the way the maps already are; `src/exo_asm.s` is the
   decruncher and it is stage one that would need a copy of it. Worth doing once
   the generator is real, since the maps stop being files then and most of those
-  24 seconds goes with them. A whole boot is **36 seconds** on hardware today
-  -- 12 to the handover and 24 more to the title -- against roughly 95 before
-  the rewrite.
+  loading goes with them. A whole boot is **about 36 seconds** on hardware
+  today, against roughly 95 before the rewrite -- 12 to the handover and the
+  rest to the title, by stopwatch, so give or take a few seconds.
 - **Procedural maps, stage three.** The generator and the previewer are both
   done, and the items that are terrain are built (see Done). Next is
   **`mission.bin`, and it is a different file from `map.bin`** — a mission has
