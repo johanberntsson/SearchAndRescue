@@ -205,7 +205,7 @@ int main(void)
   start = profile_now32();
   sum = noise_stretch();
   ticks = start - profile_now32();
-  printf("     STRETCH %lu.%02lu S  %04X%04X\n\n",
+  printf("     SHAPE %lu.%02lu S  %04X%04X\n\n",
          SECS(ticks), HUNDREDTHS(ticks),
          (uint16_t)(sum >> 16), (uint16_t)sum);
 

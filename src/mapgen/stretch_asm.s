@@ -1,7 +1,7 @@
 ; The percentile stretch's two passes over the field, a row at a time.
 ;
-;   stretch_hist   hist[v >> 6]++                     -- measure
-;   stretch_apply  v = clip((v - lo) * recip >> 16)   -- paint
+;   stretch_hist   hist[v >> 6]++                              -- measure
+;   stretch_apply  v = floor + (clip((v-lo)*recip) * range)     -- paint
 ;
 ; Both are per-pixel loops and so both are assembly: the C compiler costs this
 ; project about 8x on a loop of this shape, which is the whole finding of
@@ -17,6 +17,7 @@
 
             .extern nz_out, nz_hist, nz_lo, nz_recip, nz_ptr
             .extern nz_t, nz_d, nz_sum_a, nz_sum_b, nz_chunks
+            .extern nz_floor, nz_range
 
 MULTINA:    .equ 0xd770
 MULTINB:    .equ 0xd774
@@ -175,7 +176,47 @@ akeep$:     lda     MULTOUT+2
             lda     MULTOUT+3
             sta     zp:nz_d+1
 
+            ; --- and onto the type's floor and range, in the same pass -----
+            ; base_terrain's `floor + scale(n, range)`. Folded in here rather
+            ; than given a pass of its own: it is a per-pixel function of one
+            ; value, and a pass over the field costs about a second before it
+            ; does any arithmetic.
+            ;
+            ; The multiplier's B is the stretch's reciprocal for the whole
+            ; loop, so `range` goes in A and the value in B, which is the
+            ; other way round from everything else here and costs nothing --
+            ; the product is the same either way.
 astore$:    lda     zp:nz_d
+            sta     MULTINB
+            lda     zp:nz_d+1
+            sta     MULTINB+1
+            lda     #0
+            sta     MULTINB+2
+            sta     MULTINB+3
+            lda     zp:nz_range
+            sta     MULTINA
+            lda     zp:nz_range+1
+            sta     MULTINA+1
+
+            clc
+            lda     MULTOUT+2
+            adc     zp:nz_floor
+            sta     zp:nz_d
+            lda     MULTOUT+3
+            adc     zp:nz_floor+1
+            sta     zp:nz_d+1
+
+            ; the reciprocal goes back into B for the next pixel
+            lda     zp:nz_recip
+            sta     MULTINB
+            lda     zp:nz_recip+1
+            sta     MULTINB+1
+            lda     zp:nz_recip+2
+            sta     MULTINB+2
+            lda     zp:nz_recip+3
+            sta     MULTINB+3
+
+            lda     zp:nz_d
             sta     [nz_out],z
             inz
             lda     zp:nz_d+1

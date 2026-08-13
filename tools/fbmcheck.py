@@ -15,10 +15,15 @@ first day of every stage of the port rather than after the first mystery.
     python3 tools/fbmcheck.py maps/island.yaml [--size 512] [--stage STAGE]
 
 `--stage` says how far down the pipeline to go, and the stages are the ones the
-device has ported so far -- `octaves` for the weighted octave sum and `stretch`
-for that put through the percentile stretch. Each new pass gets a stage here on
-the day it is written, so that every one of them has a number to be checked
-against rather than only the last.
+device has ported so far:
+
+    octaves   the weighted octave sum
+    stretch   ... put through the percentile stretch
+    shape     ... folded if the type is ridged, then onto the type's floor and
+              range, which is genmap.py's base_terrain without its mask
+
+Each new pass gets a stage here on the day it is written, so that every one of
+them has a number to be checked against rather than only the last.
 
 The checksum is Fletcher's, over the field in the order the device writes it
 (row by row, x fastest), with both accumulators taken mod 65536 rather than
@@ -50,7 +55,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("mapfile")
     ap.add_argument("--size", type=int, default=512)
-    ap.add_argument("--stage", default="stretch", choices=("octaves", "stretch"))
+    ap.add_argument("--stage", default="shape",
+                    choices=("octaves", "stretch", "shape"))
     args = ap.parse_args()
 
     spec, _items = genmap.read_map(args.mapfile)
@@ -65,8 +71,14 @@ def main():
     stream = F.Stream(spec["seed"])
     field = genmap.fbm_octaves(args.size, octaves, int(gain * F.ONE), stream,
                                base=base)
-    if args.stage == "stretch":
+    if args.stage in ("stretch", "shape"):
         field = genmap.stretch(field)
+    if args.stage == "shape":
+        shape = genmap.TYPES[spec["type"]]
+        if shape["ridged"]:
+            field = F.ONE - abs(2 * field - F.ONE)
+        field = int(shape["floor"] * F.ONE) + F.scale(field,
+                                                      int(shape["range"] * F.ONE))
 
     print(f"{args.mapfile}: size {args.size}, base {base}, "
           f"octaves {octaves}, gain {int(gain * F.ONE)}, seed {spec['seed']}")

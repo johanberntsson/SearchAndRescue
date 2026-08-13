@@ -38,6 +38,14 @@
 #define GAIN      29491UL
 #define SEED      12345UL
 
+// TYPES["island"] in tools/genmap.py: where the type's terrain starts and how
+// much of the range it uses, as int(fraction * ONE). The island is not ridged,
+// so the fold genmap.py applies between the stretch and these is absent here
+// -- a mountains map would need it, and it goes in when a map file is read
+// rather than hard-coded.
+#define FLOOR     13107UL   // 0.20
+#define RANGE     52428UL   // 0.80
+
 // The lattice grids for every octave, end to end: 4^2 + 8^2 + 16^2 + 32^2.
 // Small enough to keep them all resident, which is what lets the field be
 // built a row at a time across all four octaves at once -- and that is the
@@ -112,7 +120,7 @@ __zpage uint8_t nz_chunks;
 uint8_t __far *__attribute__((zpage)) nz_out;
 uint32_t *__attribute__((zpage)) nz_hist;
 __zpage uint32_t nz_recip;
-__zpage uint16_t nz_sum_a, nz_sum_b, nz_lo, nz_ptr;
+__zpage uint16_t nz_sum_a, nz_sum_b, nz_lo, nz_ptr, nz_floor, nz_range;
 
 void noise_blend(void);
 void noise_store(void);
@@ -302,10 +310,15 @@ uint32_t noise_run(void)
 
 // --- the percentile stretch ------------------------------------------------
 //
-// `stretch` from tools/genmap.py: rescale the field so that its 0.5th
-// percentile is 0 and its 99.5th is 1.0, both found by histogram because the
-// machine cannot sort a quarter of a million values -- and neither would want
-// to, since a histogram gives both cut points in one pass.
+// `stretch` from tools/genmap.py, and `base_terrain`'s floor and range with
+// it: rescale the field so that its 0.5th percentile is 0 and its 99.5th is
+// 1.0 -- both found by histogram, because the machine cannot sort a quarter of
+// a million values and would not want to, since a histogram gives both cut
+// points in one pass -- and then put it on the type's own elevation range.
+//
+// **The floor and range are folded into the paint pass** rather than given one
+// of their own. They are a per-pixel function of one value, and a pass over the
+// field costs about a second before it does any arithmetic.
 //
 // **This is the "measure" of build, measure, paint**, and it is why the
 // pipeline cannot be one streaming pass: nothing can be painted until the
@@ -352,6 +365,8 @@ uint32_t noise_stretch(void)
 
   nz_lo = (uint16_t)lo;
   nz_recip = recip32(span);
+  nz_floor = FLOOR;
+  nz_range = RANGE;
   nz_sum_a = 0;
   nz_sum_b = 0;
 
