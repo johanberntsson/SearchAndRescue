@@ -89,7 +89,15 @@ __zpage uint32_t nz_amp;
 __zpage uint16_t nz_t, nz_b, nz_d, nz_n;
 __zpage uint8_t nz_chunks;
 
+// ... and the store pass's, in src/mapgen/store_asm.s. The two checksum
+// accumulators live here rather than in noise_run because they carry across
+// every row of the field.
+uint8_t __far *__attribute__((zpage)) nz_out;
+__zpage uint32_t nz_recip;
+__zpage uint16_t nz_sum_a, nz_sum_b;
+
 void noise_blend(void);
+void noise_store(void);
 
 // The lattice hash. genmap.py does this in integers already -- it is the one
 // part of the generator that was portable from the start -- so this is the
@@ -199,16 +207,18 @@ static void edge_build(uint8_t o, uint16_t row, uint16_t *dst)
 // times the price of storing each value as it is computed.
 uint32_t noise_run(void)
 {
-  uint16_t a = 0, b = 0;
   uint16_t x, y;
 
-  for (y = 0; y < SIZE; y++) {
-    uint16_t __far *out =
-        (uint16_t __far *)(NOISE_FIELD + (uint32_t)y * (SIZE * 2));
-    uint8_t o;
+  // Once, and only here: noise_store clears each row as it reads it, so from
+  // the second row on the accumulator arrives empty.
+  for (x = 0; x < SIZE; x++)
+    acc[x] = 0;
+  nz_sum_a = 0;
+  nz_sum_b = 0;
+  nz_recip = weight_recip;
 
-    for (x = 0; x < SIZE; x++)
-      acc[x] = 0;
+  for (y = 0; y < SIZE; y++) {
+    uint8_t o;
 
     for (o = 0; o < OCT; o++) {
       uint16_t period = (uint16_t)BASE << o;
@@ -253,16 +263,12 @@ uint32_t noise_run(void)
       noise_blend();
     }
 
-    for (x = 0; x < SIZE; x++) {
-      uint16_t v = mulhi(acc[x], weight_recip);
-
-      out[x] = v;
-      a = (uint16_t)(a + v);
-      b = (uint16_t)(b + a);
-    }
+    nz_acc = acc;
+    nz_out = (uint8_t __far *)(NOISE_FIELD + (uint32_t)y * (SIZE * 2));
+    noise_store();
   }
 
-  return (uint32_t)b << 16 | a;
+  return (uint32_t)nz_sum_b << 16 | nz_sum_a;
 }
 
 // **A note for whoever ports `stretch` next.** It ends with
