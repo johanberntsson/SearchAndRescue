@@ -18,8 +18,14 @@ void noise_init(void);
 // prints for the same map at `--stage octaves`.
 uint32_t noise_run(void);
 
-// Rescale it between its own 0.5th and 99.5th percentiles, in place. Returns
-// the checksum again -- `--stage stretch` on the PC side.
+// Rescale it between its own 0.5th and 99.5th percentiles and put it on the
+// type's elevation range, in place. `--stage shape` on the PC side.
 uint32_t noise_stretch(void);
+
+// Draw the mask's lattice, and its salt -- which must be the next thing the
+// stream is asked for after noise_init's draws. Then multiply the radial
+// falloff into the terrain: `--stage terrain`.
+void mask_init(void);
+uint32_t mask_apply(void);
 
 #endif

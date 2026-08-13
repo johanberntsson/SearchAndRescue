@@ -18,6 +18,7 @@
 #include <stdint.h>
 
 #include "../handover.h"
+#include "../loader.h"     /* LOW_FREE */
 #include "fixed.h"
 #include "noise.h"
 
@@ -45,6 +46,44 @@
 // rather than hard-coded.
 #define FLOOR     13107UL   // 0.20
 #define RANGE     52428UL   // 0.80
+
+// The island mask: ISLAND_EDGE, ISLAND_FADE and ISLAND_WOBBLE from genmap.py,
+// as int(fraction * ONE). Full height inside EDGE - FADE of the centre,
+// nothing past EDGE, and the coastline pushed about by low-frequency noise so
+// that it is not a circle.
+#define ISL_EDGE   56360UL  // 0.86
+#define ISL_FADE   30146UL  // 0.46, used as its reciprocal
+#define ISL_WOBBLE  8519UL  // 0.13
+
+// The square root, as a 257-entry table read at eight bits with the rest
+// interpolated -- the one per-pixel root in the generator.
+//
+// **It is derived at startup, not shipped.** SQRT[i] is round(sqrt(i/256) *
+// ONE), which is round(sqrt(i << 24)), so a digit-by-digit integer root gets
+// every entry exactly right: checked against tools/fixed.py's table, all 256
+// agree. That is 512 bytes of program the disk does not carry, for a few
+// thousand cycles once.
+//
+// The deltas are kept beside it so the read is one multiply and no subtract,
+// and because SQRT[256] is ONE and does not fit the sixteen bits the table is
+// stored in -- as a delta from SQRT[255] it is 128.
+LOW_FREE static uint16_t sqrt_tab[256];
+LOW_FREE static uint16_t sqrt_delta[256];
+
+// dx*dx for every column offset, so the radius needs no multiply per pixel.
+// The axis is (i * 2 - size) * ONE / size, which for a 512-wide map is exactly
+// (i - 256) * 256 -- so r2, which genmap.py writes as (ax^2 + ay^2) >> 16, is
+// just dx^2 + dy^2 with dx and dy in cells. No shifts, no rounding.
+//
+// **Sixteen bits, and only 256 entries, which is a decision and not a
+// saving.** An offset of 256 squares to 65536, one past what a word holds --
+// but a pixel that far off the axis is outside the unit circle whatever the
+// other axis does, so the mask is zero there and the entry would never be
+// used. The row and the column at that offset are answered before the table
+// is reached. The alternative, 257 four-byte entries, cost twice the space
+// and put a 32-bit indexed store into this section, which is where an hour
+// went: it wrote every entry one byte high and read back as i*i << 8.
+LOW_FREE static uint16_t sq_tab[SIZE / 2];
 
 // The lattice grids for every octave, end to end: 4^2 + 8^2 + 16^2 + 32^2.
 // Small enough to keep them all resident, which is what lets the field be
@@ -122,10 +161,19 @@ uint32_t *__attribute__((zpage)) nz_hist;
 __zpage uint32_t nz_recip;
 __zpage uint16_t nz_sum_a, nz_sum_b, nz_lo, nz_ptr, nz_floor, nz_range;
 
+// ... and the mask pass's.
+uint16_t *__attribute__((zpage)) nz_sqrt;
+uint16_t *__attribute__((zpage)) nz_delta;
+uint32_t *__attribute__((zpage)) nz_sq;
+__zpage uint16_t nz_dy2;
+__zpage uint16_t nz_edge, nz_wobble;
+__zpage uint8_t nz_neg;
+
 void noise_blend(void);
 void noise_store(void);
 void stretch_hist(void);
 void stretch_apply(void);
+void mask_row(void);
 
 // The lattice hash. genmap.py does this in integers already -- it is the one
 // part of the generator that was portable from the start -- so this is the
@@ -377,3 +425,145 @@ uint32_t noise_stretch(void)
 
   return (uint32_t)nz_sum_b << 16 | nz_sum_a;
 }
+
+// --- the island mask -------------------------------------------------------
+//
+// `island_mask` from tools/genmap.py: a radial falloff with a noisy coastline,
+// multiplied into the terrain. It is the last of base_terrain, and the only
+// pass so far that needs a square root per pixel.
+
+// Exact integer square root, digit by digit -- fixed.py's isqrt. No multiply
+// and no divide, one shift and a conditional subtract per output bit, which is
+// as 6502 as arithmetic gets. Used here only to build the table, 256 times.
+static uint32_t isqrt32(uint32_t n)
+{
+  uint32_t root = 0, bit = 1UL << 30;
+
+  while (bit) {
+    uint32_t step = root + bit;
+
+    if (n >= step) {
+      n -= step;
+      root = (root >> 1) + bit;
+    } else {
+      root >>= 1;
+    }
+    bit >>= 2;
+  }
+  return root;
+}
+
+// The mask's own lattice: one value-noise octave at the map's coarsest period,
+// drawn from the salt that follows the terrain's. **The draw order is the
+// whole of what reproduces a map**, so this must happen after noise_init's
+// twelve and before anything else asks the stream for anything.
+#define MASK_PERIOD BASE
+#define MASK_STEP   (SIZE / MASK_PERIOD)
+
+static uint16_t mask_corner[MASK_PERIOD * MASK_PERIOD];
+static uint16_t *m_top, *m_bot;
+static uint16_t m_row;
+
+static void mask_edge(uint16_t row, uint16_t *dst)
+{
+  const uint16_t *c = mask_corner + row * MASK_PERIOD;
+  const uint16_t *w = wtab + woff[0];   // octave 0's period is the mask's
+  uint8_t sh = lshift[0];
+  uint16_t stepmask = (uint16_t)((1 << sh) - 1);
+  uint16_t x;
+
+  for (x = 0; x < SIZE; x++) {
+    uint16_t i0 = x >> sh;              // no roll: the mask's noise is unshifted
+
+    dst[x] = lerp16(c[i0], c[(i0 + 1) & (MASK_PERIOD - 1)], w[x & stepmask]);
+  }
+}
+
+void mask_init(void)
+{
+  uint32_t salt = rnd_next();
+  uint16_t i, x, y;
+
+  for (i = 0; i < 256; i++) {
+    uint32_t n = (uint32_t)i << 24;
+    uint32_t r = isqrt32(n);
+
+    // round rather than floor: an exact half cannot occur, since (r + 0.5)^2
+    // is never a whole number, so this is np.round without its tie rule.
+    sqrt_tab[i] = (uint16_t)((n - r * r) > r ? r + 1 : r);
+  }
+  for (i = 0; i < 255; i++)
+    sqrt_delta[i] = (uint16_t)(sqrt_tab[i + 1] - sqrt_tab[i]);
+  sqrt_delta[255] = (uint16_t)(ONE - sqrt_tab[255]);
+
+  for (i = 0; i < SIZE / 2; i++)
+    sq_tab[i] = (uint16_t)(i * i);
+
+  i = 0;
+  for (y = 0; y < MASK_PERIOD; y++)
+    for (x = 0; x < MASK_PERIOD; x++)
+      mask_corner[i++] = (uint16_t)hash32(x, y, salt);
+
+  m_top = work.edge[0][0];
+  m_bot = work.edge[1][0];
+  m_row = E_NONE;
+}
+
+uint32_t mask_apply(void)
+{
+  uint16_t y;
+
+  nz_sum_a = 0;
+  nz_sum_b = 0;
+  nz_sqrt = sqrt_tab;
+  nz_delta = sqrt_delta;
+  nz_edge = ISL_EDGE;
+  nz_wobble = ISL_WOBBLE;
+  nz_recip = recip32(ISL_FADE);
+
+  for (y = 0; y < SIZE; y++) {
+    uint16_t iy0 = y >> lshift[0];
+    int16_t dy = (int16_t)y - SIZE / 2;
+
+    // The one row whose distance from the axis squares past a word. It is
+    // outside the circle from end to end, so it is zeros -- written here
+    // rather than given a branch in the inner loop.
+    if (dy <= -SIZE / 2) {
+      uint16_t __far *row =
+          (uint16_t __far *)(NOISE_FIELD + (uint32_t)y * (SIZE * 2));
+      uint16_t x;
+
+      for (x = 0; x < SIZE; x++) {
+        row[x] = 0;
+        nz_sum_b = (uint16_t)(nz_sum_b + nz_sum_a);
+      }
+      continue;
+    }
+
+    if (m_row != iy0) {
+      uint16_t next = (uint16_t)(iy0 + 1) & (MASK_PERIOD - 1);
+
+      if (m_row != E_NONE) {
+        uint16_t *swap = m_top;
+
+        m_top = m_bot;
+        m_bot = swap;
+      } else {
+        mask_edge(iy0, m_top);
+      }
+      mask_edge(next, m_bot);
+      m_row = iy0;
+    }
+
+    nz_top = m_top;
+    nz_bot = m_bot;
+    nz_wy = wtab[woff[0] + (y & ((1 << lshift[0]) - 1))];
+    nz_dy2 = sq_tab[dy < 0 ? -dy : dy];
+    nz_out = (uint8_t __far *)(NOISE_FIELD + (uint32_t)y * (SIZE * 2));
+    nz_sq = sq_tab;
+    mask_row();
+  }
+
+  return (uint32_t)nz_sum_b << 16 | nz_sum_a;
+}
+

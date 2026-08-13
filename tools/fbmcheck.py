@@ -21,6 +21,7 @@ device has ported so far:
     stretch   ... put through the percentile stretch
     shape     ... folded if the type is ridged, then onto the type's floor and
               range, which is genmap.py's base_terrain without its mask
+    terrain   ... times the island mask: base_terrain itself
 
 Each new pass gets a stage here on the day it is written, so that every one of
 them has a number to be checked against rather than only the last.
@@ -56,7 +57,7 @@ def main():
     ap.add_argument("mapfile")
     ap.add_argument("--size", type=int, default=512)
     ap.add_argument("--stage", default="shape",
-                    choices=("octaves", "stretch", "shape"))
+                    choices=("octaves", "stretch", "shape", "terrain"))
     args = ap.parse_args()
 
     spec, _items = genmap.read_map(args.mapfile)
@@ -69,6 +70,16 @@ def main():
     # genmap.py reaches the same call, which for the octave sum means freshly
     # seeded: base_terrain is the first thing generate() does.
     stream = F.Stream(spec["seed"])
+    if args.stage == "terrain":
+        # genmap.py's own function, so the mask and the draw order after it
+        # cannot drift from what the maps are actually built with.
+        spec["lattice"] = base
+        spec["feature"] = scale["feature"]
+        field = genmap.base_terrain(args.size, spec, stream)
+        print(f"{args.mapfile}: size {args.size}, base {base}, "
+              f"octaves {octaves}, gain {int(gain * F.ONE)}, seed {spec['seed']}")
+        print(f"stage {args.stage}: checksum {fletcher(field):08X}")
+        return
     field = genmap.fbm_octaves(args.size, octaves, int(gain * F.ONE), stream,
                                base=base)
     if args.stage in ("stretch", "shape"):
