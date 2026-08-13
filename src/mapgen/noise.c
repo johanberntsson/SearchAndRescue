@@ -941,6 +941,8 @@ uint32_t minima_find(void)
 // heightmap up there yet and no framebuffer anywhere.
 #define SEEN_BITS 0x40000UL
 
+static uint8_t stand_test(uint16_t y, uint16_t x);
+
 static uint16_t heap_n, region_n;
 static uint8_t *heap_e;        // 6 bytes an entry: hh, y, x, big-endian
 static uint16_t *region_y, *region_x;
@@ -1083,16 +1085,23 @@ static void heap_pop(uint8_t *out)
   }
 }
 
+// What counts as blocked. A lake is stopped by any water; a river's pool is
+// stopped by the water that was there *before this river started*, which is
+// the `blocked=standing` argument genmap.py passes -- otherwise the pool would
+// be walled in by the channel that led to it.
+static uint8_t block_standing;
+
 static void visit(uint16_t ny, uint16_t nx)
 {
   if (seen_test_set(ny, nx))
     return;
-  if (level_get(ny, nx) != DRY)      // blocked: already water
+  if (block_standing ? stand_test(ny, nx) : (level_get(ny, nx) != DRY))
     return;
   heap_push(field_get(ny, nx), ny, nx);
 }
 
-static void flood_basin(uint16_t cy, uint16_t cx)
+static void flood_basin(uint16_t cy, uint16_t cx, uint16_t budget,
+                        uint32_t rise)
 {
   uint16_t start = field_get(cy, cx);
   uint16_t surface = start;
@@ -1105,14 +1114,14 @@ static void flood_basin(uint16_t cy, uint16_t cx)
   region_n = 0;
   heap_push(start, cy, cx);
 
-  while (heap_n && region_n < LAKE_BUDGET) {
+  while (heap_n && region_n < budget) {
     uint16_t hh, y, x;
 
     heap_pop(e);
     hh = key_field(e, 0);
     y = key_field(e, 2);
     x = key_field(e, 4);
-    if ((uint32_t)hh > (uint32_t)start + LAKE_RISE) {
+    if ((uint32_t)hh > (uint32_t)start + rise) {
       heap_push(hh, y, x);
       break;
     }
@@ -1182,7 +1191,8 @@ uint32_t lakes_fill(void)
     if (level_get(cand_y[v], cand_x[v]) != DRY)
       continue;
     placed++;
-    flood_basin(cand_y[v], cand_x[v]);
+    block_standing = 0;
+    flood_basin(cand_y[v], cand_x[v], LAKE_BUDGET, LAKE_RISE);
   }
 
   for (y = 0; y < SIZE; y++) {
@@ -1290,6 +1300,320 @@ uint32_t flow_build(void)
       a = (uint16_t)(a + row[x]);
       b = (uint16_t)(b + a);
     }
+  }
+  return (uint32_t)b << 16 | a;
+}
+
+// --- water, part four: the rivers ------------------------------------------
+//
+// `carve_rivers`: steepest descent from high ground to the first water it
+// reaches, wandering a little on the way.
+//
+// **The two rules from documentation/procedural-maps.md are load bearing**,
+// and both cost a release when they were got wrong on the PC:
+//
+//   - **measure against a pristine copy.** Each disc flattens the ground ahead
+//     of the walk, so a river measured against the live map reads its own
+//     channel floor, cuts again, and thirty steps later is below sea level --
+//     a black line ruled across the map. `surface` is the terrain as it was
+//     before any carving, and `run` is taken from that.
+//   - **cut, never build up.** A disc only wets ground already at or above the
+//     run. Building the channel up where it crosses a slope leaves a wall of
+//     water at the waterline, invisible in plan and obvious from the air.
+#define RIVER_COUNT  3
+#define RIVER_RADIUS 2
+#define RIVER_DEPTH  786UL      // 0.012
+#define MEANDER      393UL      // 0.006
+#define MEANDER_PER  (BASE << 4)
+#define POOL_BUDGET  100        // RIVER_POOL scaled to this map size
+#define POOL_RISE    1310UL     // 0.02
+
+// The terrain as it stood before any river touched it.
+#define SURFACE_FIELD (MAP_SLOT(1))
+
+// The water as it stood before *this* river started. flood_basin's own visited
+// set is at SEEN_BITS; this is the `blocked` set the pool is given.
+#define STAND_BITS 0x48000UL
+
+// **A far pointer, because $19000 is not a near address.** Written as a plain
+// `uint16_t *` it truncates to $9000, which is inside the program -- so the
+// lattice was quietly built over the code and read back from it, and the
+// checksum moved between runs as the layout shifted. In bank 1's safe span,
+// above the octaves' lattices at $18000.
+#define WANDER_STORE 0x19000UL
+static uint16_t __far *wander_corner;
+
+// **Signed, and scaled.** genmap.py adds `scale(2n - ONE, MEANDER)` to the
+// flow, not the noise itself: a value of roughly plus or minus 393 that tips
+// the choice between two neighbours of nearly equal fall. Adding the raw
+// 0..65535 instead swamps the flow entirely and the river goes wherever the
+// noise is lowest.
+static int16_t wander_at(uint16_t y, uint16_t x)
+{
+  uint8_t sh = lshift[OCT - 1] - 1;      // period is twice the finest octave's
+  uint16_t stepmask = (uint16_t)((1 << sh) - 1);
+  const uint16_t *w = wtab + woff[OCT - 1];
+  uint16_t iy0 = y >> sh, ix0 = x >> sh;
+  uint16_t iy1 = (uint16_t)(iy0 + 1) & (MEANDER_PER - 1);
+  uint16_t ix1 = (uint16_t)(ix0 + 1) & (MEANDER_PER - 1);
+  const uint16_t __far *c0 = wander_corner + (uint16_t)iy0 * MEANDER_PER;
+  const uint16_t __far *c1 = wander_corner + (uint16_t)iy1 * MEANDER_PER;
+  uint16_t wx = w[(x & stepmask) << 1];
+
+  uint16_t n = lerp16(lerp16(c0[ix0], c0[ix1], wx),
+                      lerp16(c1[ix0], c1[ix1], wx), w[(y & stepmask) << 1]);
+
+  if (n >= 0x8000)
+    return (int16_t)mulhi((uint32_t)(n - 0x8000) << 1, MEANDER);
+
+  // Downwards it floors, like every other negative product here -- and the
+  // magnitude reaches 65536 exactly when the noise is zero, which is why it
+  // is formed in 32 bits rather than 16.
+  {
+    uint16_t lw, hw;
+
+    MATH.multina32 = ((uint32_t)0x8000 - n) << 1;
+    MATH.multinb32 = MEANDER;
+    lw = (uint16_t)MATH.multout[0] | ((uint16_t)MATH.multout[1] << 8);
+    hw = (uint16_t)MATH.multout[2] | ((uint16_t)MATH.multout[3] << 8);
+    return (int16_t)-(int16_t)(hw + (lw != 0));
+  }
+}
+
+static uint8_t stand_test(uint16_t y, uint16_t x)
+{
+  uint32_t bit = (uint32_t)y * SIZE + x;
+  const uint8_t __far *p = (const uint8_t __far *)(STAND_BITS + (bit >> 3));
+
+  return (uint8_t)(*p & (1 << (bit & 7)));
+}
+
+static void stand_snapshot(void)
+{
+  uint16_t x, y;
+
+  for (y = 0; y < SIZE; y++) {
+    const uint16_t __far *lv = fieldrow(LEVEL_FIELD, y);
+    uint8_t __far *p = (uint8_t __far *)(STAND_BITS + (uint32_t)y * (SIZE / 8));
+    uint16_t i;
+
+    for (i = 0; i < SIZE / 8; i++)
+      p[i] = 0;
+    for (x = 0; x < SIZE; x++) {
+      if (lv[x] != DRY)
+        p[x >> 3] = (uint8_t)(p[x >> 3] | (1 << (x & 7)));
+    }
+  }
+}
+
+// One disc of channel at `run`, with water in it.
+static void stamp_river(uint16_t cy, uint16_t cx, uint16_t run)
+{
+  int16_t dy, dx;
+
+  for (dy = -RIVER_RADIUS; dy <= RIVER_RADIUS; dy++) {
+    uint16_t yy = (uint16_t)(cy + dy) & SIZE_MASK;
+    uint16_t __far *hrow = fieldrow(NOISE_FIELD, yy);
+    uint16_t __far *lrow = fieldrow(LEVEL_FIELD, yy);
+
+    for (dx = -RIVER_RADIUS; dx <= RIVER_RADIUS; dx++) {
+      uint16_t xx = (uint16_t)(cx + dx) & SIZE_MASK;
+      uint32_t dd = (uint32_t)(dy * dy + dx * dx) << 16;
+      // the float version divides by radius + 0.5, so this doubles first and
+      // then divides by 2r + 1 -- in that order, or the low bits are gone
+      // before the doubling can use them
+      uint32_t d = (uint32_t)(isqrt32(dd) << 8) * 2 / (RIVER_RADIUS * 2 + 1);
+      uint16_t bed;
+
+      if (stand_test(yy, xx))
+        continue;
+      if (d > ONE)
+        continue;
+      bed = (uint16_t)(run + RIVER_DEPTH);
+      if (hrow[xx] > bed)
+        hrow[xx] = bed;
+      if (d <= (7 * ONE) / 10 && hrow[xx] >= run) {
+        hrow[xx] = run;
+        lrow[xx] = run;
+      }
+    }
+  }
+}
+
+uint32_t rivers_carve(uint32_t *level_sum)
+{
+  uint32_t salt;
+  uint16_t lo = 0xFFFF, hi = 0, cut;
+  uint16_t x, y, i, n = 0;
+  uint16_t pick[RIVER_COUNT], sy[RIVER_COUNT], sx[RIVER_COUNT];
+  uint16_t a = 0, b = 0;
+
+  // A copy of the terrain before anything is cut, and the wander lattice --
+  // whose salt is the next draw after the lakes'.
+  for (y = 0; y < SIZE; y++) {
+    const uint16_t __far *src = fieldrow(NOISE_FIELD, y);
+    uint16_t __far *dst = fieldrow(SURFACE_FIELD, y);
+
+    for (x = 0; x < SIZE; x++) {
+      uint16_t v = src[x];
+
+      dst[x] = v;
+      if (v < lo)
+        lo = v;
+      if (v > hi)
+        hi = v;
+    }
+  }
+
+  // The wander lattice: 64 x 64, in bank 1's safe span above the octaves'.
+  // Its salt is the next draw after the lakes have finished with the stream.
+  salt = rnd_next();
+  wander_corner = (uint16_t __far *)WANDER_STORE;
+  {
+    uint16_t k = 0;
+
+    for (y = 0; y < MEANDER_PER; y++)
+      for (x = 0; x < MEANDER_PER; x++)
+        wander_corner[k++] = (uint16_t)hash32(x, y, salt);
+  }
+
+  cut = (uint16_t)(lo + (uint32_t)66 * (hi - lo) / 100);
+
+  // How many dry cells stand above the cut, then which of them the stream
+  // asks for. pick(n, 3) is three draws and a handful of collisions, so the
+  // list is never built -- it is counted, drawn from, and then found.
+  for (y = 0; y < SIZE; y++) {
+    const uint16_t __far *hrow = fieldrow(NOISE_FIELD, y);
+    const uint16_t __far *lrow = fieldrow(LEVEL_FIELD, y);
+
+    for (x = 0; x < SIZE; x++) {
+      if (lrow[x] == DRY && hrow[x] > cut)
+        n++;
+    }
+  }
+  if (!n)
+    return 0;
+
+  {
+    uint16_t got = 0;
+
+    while (got < RIVER_COUNT) {
+      uint16_t v = rnd_below(n);
+      uint16_t j;
+
+      for (j = 0; j < got; j++) {
+        if (pick[j] == v)
+          break;
+      }
+      if (j < got)
+        continue;
+      pick[got++] = v;
+    }
+  }
+
+  {
+    uint16_t seen = 0;
+
+    for (y = 0; y < SIZE; y++) {
+      const uint16_t __far *hrow = fieldrow(NOISE_FIELD, y);
+      const uint16_t __far *lrow = fieldrow(LEVEL_FIELD, y);
+
+      for (x = 0; x < SIZE; x++) {
+        if (lrow[x] != DRY || hrow[x] <= cut)
+          continue;
+        for (i = 0; i < RIVER_COUNT; i++) {
+          if (pick[i] == seen) {
+            sy[i] = y;
+            sx[i] = x;
+          }
+        }
+        seen++;
+      }
+    }
+  }
+
+  for (i = 0; i < RIVER_COUNT; i++) {
+    uint16_t cy = sy[i], cx = sx[i];
+    // **Signed, and it matters.** `run` is the surface less the channel depth,
+    // and on ground shallower than the depth that is below zero -- which is
+    // how a river reaching the coast is stopped by `run <= sea` rather than
+    // wrapping to a great height and carving on across the water.
+    int32_t run = fieldrow(SURFACE_FIELD, cy)[cx];
+    uint16_t step;
+
+    stand_snapshot();
+    for (step = 0; step < 4 * SIZE; step++) {
+      uint16_t here, bestx = 0, besty = 0;
+      int32_t score = 0;
+      uint8_t found = 0;
+      uint16_t s;
+      int16_t dy, dx;
+
+      if (stand_test(cy, cx))
+        break;
+      s = fieldrow(SURFACE_FIELD, cy)[cx];
+      if ((int32_t)s - (int32_t)RIVER_DEPTH < run)
+        run = (int32_t)s - (int32_t)RIVER_DEPTH;
+      if (run <= (int32_t)SEA)
+        break;
+      stamp_river(cy, cx, (uint16_t)run);
+
+      here = fieldrow(FLOW_FIELD, cy)[cx];
+      for (dy = -1; dy <= 1; dy++) {
+        uint16_t ny = (uint16_t)(cy + dy) & SIZE_MASK;
+        const uint16_t __far *frow = fieldrow(FLOW_FIELD, ny);
+
+        for (dx = -1; dx <= 1; dx++) {
+          uint16_t nx = (uint16_t)(cx + dx) & SIZE_MASK;
+          int32_t sc;
+
+          if (!dy && !dx)
+            continue;
+          if (frow[nx] >= here)
+            continue;
+          sc = (int32_t)frow[nx] + wander_at(ny, nx);
+          if (!found || sc < score) {
+            found = 1;
+            score = sc;
+            besty = ny;
+            bestx = nx;
+          }
+        }
+      }
+      if (!found) {
+        // Nowhere downhill left: the river ends in a pool, dammed by the
+        // water that was standing before it started rather than by its own
+        // channel.
+        block_standing = 1;
+        flood_basin(cy, cx, POOL_BUDGET, POOL_RISE);
+        block_standing = 0;
+        break;
+      }
+      cy = besty;
+      cx = bestx;
+    }
+  }
+
+  for (y = 0; y < SIZE; y++) {
+    const uint16_t __far *row = fieldrow(NOISE_FIELD, y);
+
+    for (x = 0; x < SIZE; x++) {
+      a = (uint16_t)(a + row[x]);
+      b = (uint16_t)(b + a);
+    }
+  }
+  {
+    uint16_t la = 0, lb = 0;
+
+    for (y = 0; y < SIZE; y++) {
+      const uint16_t __far *row = fieldrow(LEVEL_FIELD, y);
+
+      for (x = 0; x < SIZE; x++) {
+        la = (uint16_t)(la + row[x]);
+        lb = (uint16_t)(lb + la);
+      }
+    }
+    *level_sum = (uint32_t)lb << 16 | la;
   }
   return (uint32_t)b << 16 | a;
 }

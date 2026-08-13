@@ -48,4 +48,8 @@ uint32_t lakes_fill(void);
 // The blurred height field the rivers run downhill on: `--stage flow`.
 uint32_t flow_build(void);
 
+// Carve the rivers. Returns the terrain's checksum and fills `level_sum` with
+// the water level's, since carving moves both: `--stage rivers`.
+uint32_t rivers_carve(uint32_t *level_sum);
+
 #endif

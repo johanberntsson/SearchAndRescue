@@ -249,6 +249,18 @@ int main(void)
          SECS(ticks), HUNDREDTHS(ticks),
          (uint16_t)(sum >> 16), (uint16_t)sum);
 
+  {
+    uint32_t lv;
+
+    start = profile_now32();
+    sum = rivers_carve(&lv);
+    ticks = start - profile_now32();
+    printf("     RIVERS %lu.%02lu S %04X%04X %04X%04X\n\n",
+           SECS(ticks), HUNDREDTHS(ticks),
+           (uint16_t)(sum >> 16), (uint16_t)sum,
+           (uint16_t)(lv >> 16), (uint16_t)lv);
+  }
+
   // **What stage one costs, which is not what the noise costs.** The wait
   // below is the difference between this and a stopwatch at the machine, and
   // without the line printed here that difference looked like generator time.
