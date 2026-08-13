@@ -39,7 +39,7 @@ generated worlds, both on the one disk**.
   crunched against 661 KB for one drawn one
 - Two software billboards — a lost hiker waving from the step pyramid on the
   island's northern headland at 46.687N 8.106E, and a casualty and their
-  friend on the lake shore at 46.522N 8.081E — drawn over the finished terrain: scaled by distance, and clipped
+  friend on the lake shore at 46.658N 8.149E — drawn over the finished terrain: scaled by distance, and clipped
   against the heightfield with the same y-buffer the ray march already keeps, so
   a ridge in front of them hides their feet
 - Drone controls modelled on a real one: yaw, climb, camera gimbal and a
@@ -78,8 +78,11 @@ would replace — and it works because attic RAM survives a program load, so
 stage one can fill it and vanish. Handing over is done the way
 [ozmoo](https://github.com/johanberntsson/ozmoo) restarts itself: put
 `RUN"SAR"` in the keyboard queue and let the screen editor type it once BASIC
-is back. Stage one writes a proof block for now, and the game says on its boot
-screen whether every byte of it arrived.
+is back. Stage one already generates one map's terrain noise up there — nine
+seconds on real hardware, byte-identical to what `tools/genmap.py` computes on
+the PC — and the game says on its boot screen whether it arrived. The game does
+not fly it yet; the rest of the pipeline goes in behind it, one pass at a
+time.
 
 `tools/preview.py` flies one on the PC **with the game's own
 renderer** — the same march, projection, map sampling and flight model, at the

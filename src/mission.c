@@ -18,8 +18,16 @@
 //   northern headland -- the pyramid is an `items:` entry in island.yaml and
 //   is built into the terrain itself, so the hiker is standing on generated
 //   ground.
-//   46.522N 008.081E, map 1, is the shore of the largest lake on the plains,
+//   46.658N 008.149E, map 1, is the shore of the largest lake on the plains,
 //   a cell of dry ground with water on three sides of it.
+//
+// **A fix is a cell of a particular map and moves when the map is re-rolled.**
+// This one has moved once already: clipping the generator's stretch to 65535
+// instead of 65536 (see tools/genmap.py) shifted the plains' lakes, and the
+// old fix at 46.522N 008.081E came out on dry ground with no water within five
+// cells of it -- a delivery to a lake that was not there. The island did not
+// move at all, so mission one's fix is the original. Check both against the
+// PNGs after anything that re-rolls a map.
 const mission missions[MISSION_COUNT] = {
     {
         "THE LOST HIKER",
@@ -52,8 +60,8 @@ const mission missions[MISSION_COUNT] = {
         1,
         WEATHER_RAIN,
         1,      // the plains
-        46522,
-        8081,
+        46658,
+        8149,
     },
 };
 

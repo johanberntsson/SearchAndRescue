@@ -56,6 +56,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fixed as F                                         # noqa: E402
 
 ONE = F.ONE
+MASK = F.MASK   # 65535: the largest value a Q0.16 field can hold
 
 # The stretch's histogram: 1024 buckets of the field, see percentile().
 BUCKETSHIFT = 6
@@ -336,12 +337,22 @@ def stretch(total):
     float version -- not noise, a bias, visible as every summit being slightly
     lower. At 1024 it is a fifth of that and the cost is 4 KB of counters
     instead of 1 KB, which is nothing against the map itself.
+
+    **The ceiling is MASK and not ONE**, which matters to the port and to
+    nothing else. Everything up here is Q0.16, an unsigned *fraction* of 1.0
+    that fits a 16-bit word -- tools/fixed.py says so at the top and then this
+    line broke it, clipping the top half per cent of the field to 65536, which
+    is seventeen bits. On the PC that is an int64 and invisible; on the MEGA65
+    the field is stored as uint16 and it wraps to zero, so the highest ground
+    on the map would come out as the lowest. Clipping a step lower costs one
+    part in 65536 of the range -- a sixth of a hundredth of a height unit --
+    and is what makes the invariant true.
     """
     lo = percentile(total, 5, 1000)
     hi = percentile(total, 995, 1000)
     span = max(hi - lo, 1)
     recip = (ONE * ONE) // span            # one divide, at setup
-    return np.clip(F.scale(np.clip(total - lo, 0, None), recip), 0, ONE)
+    return np.clip(F.scale(np.clip(total - lo, 0, None), recip), 0, MASK)
 
 
 def fbm_octaves(size, octaves, gain, stream, base=LATTICE):

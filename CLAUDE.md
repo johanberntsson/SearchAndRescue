@@ -10,7 +10,7 @@ Currently: two missions, end to end, **each over its own generated world**. A
 title screen, a mission list, a briefing, a flight, and a debrief — the lost
 hiker on the step pyramid of the island at 46.687N 8.106E to be found and
 reported, and an EpiPen to be dropped to a pair of hikers by a lake on the
-plains at 46.522N 8.081E. A flight also carries a wind that blows the drone
+plains at 46.658N 8.149E. A flight also carries a wind that blows the drone
 about, a battery that runs it out, and per-mission weather; it can end four
 ways, all of them the same debrief page with different words on it.
 

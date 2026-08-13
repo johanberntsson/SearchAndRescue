@@ -6,8 +6,8 @@ Two missions, end to end: title, mission list, briefing, flight, debrief —
 **and each over its own generated world**, both resident at once on one disk.
 Mission one finds the lost hiker on the step pyramid of the island at 46.687N
 8.106E — get within ten cells with them on screen and press `SPACE`. Mission
-two drops an EpiPen to a pair of hikers by a lake on the plains at 46.522N
-8.081E — get within five cells and press `RETURN`. The briefing gives the fix
+two drops an EpiPen to a pair of hikers by a lake on the plains at 46.658N
+8.149E — get within five cells and press `RETURN`. The briefing gives the fix
 and the panel gives your own.
 
 A flight can end four ways. The job done; the one EpiPen released in the wrong
