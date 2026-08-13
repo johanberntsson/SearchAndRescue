@@ -135,12 +135,13 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   Steps 1, 2a and 2b are done — the generator is integers, the two-stage boot
   works, and the terrain noise runs on the machine and **agrees with the PC
   byte for byte** (`17DFF8E6` both sides, `tools/fbmcheck.py`). What it does
-  not do is run fast enough: **54.38 seconds** for one 512x512 field, about
-  8400 cycles a pixel against the costing's 150-400. Stubbing the arithmetic
-  out says why — the loop is 23.20 s with *no multiplies in it at all*, and the
-  listing shows `jsr` fragments and locals on the software stack. This is the
-  march's own history: 1392 cycles a sample in C, 182 in assembly. So the next
-  step is that same rewrite, and the checksum is already there to prove it
+  not do is run fast enough: **54.38 seconds in xemu, 1m05s on the real
+  machine**, for one 512x512 field — about 10000 cycles a pixel against the
+  costing's 150-400. Stubbing the arithmetic out says why — the loop is 23.20 s
+  with *no multiplies in it at all*, and the listing shows `jsr` fragments and
+  locals on the software stack. This is the march's own history: 1392 cycles a
+  sample in C, 182 in assembly, which would put this at about 8.5 s. So the
+  next step is that same rewrite, and the checksum is already there to prove it
   changes nothing. **Do not port more of the pipeline in C first** — the later
   passes are the same shape and would each be written twice.
   `documentation/on-device-maps.md` has the costing, the measurements, the
@@ -262,7 +263,9 @@ Do not re-litigate these without new measurements.
   floors so `lerp16` must too; the `$D770` multiply being 32x32 -> 64 is load
   bearing, because smoothstep reaches 2^32 - 4 and the weight normalisation
   reaches 2^32 exactly; and the draws must happen in genmap.py's order, since
-  the sequence of calls is the whole of what reproduces a map.
+  the sequence of calls is the whole of what reproduces a map. **Flown on the
+  real MEGA65**: the boot chains, the generator runs, the benchmark table is
+  unchanged and the game plays as it did.
 - **The two-stage boot.** The disk holds two programs: `AUTOBOOT.C65` is stage
   one (`src/mapgen/`), which prepares attic RAM and hands the machine to `SAR`,
   the game. It exists because the game already fills the 32 KB at $2001 and a

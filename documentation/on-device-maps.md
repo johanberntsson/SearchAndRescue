@@ -10,11 +10,12 @@ enough to promise a number.
 
 > **Read the estimate as an assembly estimate.** The first pass to be built,
 > the terrain noise, is correct on the machine and comes out 20x slower than
-> the figure below because it is written in C — and it is 23 seconds even with
-> its multiplies stubbed out to nothing. See "Step 2b" at the end. Nothing here
-> is wrong about the *machine*; the numbers assume an inner loop of the kind
-> `src/voxel_asm.s` is, and the C compiler is a factor of 7 or 8 away from that
-> on this project's own past measurement.
+> the figure below because it is written in C — 54 seconds in xemu, **1m05s on
+> a real MEGA65**, and 23 seconds even with its multiplies stubbed out to
+> nothing. See "Step 2b" at the end. Nothing here is wrong about the *machine*;
+> the numbers assume an inner loop of the kind `src/voxel_asm.s` is, and the C
+> compiler is a factor of 7 or 8 away from that on this project's own past
+> measurement.
 
 ## What it has to beat — measured, and not what this document first assumed
 
@@ -419,8 +420,26 @@ and `python3 tools/fbmcheck.py maps/island.yaml` prints `17DFF8E6`. Byte for
 byte, through a sixteen-character report, which is the only channel there is —
 `-dumpmem` writes chip RAM only and cannot see the field at all.
 
-It takes **54.38 seconds**. The costing above assumed 150-400 cycles a pixel;
-this is about **8400**.
+It takes **54.38 seconds in xemu and 1m05s on a real MEGA65**. The costing
+above assumed 150-400 cycles a pixel; this is about **8400**, or **10000** on
+the machine that matters.
+
+**That 20% gap is itself a finding.** xemu's chip RAM timing was measured
+against hardware once before, on the renderer, and came out **4%** optimistic
+(11.6 fps against 11.0-11.2). On the generator's instruction mix it is **19.5%**
+— so the emulator's optimism is *workload-dependent* and 4% is not a constant to
+carry around. The difference is not the attic RAM writes, which are the obvious
+suspect and are not big enough: 512 KB of posted writes at +3 cycles is 1.6M
+cycles, four hundredths of a second. What is left is the mix itself — software
+stack indirection and $D770 accesses, sixteen multiplies a pixel of them. Worth
+re-measuring after the assembly rewrite, since that changes the mix completely.
+
+On the same real-hardware boot: **about 30 seconds to load the game and its
+resources**, against the ~20 seconds measured in xemu. So a full two-stage boot
+on hardware today is roughly 65 + 30 seconds before the title screen, and the
+generator is the larger half of it — which is the whole argument for the next
+step. The startup benchmark table came out unchanged, so nothing else about the
+machine moved, and the game plays as it did.
 
 The measurement is sound, and both halves of that were checked rather than
 assumed. The profiler's own clock says 54.38 s, and a real-speed run brackets
@@ -452,9 +471,9 @@ software stack at `(_Vsp),y`. `--strong-inline` does not fix it — it made the
 
 **This is the renderer's history repeating, and it is worth reading that way
 rather than as a disappointment.** The voxel march cost 1392 cycles a sample in
-C and 182 in assembly; the same 7.6x on 54.38 s is about 7 seconds, and the
-forward-difference smoothstep (which removes the multiplies from the inner loop
-entirely, see above) is a further factor on top of that. The estimate in this
+C and 182 in assembly; the same 7.6x on the hardware's 65 s is about **8.5
+seconds**, and the forward-difference smoothstep (which removes the multiplies
+from the inner loop entirely, see above) is a further factor on top of that. The estimate in this
 document was implicitly an *assembly* estimate all along. It should be read as
 "150-400 cycles a pixel is reachable, in the language the renderer's inner loop
 is written in", not as something C was ever going to do.

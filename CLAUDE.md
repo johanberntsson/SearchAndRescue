@@ -915,8 +915,17 @@ or the compiler reorders the writes and reads past each other and the check
 fails on correct hardware.
 
 The same run had the real machine at 11.0-11.2 fps against xemu's 11.6, so
-xemu's chip RAM timing is about 4% optimistic and can be trusted for
-everything that stays in chip RAM.
+xemu's chip RAM timing is about 4% optimistic for the *renderer's* instruction
+mix.
+
+**That 4% is not a constant — it is a property of the code being run.** The map
+generator's noise loop, which stays in chip RAM just as much, measures 54.38 s
+in xemu against **1m05s on the real machine: 19.5% optimistic**. The attic RAM
+writes are not the explanation (512 KB of posted writes at +3 cycles is four
+hundredths of a second); what differs is the mix — software stack indirection
+and sixteen `$D770` accesses a pixel, against the march's tight zero-page
+assembly. So trust xemu for a *comparison* between two versions of the same
+code, and take any absolute figure to the real machine before believing it.
 
 Real hardware has no `-dumpmem`, so `profile_report` prints the same memory
 table to the Kernal's text screen at startup and waits for a key (or 20
