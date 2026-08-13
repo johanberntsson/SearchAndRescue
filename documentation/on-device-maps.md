@@ -773,6 +773,50 @@ method and all invisible in the source:
   cell over a 225-cell budget is up to 900 pushes; 682 entries ran into the
   arrays behind it.
 
+### Step 10, rivers: `3BFEFC87` / `955A7A1A`, and water is finished
+
+The flow field (`5974DF03`, a separable box blur, right first try) and then
+steepest descent from high ground to the first water it reaches. Both of
+`procedural-maps.md`'s rules came across intact: the run is measured against a
+**pristine copy** of the terrain, and a disc only ever **cuts, never builds up**.
+
+The selection was right first time — `lo`, `hi`, the 66% cut, all 30687 high
+cells, the three picks and the three start cells all matched — which narrowed
+the two bugs to the walk straight away.
+
+- **A far address does not fit a near pointer.** `$19000` written as a plain
+  `uint16_t *` truncates to `$9000`, inside the program, so the wander lattice
+  was built over the code and read back from it. The tell was the checksum
+  *moving between runs* when a `printf` was added.
+- **The wander is signed and scaled.** genmap adds `scale(2n - ONE, MEANDER)`
+  — plus or minus 393, enough to tip a choice between two neighbours of nearly
+  equal fall. Adding the raw 0..65535 noise swamps the flow completely.
+
+The flood is shared with the lakes rather than copied: a river with no downhill
+left ends in a pool, dammed by the water standing *before it started* — genmap's
+`blocked=standing`, a flag on the visit test here.
+
+### The pipeline is nearly there, and now too slow
+
+Stage one is **66.63 seconds** for eight passes. That is **slower than the
+loading it exists to replace** (about 24 s on hardware), so the optimisation
+pass stops being a someday and becomes the next thing:
+
+| pass | s | |
+|---|---|---|
+| rivers | 17.8 | C, and a full-field blur inside it |
+| flow | 15.3 | two full-field passes in C |
+| minima | 9.4 | two full-field passes in C |
+| noise | 9.3 | assembly already |
+| mask | 4.7 | assembly already |
+| lakes | 4.8 | mostly the visited-set clears |
+| shape | 2.6 | assembly already |
+| hills | 0.5 | |
+
+**The three C passes are 42 of the 67 seconds**, and every one of them has a
+checksum standing by to prove a rewrite changes nothing. That is what the
+checksums were built for, and it is the same 7-8x the noise saw.
+
 ### What is left of the pipeline
 
 In order, with what each needs that is new:
@@ -781,7 +825,7 @@ In order, with what each needs that is new:
 |---|---|
 | ~~island mask~~ | done — see step 6 |
 | ~~hills~~ | done — see step 7 |
-| ~~water~~ | done — candidates (step 8) and the flood (step 9). Rivers are still to come |
+| ~~water~~ | done — candidates, flood and rivers (steps 8-10) |
 | colour | gradients, the ramp, the sun, two dithers, and the palette |
 | planes | nothing: writing them in the layout `voxel_asm.s` addresses is what the generator does anyway |
 

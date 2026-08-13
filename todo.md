@@ -159,8 +159,15 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   in the generator -- though **measuring it first shrank it**: the island has
   16 minima, 8 candidates, a heap never over 221 entries and 466 cells
   flooded, against the tens of thousands the costing assumed. The candidates
-  are found (`76AC0EB9`) and **the flood works** (`EE773E32`, 4.74 s). Stage
-  one is 32.93 seconds for six passes. Rivers are the rest of the water.
+  are found (`76AC0EB9`), **the flood works** (`EE773E32`) and so do the
+  rivers (`3BFEFC87`/`955A7A1A`). Water is finished; colour and the planes are
+  what is left.
+- **The generator is correct and too slow: 66.63 seconds for eight passes**,
+  against the ~24 of loading it exists to replace. Three passes in C are 42 of
+  those 67 -- `rivers` 17.8, `flow` 15.3, `minima` 9.4 -- and each has a
+  checksum standing by to prove a rewrite changes nothing. That is the same
+  7-8x the noise saw when it went to assembly, and it is now the next job
+  rather than a someday.
 - ~~Stage one is out of program space~~ **fixed, and the fix is the general
   one**: the 32 KB was `mega65-plain.scm`, not the machine. Stage one banks
   BASIC out and puts its BSS in the RAM underneath (`mega65-sar.scm`,
