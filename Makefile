@@ -42,6 +42,9 @@ CFLAGS   = $(TARGET) -O2 --speed -DPROFILE_DETAIL=$(PROFILE) $(SIZEFLAGS)
 ASFLAGS  = $(TARGET) -DPROFILE_DETAIL=$(PROFILE) $(SIZEFLAGS)
 LDFLAGS  = $(TARGET) --output-format=prg
 LINKFILE = mega65-plain.scm
+# Stage one gets 8 KB more: the RAM under the BASIC ROM, which it banks out for
+# its whole run. See mega65-sar.scm and src/mapgen/kernal.s.
+GEN_LINKFILE = mega65-sar.scm
 
 BUILD    = build
 SRCS     = $(wildcard src/*.c)
@@ -147,7 +150,7 @@ $(BUILD)/mapgen/%.o: src/mapgen/%.s $(wildcard src/*.h) $(wildcard src/mapgen/*.
 	as6502 $(ASFLAGS) -o $@ $<
 
 $(GEN_ELF): $(GEN_OBJS)
-	ln6502 $(LDFLAGS) --cstack-size $(CSTACK_GEN) -o $@ $(LINKFILE) $(GEN_OBJS)
+	ln6502 $(LDFLAGS) --cstack-size $(CSTACK_GEN) -o $@ $(GEN_LINKFILE) $(GEN_OBJS)
 
 # The MEGA65 ROM only autoboots a file called autoboot.c65, and that is stage
 # one now.

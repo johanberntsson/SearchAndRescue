@@ -131,7 +131,14 @@ static uint16_t woff[OCT];
 // the instant the field is finished, and the histogram is not read until the
 // pass after that. It matters because 8 KB and 4 KB do not both fit -- stage
 // one has under 4 KB of its 32 spare with the caches in it.
-static union {
+// **In the RAM under the BASIC ROM.** Eight kilobytes is a quarter of what the
+// stock linker script gives the whole program, and this union is the largest
+// single thing stage one owns -- so it is the one that moves. See
+// mega65-sar.scm, and src/mapgen/kernal.s for the register that banks BASIC
+// out before the C runtime touches anything.
+#define HIGH_BSS __attribute__((section("highbss")))
+
+HIGH_BSS static union {
   uint16_t edge[2][OCT][SIZE];
   uint32_t hist[BUCKETS + 1];
 } work;

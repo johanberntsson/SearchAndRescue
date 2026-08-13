@@ -56,6 +56,7 @@ void kernal_ioinit(void);
 void zp_preserve(void);
 void zp_restore(void);
 void cstack_measure(void);
+void basic_in(void);
 uint16_t cstack_unused;
 
 // Hand the machine to the game by typing for the pilot.
@@ -254,8 +255,11 @@ int main(void)
   // Give the Kernal its timers back before anything asks it to read a disk --
   // and the handover is exactly that, since BASIC has to LOAD the game.
   // Hand the machine back: its timers, then its zero page.
+  // Hand the machine back: its timers, its zero page, and the ROM whose RAM
+  // this program has been living in.
   kernal_ioinit();
   zp_restore();
+  basic_in();
 
   // ozmoo clears the screen before it queues its keys; this does not, and can
   // afford not to. The editor executes the *logical line the cursor is on*,

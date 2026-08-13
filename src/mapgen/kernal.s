@@ -80,7 +80,37 @@ CANARY:     .equ 0xa5
             .section code, text
             .public __low_level_init, cstack_measure
 
+; --- the RAM under the BASIC ROM ------------------------------------------
+;
+; **$D030 is the C65's ROM mapping, and bit 4 is BASIC at $A000.** Clearing it
+; puts 8 KB of ordinary RAM there, which is where mega65-sar.scm sends this
+; program's BSS and its C stack. Everything else in the map stays: the Kernal
+; is untouched, so printf still works, and the interrupt vectors are still
+; where the ROM left them -- which is why this needs no SEI and no handler of
+; our own.
+;
+; It happens here because __low_level_init is called after the startup has set
+; the C stack pointer and *before* anything uses it. The stack is one of the
+; things that moved up there, so banking has to come first -- a write would
+; fall through to the RAM underneath but the read back would come from ROM.
+;
+; basic_in below puts it back before the handover, since what runs next is
+; BASIC itself.
+ROMMAP:     .equ 0xd030
+ROM_BASIC:  .equ 0x10
+
+            .public basic_in
+
+basic_in:   lda     ROMMAP
+            ora     #ROM_BASIC
+            sta     ROMMAP
+            rts
+
 __low_level_init:
+            lda     ROMMAP
+            and     #~ROM_BASIC & 0xff
+            sta     ROMMAP
+
             lda     #.byte0 (.sectionStart cstack)
             sta     zp:_Zp
             lda     #.byte1 (.sectionStart cstack)
