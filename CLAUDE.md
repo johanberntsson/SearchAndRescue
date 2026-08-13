@@ -114,6 +114,33 @@ Only banks 1, 4 and 5 are free: `$20000-$3FFFF` holds the C65 ROM, and **colour 
 | `$5C000`, `$5D000` | 2000 each | The two screen tables |
 | `$8700000` | 768 each | One palette per map slot, until a flight uploads its own |
 
+**The 32 KB is `mega65-plain.scm`'s choice, not the machine's.** The stock
+linker script gives `program` `$2001-$9FFF` because that is what is safe with
+every ROM mapped in. **Bank BASIC out — `$D030` bit 4 — and `$A000-$BFFF` is
+ordinary RAM**, which is what `mega65-sar.scm` gives stage one: its `program`
+section went from overflowing to 66% used. Three things make it low risk, and
+they are the reasons to copy the arrangement rather than invent another:
+
+- **only BSS goes up there.** A PRG is loaded by the ROM with BASIC still
+  mapped, so anything above `$9FFF` that must arrive from disk raises a
+  question about whether the write falls through to the RAM underneath. `zdata`
+  is not in the file. Code and initialised data stay low, and the question
+  never comes up.
+- **it is chosen per object.** Naming `zdata` in the memory does not place —
+  BSS is 11 KB and the window is 8 — so `HIGH_BSS` marks what moves.
+- **the Kernal is left alone**, so `printf` still works and the interrupt
+  vectors are still the ROM's. No `SEI`, no handler of our own. And **BASIC
+  goes back in before the handover**, beside the timers and the zero page.
+
+The register is written in `__low_level_init`: after the startup has set the C
+stack pointer and before anything uses it, since a write up there falls through
+to RAM but the read back would come from ROM.
+
+**The game has not had this done to it yet, and it is the one that needs it**:
+`program` is 99.9% used with 44 bytes free. It makes no Kernal call after
+loading, so it could take the same 8 KB — and `$E000-$FFFF` for 8 more, at the
+cost of `SEI` or vectors of its own, since it runs with interrupts on.
+
 **The 32 KB fills up fast.** The survivor sprite took it down to about 360
 spare bytes; the game screens needed a couple of kilobytes more. Where the
 room came from, in the order it was taken:
