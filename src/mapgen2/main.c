@@ -16,6 +16,7 @@
 
 #include "../mapgen/fields.h"
 #include "../mapgen/fixed.h"
+#include "../dma.h"
 #include "../profile.h"
 #include "colour.h"
 
@@ -96,10 +97,10 @@ int main(void)
   // the whole of what reproduces a map, so the dithers below have to follow
   // stage one's last draw exactly.
   {
-    const uint8_t __far *r = (const uint8_t __far *)HANDOVER_RND;
+    static uint32_t seed;
 
-    rnd_seed((uint32_t)r[0] | ((uint32_t)r[1] << 8)
-             | ((uint32_t)r[2] << 16) | ((uint32_t)r[3] << 24));
+    dma_copy(HANDOVER_RND, (uint32_t)(uint16_t)&seed, 4);
+    rnd_seed(seed);
   }
 
   start = profile_now32();

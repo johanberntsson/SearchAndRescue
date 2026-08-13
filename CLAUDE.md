@@ -1033,6 +1033,22 @@ proved the function was entered. Rewritten with `int16_t` coordinates and the
 eight calls spelled out, the same logic works. Suspect this shape before
 suspecting the hardware.
 
+**`return` of a 32-bit static loses its high half.** `uint32_t rnd_state(void)
+{ return state; }` handed its caller the low sixteen bits and left the rest at
+whatever the return register held — 0xFFFF, in the run that found it. The same
+file's `rnd_next` returns a `uint32_t` correctly, so it is returning *the
+static itself* that goes wrong; computing into a local first is what `rnd_next`
+does. It is written as `void rnd_state(uint32_t *out)` now, which takes the
+question away. This is the family the two rules above belong to: **do not fold
+a multi-width expression into an argument, a store, or a return — give it a
+variable.**
+
+That one cost five emulator runs, and the reason is worth more than the bug.
+The word came out wrong at the far end of a handover, so three rewrites went
+into the *move* — byte stores, a far store, a DMA — and all three moved the
+same wrong word. **When a value is wrong after a move, print it at the source
+before touching the move.** One run would have done it.
+
 Calypsi 5.18 emits a call to `_FillZPQ` — a runtime helper that is in none of
 its libraries — when a function call appears inside a 32-bit expression. The
 link fails with an undefined symbol. Hoist the call into a variable.

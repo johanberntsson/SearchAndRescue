@@ -19,6 +19,7 @@
 #include <stdio.h>
 
 #include "../handover.h"
+#include "../dma.h"
 #include "../profile.h"
 #include "noise.h"
 
@@ -277,14 +278,23 @@ int main(void)
 
   // Leave the stream where stage two must pick it up: the draws it makes for
   // its dithers have to follow stage one's last one exactly.
+  //
+  // **The word this hands over was wrong for three rewrites of this line, and
+  // the line was never the fault.** Four byte stores off a shifted copy, then
+  // one 32-bit store through a far pointer, then this DMA all put the same
+  // 0xFFFF8532 up there -- the low half exactly right and the high half the
+  // erased attic. What was broken was `rnd_state`, which returned the static
+  // and got the return wrong; it takes a pointer now and the state arrives.
+  // The lesson is the one this port keeps learning: **when a value is wrong at
+  // both ends of a move, stop rewriting the move.** Printing what the *source*
+  // held would have found it in one run instead of five.
+  //
+  // The DMA stays because it is proven and costs nothing once a run.
   {
-    uint8_t __far *r = (uint8_t __far *)HANDOVER_RND;
-    uint32_t st = rnd_state();
+    static uint32_t save;
 
-    r[0] = (uint8_t)st;
-    r[1] = (uint8_t)(st >> 8);
-    r[2] = (uint8_t)(st >> 16);
-    r[3] = (uint8_t)(st >> 24);
+    rnd_state(&save);
+    dma_copy((uint32_t)(uint16_t)&save, HANDOVER_RND, 4);
   }
   // **What stage one costs, which is not what the noise costs.** The wait
   // below is the difference between this and a stopwatch at the machine, and

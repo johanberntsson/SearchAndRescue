@@ -25,11 +25,12 @@ overview map, 12.5 fps (`PROFILE=0`, default map sizes; the rain costs 0.68 ms
 of that on mission two). The march is 160 rays; each fills the two pixels it
 owns.
 
-**The disk boots in two stages.** `AUTOBOOT.C65` is stage one, which prepares
-attic RAM and hands the machine to `SAR`; it is the frame the on-device map
-generator goes in, and it already generates one map's terrain noise there --
-9.26 seconds on hardware, byte-identical to what `tools/genmap.py` computes.
-The game does not fly it yet. See Done.
+**The disk boots in three stages now.** `AUTOBOOT.C65` is stage one and `MG2`
+is stage two; between them they run the **whole** map generator on the MEGA65 —
+terrain, water, items, colour and the planes, eleven passes, every one of them
+byte-identical to what `tools/genmap.py` computes on the PC. Then they hand the
+machine to `SAR`. It costs about four minutes, nearly all of it the colour
+pass, and the game does not fly the result yet. See Done.
 
 Build knobs, all in the Makefile:
 
@@ -160,8 +161,23 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   16 minima, 8 candidates, a heap never over 221 entries and 466 cells
   flooded, against the tens of thousands the costing assumed. The candidates
   are found (`76AC0EB9`), **the flood works** (`EE773E32`) and so do the
-  rivers (`3BFEFC87`/`955A7A1A`). Water is finished; colour and the planes are
-  what is left.
+  rivers (`3BFEFC87`/`955A7A1A`). **The pipeline is complete**: colour
+  (`D69C51D9`) and the planes run in a second generator program, `MG2`, because
+  stage one's 32 KB would not hold them -- which is the split
+  `documentation/on-device-maps.md` has had in reserve since the costing. All
+  eleven passes agree with the PC bit for bit. What is left is time, below.
+- **The colour pass is 175.9 seconds and that is now the whole cost of the
+  generator.** Stage two is 181 s against stage one's 48.5, and `colour_build`
+  is 176 of it: about 27000 cycles a pixel where the costing said 250-350. The
+  arithmetic is still in C, and the reasons are ones this project has met
+  before -- five 32-bit library multiplies in the pixel loop (two squares and
+  three by small constants) at 2203 cycles each, one 32-bit library divide in
+  the sun, and the two dither lattices read through far pointers eight times a
+  pixel at ~86 cycles each. The hardware multiplier, shifts, and moving the
+  lattices into near RAM (they can share `hist`, which is dead after the
+  histogram pass) are the obvious first pass. **The checksum is what makes this
+  safe**, exactly as it was for stage one: anything that changes `D69C51D9` is
+  wrong.
 - **The generator is 48.5 seconds for eight passes**, down from 66.6 -- rows
   moved by DMA, the blur's inner loops in assembly, and one scan taught to stop
   early. Every checksum came through untouched, which is what they were for.

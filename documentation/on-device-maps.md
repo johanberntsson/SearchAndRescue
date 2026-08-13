@@ -883,19 +883,57 @@ Two findings that hold whoever finishes it:
   derived on the machine; the line between them is a fractional power and an
   exponential.
 
+### Step 14, stage two: the pipeline is complete
+
+The split was taken and it worked exactly as this document said it would.
+`build/mg2.prg` is stage two: it reads the four fields stage one left in attic
+RAM, paints the colour map, writes the planes in the layout `voxel_asm.s`
+addresses, and chains to the game. **Every one of the eleven passes now agrees
+with `tools/fbmcheck.py` bit for bit**, colour at `D69C51D9` and the terrain
+checksums unchanged from stage one.
+
+Nothing had to be invented for it. The handover is the same keyboard-queue
+trick done twice instead of once, the fields were already up there, and stage
+two inherits a fresh 32 KB — of which it uses about 8 for code and 14 for
+tables and row buffers, so it has room to spare.
+
+**What it does have to inherit is the random stream.** A map is reproduced by
+the *sequence of draws*, so stage two cannot seed a stream of its own: the two
+dither lattices are hashed off wherever stage one's last draw left the state.
+Stage one leaves the word at `HANDOVER_RND` and stage two carries on.
+
+That word was wrong for five emulator runs, and the reason is worth recording
+because it is not a MEGA65 problem at all. `rnd_state()` returned a 32-bit
+static and Calypsi got the return wrong — the caller received the low half and
+0xFFFF above it. Every field checksum still passed, because the terrain is
+stage one's own and never crosses the gap; only the two dithers were wrong,
+which moves every land pixel by a shade or a step and leaves the map looking
+entirely plausible. Three rewrites went into the *move* — byte stores, a far
+store, a DMA — before anything printed the value at its source. **When a value
+is wrong after a move, print it at the source before touching the move.**
+
 ### What is left of the pipeline
 
-In order, with what each needs that is new:
+Nothing. In order, with what each needed that was new:
 
 | pass | new machinery |
 |---|---|
 | ~~island mask~~ | done — see step 6 |
 | ~~hills~~ | done — see step 7 |
 | ~~water~~ | done — candidates, flood and rivers (steps 8-10) |
-| flatten | done (step 12) |
-| **items** | the pyramid's heights, and nothing else: base and mask verified |
-| **colour** | written; needs a second generator program to fit (step 13) |
-| planes | nothing: writing them in the layout `voxel_asm.s` addresses is what the generator does anyway |
+| ~~flatten~~ | done (step 12) |
+| ~~items~~ | done — the pyramid's heights (step 12) |
+| ~~colour~~ | done — in a second program (steps 13-14) |
+| ~~planes~~ | done — nothing new; the layout `voxel_asm.s` addresses is what the generator writes anyway |
+
+What is left is **time**. Stage one is 48.5 seconds for its eight passes and
+stage two is 181 for two, nearly all of it `colour_build` at 175.9 — around
+27000 cycles a pixel against the 250-350 this document costed, which is the
+usual Calypsi figure for arithmetic left in C. The pixel loop still has five
+32-bit library multiplies in it (two squares, three by small constants) at 2203
+cycles each and a 32-bit library divide, and reads its two dither lattices
+through far pointers. Those are the next thing to do, and the checksum is what
+makes them safe to do.
 
 Water is next, and it is the one the costing has always flagged: a priority
 flood is a heap and a visited set, which is the least 6502-shaped code in the

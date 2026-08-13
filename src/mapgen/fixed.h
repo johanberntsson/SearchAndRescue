@@ -112,7 +112,7 @@ void rnd_seed(uint32_t seed);
 uint32_t rnd_next(void);
 
 // Where the stream has got to, so one program can hand it to the next.
-uint32_t rnd_state(void);
+void rnd_state(uint32_t *out);
 
 // A uniform value in 0..n-1, as (rnd * n) >> 32 rather than a modulo: the top
 // word of one multiply, where a remainder would be a divide.

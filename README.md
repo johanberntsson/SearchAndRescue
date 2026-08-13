@@ -70,19 +70,23 @@ else. And the arithmetic is the MEGA65's own — Q0.16 integers, reciprocals,
 tables, histograms instead of sorts — because the next step is to generate the
 maps on the machine itself; `documentation/on-device-maps.md` costs that out.
 
-**The disk boots in two stages, which is the frame the generator will go in.**
-`AUTOBOOT.C65` is stage one: it prepares attic RAM and then hands the machine
-to `SAR`, the game. Two programs rather than one because the game already fills
-the 32 KB it is given and a generator is far more code than the *loader* it
-would replace — and it works because attic RAM survives a program load, so
-stage one can fill it and vanish. Handing over is done the way
-[ozmoo](https://github.com/johanberntsson/ozmoo) restarts itself: put
-`RUN"SAR"` in the keyboard queue and let the screen editor type it once BASIC
-is back. Stage one already generates one map's terrain noise up there — nine
-seconds on real hardware, byte-identical to what `tools/genmap.py` computes on
-the PC — and the game says on its boot screen whether it arrived. The game does
-not fly it yet; the rest of the pipeline goes in behind it, one pass at a
-time.
+**And the whole of that generator now runs on the MEGA65.** The disk boots in
+three stages: `AUTOBOOT.C65` builds the terrain, the water and the pyramid,
+`MG2` paints the colour map and writes the planes the renderer reads, and then
+the machine is handed to `SAR`, the game. Three programs rather than one
+because the game already fills the 32 KB it is given and a generator is far
+more code than the *loader* it would replace — and it works because attic RAM
+survives a program load, so each stage can fill it and vanish. Handing over is
+done the way [ozmoo](https://github.com/johanberntsson/ozmoo) restarts itself:
+put `RUN"SAR"` in the keyboard queue and let the screen editor type it once
+BASIC is back.
+
+**Every one of the eleven passes is byte-identical to what `tools/genmap.py`
+computes on the PC** — each stage prints a checksum and `tools/fbmcheck.py`
+prints the same one from Python, which is how the port was built and what makes
+it safe to optimise. It costs about four minutes at the moment, nearly all of
+it the colour pass, which is still arithmetic left in C; the game does not fly
+the result yet.
 
 `tools/preview.py` flies one on the PC **with the game's own
 renderer** — the same march, projection, map sampling and flight model, at the

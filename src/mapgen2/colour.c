@@ -316,9 +316,13 @@ uint32_t colour_build(void)
     }
   }
   {
-    uint32_t want = count / 100;
+    // **Ninety-nine hundredths, in that order.** Dividing first to dodge an
+    // overflow that cannot happen -- 78126 * 99 is well inside 32 bits --
+    // moved the cut by 44 units and every colour boundary with it.
+    uint32_t want = count;
 
     want *= 99;
+    want /= 100;
     top = count ? percentile(want) : ONE;
   }
   recip_top = recip32(top > SEA ? top - SEA : 1);

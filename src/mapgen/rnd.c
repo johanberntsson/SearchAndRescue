@@ -34,7 +34,15 @@ uint16_t rnd_below(uint16_t n)
   return (uint16_t)MATH.multout[4] | ((uint16_t)MATH.multout[5] << 8);
 }
 
-uint32_t rnd_state(void)
+// **Out by pointer, not by return.** `return state;` compiled to a partial
+// load: the caller got the low half of the word and 0xFFFF in the high one,
+// whichever of the three ways it tried to store it. `rnd_next` returns a
+// uint32_t perfectly well, so it is returning *this* static that the compiler
+// gets wrong, and writing through a pointer takes the question away. It cost
+// stage two the whole colour pass -- the two dither lattices are hashed off
+// this word, so every pixel came out a shade or a step wrong while the
+// terrain, which is stage one's own and never crosses the gap, stayed exact.
+void rnd_state(uint32_t *out)
 {
-  return state;
+  *out = state;
 }
