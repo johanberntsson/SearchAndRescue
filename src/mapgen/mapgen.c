@@ -10,29 +10,42 @@
 // eventually loses the loader and the exomizer decruncher.
 // documentation/on-device-maps.md has the costing.
 //
-// What it does *today* is write a proof block and chain. The generator goes in
-// here one pass at a time; the boot arrangement is what this first version is
-// for, because it is the part that either works or does not.
+// What it does today is generate the terrain noise of one map -- the dominant
+// term of the whole generator -- time itself, print a checksum the PC can
+// match, and hand over. The rest of the pipeline goes in behind it, one pass
+// at a time.
 
 #include <stdint.h>
 #include <stdio.h>
 
 #include "../handover.h"
+#include "../profile.h"
+#include "noise.h"
 
 // Who to hand over to: the game's own file on the boot disk. Typed into the
-// keyboard queue below exactly as a pilot would type it.
+// keyboard queue below exactly as a pilot would type it, so it has to match
+// the Makefile's $(PRG) basename -- diskutil.rb names a file on disk after
+// its host file.
 #define GAME_NAME "SAR"
+
+// How long the report stays up before the handover, so that a headless run
+// can screenshot it and a real machine can be read. `make REPORT=n` sets it,
+// the same knob the game's benchmark report uses.
+#ifndef REPORT_SECONDS
+#define REPORT_SECONDS 20
+#endif
 
 // The C65's keyboard queue, which is not the C64's at $0277/$C6 -- this runs
 // in C65 mode, under BASIC 65. Sixteen bytes at $02B0 with the count in zero
 // page at $D0.
 #define KEY_QUEUE ((volatile uint8_t *)0x02B0)
 #define KEY_COUNT (*(volatile uint8_t *)0x00D0)
-#define KEY_QUEUE_MAX 16
 
 // The raster, for a seed. Any of the low bits of it is a different number
-// every boot, which is the whole requirement -- see handover.h.
+// every boot on hardware -- see handover.h.
 #define RASTER (*(volatile uint8_t *)0xD012)
+
+void kernal_ioinit(void);
 
 // Hand the machine to the game by typing for the pilot.
 //
@@ -46,13 +59,31 @@
 //
 // ozmoo prints its command to the screen and queues only the RETURN, because
 // its line is longer than the sixteen bytes the queue holds and needs cursor
-// movement in it. `RUN"SAR"` is nine bytes, so the whole line fits and the
-// editor echoes it for us.
+// movement in it. `NEW` and `RUN"SAR"` are thirteen bytes with their two
+// RETURNs, so both whole lines fit and the editor echoes them for us.
+//
+// **The NEW is not optional, and it is not there for the program text.** A C
+// program of any size leaves BASIC's zero page as Calypsi's pseudo registers
+// found it -- they own $02-$7F, which is where BASIC keeps its own pointers --
+// and the first version of stage one got away with it only because it used so
+// little of them. The moment this file grew 32-bit arithmetic, `RUN"SAR"` came
+// back `?FORMULA TOO COMPLEX ERROR`: BASIC's temporary string stack pointer
+// was left past its end, so the filename constant had nowhere to go. NEW runs
+// a CLR, which puts every one of those pointers back.
+//
+// **And it has to be its own line.** `NEW:RUN"SAR"` runs the NEW and silently
+// drops the rest: NEW resets the interpreter's text pointer, so BASIC finds
+// end-of-line where the colon was. Two queued RETURNs is the answer, which is
+// what ozmoo does as well.
 static void chain(const char *name)
 {
   uint8_t n = 0;
   const char *p;
 
+  KEY_QUEUE[n++] = 'N';
+  KEY_QUEUE[n++] = 'E';
+  KEY_QUEUE[n++] = 'W';
+  KEY_QUEUE[n++] = 13;
   KEY_QUEUE[n++] = 'R';
   KEY_QUEUE[n++] = 'U';
   KEY_QUEUE[n++] = 'N';
@@ -98,25 +129,71 @@ static uint16_t proof_write(void)
   return seed;
 }
 
+// Hold the report up, so a headless screenshot can catch it and somebody at a
+// real machine can read it. Any key cuts it short. The raster is the clock
+// because the profiler's has just been handed back to the Kernal.
+static void hold(uint8_t seconds)
+{
+  uint16_t frames = (uint16_t)seconds * 50;
+  uint8_t last = RASTER;
+
+  while (frames) {
+    uint8_t r = RASTER;
+
+    if (r < last)  // the raster wrapped: one frame
+      frames--;
+    last = r;
+    if (*(volatile uint8_t *)0x00D0)  // something in the keyboard queue
+      break;
+  }
+}
+
 int main(void)
 {
   uint16_t seed;
+  uint32_t start, ticks, tps;
+  uint32_t sum;
 
   putchar(147);  // clear
   printf("\n\n     SEARCH AND RESCUE\n");
-  printf("     STAGE ONE\n\n\n");
-  printf("     PREPARING ATTIC RAM\n");
+  printf("     STAGE ONE: MAP GENERATOR\n\n\n");
 
   seed = proof_write();
-  printf("     HANDOVER SEED %u\n\n", seed);
+
+  // The clock. profile_init takes CIA2's timers, which is why kernal_ioinit
+  // has to put them back before the handover reads the disk.
+  profile_init();
+  profile_calibrate();
+  tps = profile_ticks_per_second();
+
+  printf("     TERRAIN NOISE 512X512\n");
+  noise_init();
+
+  start = profile_now32();
+  sum = noise_run();
+  ticks = start - profile_now32();
+
+  // Seconds and hundredths, from a tick count that would overflow a
+  // multiply by 100. tps/100 is the ticks in a hundredth of a second.
+  {
+    uint32_t hundredths = ticks / (tps / 100);
+
+    printf("     %lu.%02lu SECONDS\n", hundredths / 100, hundredths % 100);
+  }
+  printf("     CHECKSUM %04X%04X\n\n", (uint16_t)(sum >> 16), (uint16_t)sum);
+  printf("     HANDOVER SEED %u\n", seed);
+
+  hold(REPORT_SECONDS);
+
+  // Give the Kernal its timers back before anything asks it to read a disk --
+  // and the handover is exactly that, since BASIC has to LOAD the game.
+  kernal_ioinit();
 
   // ozmoo clears the screen before it queues its keys; this does not, and can
   // afford not to. The editor executes the *logical line the cursor is on*,
   // and BASIC's READY leaves it at the start of a fresh one -- so the report
   // above scrolls up out of the way rather than being read back. Keeping it
-  // means a failed handover leaves something on screen to look at, which is
-  // worth more here than a tidy screen for the second or so before the game
-  // clears it anyway.
+  // means a failed handover leaves something on screen to look at.
   chain(GAME_NAME);
   return 0;
 }

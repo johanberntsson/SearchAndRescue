@@ -19,7 +19,11 @@
 // carries, so nothing stage one does can disturb a map the game loads for
 // itself. When the generator is real, what it writes is the slots themselves
 // and this moves to a corner of one of them.
-#define HANDOVER_BASE MAP_SLOT(2)
+//
+// A megabyte into the slot, because the front of it is where the generator
+// puts the field it is working on (NOISE_FIELD in src/mapgen/noise.h) and the
+// two must not overlap. The slot is 2 MB.
+#define HANDOVER_BASE (MAP_SLOT(2) + 0x100000UL)
 
 // 'S','A','R','1'.
 #define HANDOVER_MAGIC 0x31524153UL

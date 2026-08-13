@@ -344,13 +344,20 @@ def stretch(total):
     return np.clip(F.scale(np.clip(total - lo, 0, None), recip), 0, ONE)
 
 
-def fbm(size, octaves, gain, stream, ridged=False, base=LATTICE):
-    """Octaves of value noise, in Q0.16. The float version's shape exactly.
+def fbm_octaves(size, octaves, gain, stream, base=LATTICE):
+    """The weighted octave sum, normalised to 0..ONE. No stretch, no fold.
 
-    The weighted sum is accumulated at Q8.16 -- an octave sum reaches several
-    times ONE before it is normalised -- and divided by the total weight
-    through a reciprocal, which is the only place this differs from the float
-    in more than rounding.
+    Split out of fbm() below because **this is the half that was ported to the
+    MEGA65 first** -- it is the dominant term of the whole generator's cost, and
+    it is what `tools/fbmcheck.py` and `src/mapgen/noise.c` compute. Keeping it
+    a named function rather than ten lines inside fbm() is what stops the
+    device and the PC drifting apart: there is one definition and both sides
+    quote it.
+
+    The sum is accumulated at Q8.16 -- an octave sum reaches several times ONE
+    before it is normalised -- and divided by the total weight through a
+    reciprocal, which is the only place this differs from the float in more
+    than rounding.
     """
     total = np.zeros((size, size), np.int64)
     weight = 0
@@ -366,8 +373,12 @@ def fbm(size, octaves, gain, stream, ridged=False, base=LATTICE):
         weight += amp
         amp = F.mul(amp, gain)
 
-    total = F.scale(total, (ONE * ONE) // weight)
-    total = stretch(total)
+    return F.scale(total, (ONE * ONE) // weight)
+
+
+def fbm(size, octaves, gain, stream, ridged=False, base=LATTICE):
+    """Octaves of value noise, stretched, in Q0.16. The float version's shape."""
+    total = stretch(fbm_octaves(size, octaves, gain, stream, base))
     if ridged:
         total = ONE - np.abs(2 * total - ONE)
     return total

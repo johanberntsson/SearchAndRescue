@@ -52,7 +52,13 @@ D81      = $(BUILD)/sar.d81
 # mechanism. src/mapgen/ is deliberately outside the src/*.c glob above so the
 # two never link into each other. See documentation/on-device-maps.md.
 GEN_SRCS = $(wildcard src/mapgen/*.c)
-GEN_OBJS = $(patsubst src/mapgen/%.c,$(BUILD)/mapgen/%.o,$(GEN_SRCS))
+GEN_ASRCS = $(wildcard src/mapgen/*.s)
+# src/profile.c is shared with the game rather than copied: stage one times
+# itself with the same raster-calibrated clock the renderer is measured with,
+# so the two sets of figures mean the same thing.
+GEN_OBJS = $(patsubst src/mapgen/%.c,$(BUILD)/mapgen/%.o,$(GEN_SRCS)) \
+           $(patsubst src/mapgen/%.s,$(BUILD)/mapgen/%.o,$(GEN_ASRCS)) \
+           $(BUILD)/profile.o
 GEN_ELF  = $(BUILD)/mapgen.elf
 GEN_PRG  = $(BUILD)/autoboot.c65
 # One sprite sheet per figure the game can stand in the world, in the order
@@ -124,6 +130,10 @@ $(BUILD)/mapgen:
 $(BUILD)/mapgen/%.o: src/mapgen/%.c $(wildcard src/*.h) $(wildcard src/mapgen/*.h) \
                      $(CONFIG_STAMP) | $(BUILD)/mapgen
 	cc6502 $(CFLAGS) -c -o $@ $<
+
+$(BUILD)/mapgen/%.o: src/mapgen/%.s $(wildcard src/*.h) $(wildcard src/mapgen/*.h) \
+                     $(CONFIG_STAMP) | $(BUILD)/mapgen
+	as6502 $(ASFLAGS) -o $@ $<
 
 $(GEN_ELF): $(GEN_OBJS)
 	ln6502 $(LDFLAGS) -o $@ $(LINKFILE) $(GEN_OBJS)
