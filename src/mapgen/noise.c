@@ -78,6 +78,19 @@ static uint32_t acc[SIZE];
 
 static uint32_t weight_recip;
 
+// The inner loop's parameters, in zero page where src/mapgen/noise_asm.s can
+// reach them -- the same arrangement the renderer's `vx_*` block uses. The
+// four scratch words are the assembly's, not this file's.
+const uint16_t *__attribute__((zpage)) nz_top;
+const uint16_t *__attribute__((zpage)) nz_bot;
+uint32_t *__attribute__((zpage)) nz_acc;
+__zpage uint16_t nz_wy;
+__zpage uint32_t nz_amp;
+__zpage uint16_t nz_t, nz_b, nz_d, nz_n;
+__zpage uint8_t nz_chunks;
+
+void noise_blend(void);
+
 // The lattice hash. genmap.py does this in integers already -- it is the one
 // part of the generator that was portable from the start -- so this is the
 // same multiply and shift chain with $D770 doing the multiplies.
@@ -232,8 +245,12 @@ uint32_t noise_run(void)
       top = e_top[o];
       bot = e_bot[o];
 
-      for (x = 0; x < SIZE; x++)
-        acc[x] += mulhi(lerp16(top[x], bot[x], wy), amp);
+      nz_top = top;
+      nz_bot = bot;
+      nz_acc = acc;
+      nz_wy = wy;
+      nz_amp = amp;
+      noise_blend();
     }
 
     for (x = 0; x < SIZE; x++) {

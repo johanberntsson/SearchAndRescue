@@ -130,8 +130,21 @@ static uint16_t proof_write(void)
 }
 
 // Hold the report up, so a headless screenshot can catch it and somebody at a
-// real machine can read it. Any key cuts it short. The raster is the clock
-// because the profiler's has just been handed back to the Kernal.
+// real machine can read it.
+//
+// **It does not offer a key to cut it short**, though it did at first. Testing
+// the keyboard queue's count at $D0 ended the hold immediately every time --
+// the byte is not reliably zero when nothing has been typed, whatever else it
+// is doing for the ROM -- and a report that flashes past is worse than one
+// that always waits. Writing the queue to chain still works, so $D0 is the
+// count as far as *setting* it goes; reading it as "has a key been pressed" is
+// what does not hold up.
+//
+// The raster is the clock here because the profiler's has been handed back to
+// the Kernal by now. $D012 is eight bits of a 312-line PAL frame, so a wrap is
+// about 0.82 of a frame rather than one -- the hold is roughly a fifth longer
+// than the seconds it is asked for, which for a "look at this" pause is close
+// enough to not be worth a division.
 static void hold(uint8_t seconds)
 {
   uint16_t frames = (uint16_t)seconds * 50;
@@ -143,8 +156,6 @@ static void hold(uint8_t seconds)
     if (r < last)  // the raster wrapped: one frame
       frames--;
     last = r;
-    if (*(volatile uint8_t *)0x00D0)  // something in the keyboard queue
-      break;
   }
 }
 
