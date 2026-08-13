@@ -832,6 +832,29 @@ About **six of the 48.5 seconds are the verification checksums**, which read
 whole fields back out of attic for no other purpose. They go when the pipeline
 is finished, which puts the real figure nearer 42.
 
+### Step 12, the water flattened in — and where this stopped
+
+`water_flatten` is exact (`C1E23E90`): the water pressed into the terrain, and
+`bed` kept underneath for the colour to shade by depth. Every pass after this
+depends on it.
+
+**`items_place` is not right and `built_place` is not called.** Its site median
+is exact and its built mask is exact; only the terrain inside the pyramid is
+wrong. Base right and mask right puts the fault in the tier-to-height step and
+nowhere else.
+
+Two things it turned up that outlive it:
+
+- **`(uint32_t)span * span / 2` reached the callee as zero.** Into a variable
+  first it is 2401. Mixed widths in one expression — the third instance of this
+  family in the port, after the `uint8_t` index and the `int8_t` coordinates.
+- **The pyramid's cap is MASK, not ONE**, for the same reason `stretch`'s is.
+  The maps were re-rolled and `checkview` still passes.
+
+And the space: **`$C000-$CFFF` is banked out alongside BASIC**, so it is 12 KB
+under the ROMs rather than 8. The KERNAL stays mapped, so `printf` and the
+interrupt vectors are untouched and it still needs no `SEI`.
+
 ### What is left of the pipeline
 
 In order, with what each needs that is new:
@@ -841,7 +864,9 @@ In order, with what each needs that is new:
 | ~~island mask~~ | done — see step 6 |
 | ~~hills~~ | done — see step 7 |
 | ~~water~~ | done — candidates, flood and rivers (steps 8-10) |
-| colour | gradients, the ramp, the sun, two dithers, and the palette |
+| flatten | done (step 12) |
+| **items** | the pyramid's heights, and nothing else: base and mask verified |
+| **colour** | gradients, the ramp, the sun, two dithers, a gamma table and a tanh table. The biggest per-pixel pass left, and the one the costing puts at 250-350 cycles a pixel |
 | planes | nothing: writing them in the layout `voxel_asm.s` addresses is what the generator does anyway |
 
 Water is next, and it is the one the costing has always flagged: a priority
