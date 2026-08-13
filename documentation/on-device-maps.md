@@ -796,26 +796,41 @@ The flood is shared with the lakes rather than copied: a river with no downhill
 left ends in a pool, dammed by the water standing *before it started* — genmap's
 `blocked=standing`, a flag on the visit test here.
 
-### The pipeline is nearly there, and now too slow
+### Step 11, the optimisation pass: 66.6 to 48.5 seconds
 
-Stage one is **66.63 seconds** for eight passes. That is **slower than the
-loading it exists to replace** (about 24 s on hardware), so the optimisation
-pass stops being a someday and becomes the next thing:
+Three rounds, and **not one of them needed a map to be looked at** — every
+checksum came through untouched. That is the whole argument for having built
+them before the passes they check.
 
-| pass | s | |
-|---|---|---|
-| rivers | 17.8 | C, and a full-field blur inside it |
-| flow | 15.3 | two full-field passes in C |
-| minima | 9.4 | two full-field passes in C |
-| noise | 9.3 | assembly already |
-| mask | 4.7 | assembly already |
-| lakes | 4.8 | mostly the visited-set clears |
-| shape | 2.6 | assembly already |
-| hills | 0.5 | |
+| pass | before | after | |
+|---|---|---|---|
+| rivers | 17.8 | **12.1** | DMA rows, and one scan that stops early |
+| flow | 15.3 | **8.4** | DMA rows, then the inner loops in assembly |
+| minima | 9.4 | **4.6** | DMA rows |
+| everything else | 24.1 | 23.4 | already assembly |
+| **total** | **66.6** | **48.5** | |
 
-**The three C passes are 42 of the 67 seconds**, and every one of them has a
-checksum standing by to prove a rewrite changes nothing. That is what the
-checksums were built for, and it is the same 7-8x the noise saw.
+**Rows move by DMA, not by far pointers.** A field pass in C costs a 32-bit
+pointer setup per access; the DMAgic moves a whole row at 16.11 cycles a byte
+out of attic and 9.54 back in, and once a row is in chip RAM the arithmetic on
+it is near addressing. `src/dma.h` was already in the game. Two things this
+turned up: **the DMAgic reads and writes the RAM under a banked-out ROM with no
+special handling** (the work union is at `$A000` now), and *where* it helped
+says what a pass is made of — minima and rivers more than halved because they
+were traffic-bound, and flow barely moved because its cost was arithmetic.
+
+**Then the blur's inner loops in assembly**, which is what flow's 13 seconds
+turned out to be: a 32-bit accumulator update and a multiply per pixel, the
+shape the compiler is worst at. 13.0 to 8.4.
+
+**And one C-level fix worth as much per line as either**: the pass that finds
+the three river sources compared every one of thirty thousand high cells
+against all three picks. Sorted first, it compares against one and stops when
+the last is found.
+
+About **six of the 48.5 seconds are the verification checksums**, which read
+whole fields back out of attic for no other purpose. They go when the pipeline
+is finished, which puts the real figure nearer 42.
 
 ### What is left of the pipeline
 

@@ -162,12 +162,13 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   are found (`76AC0EB9`), **the flood works** (`EE773E32`) and so do the
   rivers (`3BFEFC87`/`955A7A1A`). Water is finished; colour and the planes are
   what is left.
-- **The generator is correct and too slow: 66.63 seconds for eight passes**,
-  against the ~24 of loading it exists to replace. Three passes in C are 42 of
-  those 67 -- `rivers` 17.8, `flow` 15.3, `minima` 9.4 -- and each has a
-  checksum standing by to prove a rewrite changes nothing. That is the same
-  7-8x the noise saw when it went to assembly, and it is now the next job
-  rather than a someday.
+- **The generator is 48.5 seconds for eight passes**, down from 66.6 -- rows
+  moved by DMA, the blur's inner loops in assembly, and one scan taught to stop
+  early. Every checksum came through untouched, which is what they were for.
+  About six of those seconds are the verification checksums themselves and go
+  when the pipeline is done. Still slower than the ~24 of loading it replaces,
+  so there is more to do: `rivers` is 12.1 and still C, and the passes that
+  clear a 32 KB visited set three times could use `dma_fill`.
 - ~~Stage one is out of program space~~ **fixed, and the fix is the general
   one**: the 32 KB was `mega65-plain.scm`, not the machine. Stage one banks
   BASIC out and puts its BSS in the RAM underneath (`mega65-sar.scm`,
