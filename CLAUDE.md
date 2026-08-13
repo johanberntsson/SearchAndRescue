@@ -593,13 +593,35 @@ to stand while 32 KB is loaded over it.
 to match the Makefile's `$(PRG)` basename, because `diskutil.rb` names a file
 on disk after its host file.
 
-**The NEW in the queued line is not optional.** Calypsi's pseudo registers own
-$02-$7F, which is where BASIC keeps its own pointers, so a C program of any
-size hands BASIC a broken zero page: `RUN"SAR"` comes back `?FORMULA TOO
-COMPLEX ERROR`, its temporary string stack pointer left past its end. NEW runs
-a CLR and puts them all back. It also has to be **its own queued line** — NEW
-resets the interpreter's text pointer, so `NEW:RUN"SAR"` runs the NEW and
-silently drops the rest. Two RETURNs in the queue, which is what ozmoo does.
+**Zero page is the hard part of handing the machine back**, and there are two
+separate problems in it. The linker is allowed `$02-$7F` and BASIC lives there
+too.
+
+- **The queued line needs a `NEW`.** Calypsi's pseudo registers sit at the
+  bottom of that range, on top of BASIC's own pointers, so a C program of any
+  size leaves them wrong: `RUN"SAR"` comes back `?FORMULA TOO COMPLEX ERROR`,
+  its temporary string stack pointer left past its end. NEW runs a CLR and puts
+  those back. It also has to be **its own queued line** — NEW resets the
+  interpreter's text pointer, so `NEW:RUN"SAR"` runs the NEW and silently drops
+  the rest. Two RETURNs in the queue, which is what ozmoo does.
+- **`NEW` is not enough on its own**, because it only resets the pointers a
+  program is expected to move. Variables declared `__zpage` are placed *above*
+  the pseudo registers and are saved by nobody: stage one's went to `$3A-$5A`
+  when the generator's assembly got its parameter block, and with those held
+  BASIC never reached READY at all — `main` returned, the queue was full, and
+  the machine simply stopped. `zp_preserve`/`zp_restore` in
+  `src/mapgen/kernal.s` copy the whole `zzpage` span out at the start of the
+  run and put it back beside the CIA timers. **Any program that means to return
+  to BASIC needs this**, and the symptom is a machine that dies silently after
+  a working program finishes.
+
+Two more things about running stage one under xemu. **Assembly called from C
+must leave Z at zero** — Calypsi reaches through pointers with `lda (zp),z` and
+keeps Z there, so a routine that leaves it at 128 offsets every later pointer
+read. And **xemu headless quits itself about ten seconds into a run** on this
+disk, on an `FDC SWAP bit emulation is experimental` dialog that `-besure` does
+not cover, so a long boot cannot be watched to the end in one go; shortening
+the field is how the handover gets tested.
 
 **Stage one shares `src/profile.c`**, so its figures and the renderer's mean
 the same thing, and it hands CIA2's timers back with Kernal IOINIT (`$FF84`,
