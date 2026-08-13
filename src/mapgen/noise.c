@@ -92,7 +92,13 @@ LOW_FREE static uint16_t sq_tab[SIZE / 2];
 // octaves in attic RAM and pays +15 cycles a read for every one of them.
 #define CORNERS (BASE * BASE * (1 + 4 + 16 + 64))
 
-static uint16_t corner[CORNERS];
+// **In bank 1, not in the 32 KB.** The lattices are read only when an edge row
+// is rebuilt -- sixty times over the whole field, 512 pixels each -- so far
+// reads cost about a twentieth of a second all told, and 2720 bytes of the
+// program's own space is worth a great deal more than that. Stage one owns
+// bank 1: there is no framebuffer yet. Above the flood's visited bitmap.
+#define CORNER_STORE 0x18000UL
+static uint16_t __far *const corner = (uint16_t __far *)CORNER_STORE;
 static uint16_t coff[OCT];    // where each octave's grid starts
 static uint8_t lshift[OCT];   // log2 of the octave's step, so sx >> this is a corner
 static uint16_t offx[OCT], offy[OCT];  // np.roll's two offsets
@@ -261,7 +267,7 @@ static void edge_build(uint8_t o, uint16_t row, uint16_t *dst)
   uint16_t pmask = period - 1;
   uint16_t stepmask = (uint16_t)((1 << sh) - 1);
   uint16_t ox = offx[o];
-  const uint16_t *c = corner + coff[o] + row * period;
+  const uint16_t __far *c = corner + coff[o] + row * period;
   const uint16_t *w = wtab + woff[o];
   uint16_t x;
 
@@ -759,7 +765,13 @@ void hills_apply(void)
 // which is what the checksum is for.
 #define MINIMA_MAX 128
 
-static uint16_t cand_y[MINIMA_MAX], cand_x[MINIMA_MAX];
+// Defined with the flood below, but the level field is first written by the
+// minima scan, which is already reading every cell.
+#define DRY 0xFFFF
+#define LEVEL_FIELD (NOISE_FIELD + 0x80000UL)
+static void level_set(uint16_t y, uint16_t x, uint16_t v);
+
+LOW_FREE static uint16_t cand_y[MINIMA_MAX], cand_x[MINIMA_MAX];
 static uint16_t cand_n;
 
 // The three rows, and which of them is which. Indexed by (y + 2) % 3 so that
@@ -807,6 +819,12 @@ static void minima_scan(uint8_t keep, uint16_t cut)
 
     for (x = 0; x < SIZE; x++) {
       uint16_t v = mid[x];
+
+      // The water level starts here, folded into a pass that is reading
+      // every cell anyway: the sea where the ground is under it, dry
+      // otherwise. The flood writes lake surfaces over it afterwards.
+      if (!keep)
+        level_set(y, x, v <= SEA ? (uint16_t)SEA : (uint16_t)DRY);
 
       if (v <= SEA || !is_min(up, mid, dn, x))
         continue;
@@ -870,4 +888,309 @@ uint32_t minima_find(void)
     sum_b = (uint16_t)(sum_b + a);
   }
   return (uint32_t)sum_b << 16 | a;
+}
+
+// --- water, part two: the flood -- **NOT FINISHED, AND NOT CALLED** ---------
+//
+// This is here because the diagnosis is worth more than the code, and both
+// would be lost by deleting it. `lakes_fill` is not called from
+// src/mapgen/mapgen.c: it produces the wrong answer and then hangs inside
+// flood_basin's main loop, which cannot iterate more than LAKE_BUDGET times,
+// so what it is really doing is running off something and crashing.
+//
+// **The blocker is not the algorithm, it is space.** Stage one will not link
+// with a C stack above 512 bytes any more, and 512 is the value that was
+// measured as safe *before* this pass existed -- five calls deep with printf
+// in the chain is not the same program the canary measured. Proving or
+// disproving the stack theory needs room to raise it, and there is none: the
+// program section is full. The next move is therefore to make space before
+// touching this again, and the candidates are known -- `acc` and the octave
+// lattices are only live during the noise, and the mask's tables only during
+// the mask.
+//
+// Three real bugs were found and fixed on the way here, all verified against
+// the PC by the intermediate-checksum method, and all worth keeping:
+//
+// `flood_basin` and the placement loop from `fill_lakes`. A basin is filled
+// from its minimum outwards, always taking the lowest cell on the frontier,
+// until it reaches its area budget or the frontier climbs more than LAKE_RISE
+// above where it started.
+//
+// **Two things are copied faithfully rather than improved on**, both from
+// documentation/procedural-maps.md, and both cost a release when they were got
+// wrong on the PC:
+//
+//   - the surface is cut back to the lowest cell left on the frontier. Without
+//     that a lake whose flood stopped on its budget stands above the beach
+//     beside it -- a row of dark blocks out of the sea at the waterline,
+//     invisible in plan view and obvious from the air.
+//   - the region is filtered by that surface afterwards, so a cell that was
+//     taken while the level was still rising does not stay wet above it.
+//
+// **The heap's order has to match Python's tuple comparison exactly**, which
+// is height, then y, then x. It is not a detail: ties decide which cells are
+// taken last, and the budget cuts the flood off in the middle of one.
+#define LAKE_COUNT  3          // COUNTS["few"]
+#define LAKE_BUDGET 225        // LAKE_AREA["small"] scaled to this map size
+#define LAKE_RISE   3276UL     // 0.05
+
+// The water level: -1 dry, the sea level where it is sea, the lake's surface
+// where a basin filled. Half a megabyte past the field, in the same slot.
+
+// Which cells the flood has already queued. A bit per cell is 32 KB, which is
+// the bottom of bank 1 -- stage one owns it, there being no framebuffer yet.
+// The octave lattices sit just above at CORNER_STORE.
+#define SEEN_BITS 0x10000UL
+
+static uint16_t heap_n, region_n;
+static uint8_t *heap_e;        // 6 bytes an entry: hh, y, x, big-endian
+static uint16_t *region_y, *region_x;
+
+static uint16_t level_get(uint16_t y, uint16_t x)
+{
+  const uint16_t __far *row =
+      (const uint16_t __far *)(LEVEL_FIELD + (uint32_t)y * (SIZE * 2));
+
+  return row[x];
+}
+
+static void level_set(uint16_t y, uint16_t x, uint16_t v)
+{
+  uint16_t __far *row =
+      (uint16_t __far *)(LEVEL_FIELD + (uint32_t)y * (SIZE * 2));
+
+  row[x] = v;
+}
+
+// **`SIZE * SIZE` does not fit an int here**, and this is the trap CLAUDE.md
+// opens its Performance notes with: 512 * 512 is 262144, the compiler works it
+// out in sixteen bits, and the loop bound came out zero -- so the visited set
+// was never cleared and every flood after the first ran against the one
+// before it. Written as a count of half-pages, which cannot overflow.
+#define SEEN_HALF ((uint16_t)(SIZE / 8) * (SIZE / 2))
+
+static void seen_clear(void)
+{
+  uint8_t __far *p = (uint8_t __far *)SEEN_BITS;
+  uint16_t i;
+
+  for (i = 0; i < SEEN_HALF; i++) {
+    p[i] = 0;
+    p[i + SEEN_HALF] = 0;
+  }
+}
+
+static uint8_t seen_test_set(uint16_t y, uint16_t x)
+{
+  uint32_t bit = (uint32_t)y * SIZE + x;
+  uint8_t __far *p = (uint8_t __far *)(SEEN_BITS + (bit >> 3));
+  uint8_t m = (uint8_t)(1 << (bit & 7));
+
+  if (*p & m)
+    return 1;
+  *p = (uint8_t)(*p | m);
+  return 0;
+}
+
+// The heap, ordered on (height, y, x) as one big-endian six-byte key so that
+// a comparison is a walk along the bytes -- which is what Python's tuple
+// comparison does, in the same order.
+static int8_t key_cmp(const uint8_t *a, const uint8_t *b)
+{
+  uint8_t i;
+
+  for (i = 0; i < 6; i++) {
+    if (a[i] != b[i])
+      return a[i] < b[i] ? -1 : 1;
+  }
+  return 0;
+}
+
+// **Read a field back with unsigned arithmetic, not a cast afterwards.**
+// `e[0] << 8` promotes the byte to a *signed* 16-bit int, so any entry whose
+// height is 0x8000 or more shifts into the sign bit -- and this heap's
+// heights are terrain, which is over 0x8000 for half the map. The pop path
+// got away with it and the spill scan did not: a cell at 32771 was read as
+// 771 and every lake came out at the wrong level.
+static uint16_t key_field(const uint8_t *e, uint8_t at)
+{
+  return (uint16_t)(((unsigned)e[at] << 8) | e[at + 1]);
+}
+
+static void key_put(uint8_t *e, uint16_t hh, uint16_t y, uint16_t x)
+{
+  e[0] = (uint8_t)(hh >> 8); e[1] = (uint8_t)hh;
+  e[2] = (uint8_t)(y >> 8);  e[3] = (uint8_t)y;
+  e[4] = (uint8_t)(x >> 8);  e[5] = (uint8_t)x;
+}
+
+static void key_copy(uint8_t *d, const uint8_t *s)
+{
+  uint8_t i;
+
+  for (i = 0; i < 6; i++)
+    d[i] = s[i];
+}
+
+#define HEAP_MAX 1024
+
+static void heap_push(uint16_t hh, uint16_t y, uint16_t x)
+{
+  uint16_t i;
+
+  if (heap_n >= HEAP_MAX)   // never seen; silently dropping one would be a
+    return;                 // wrong map rather than a crash, so it is capped
+  i = heap_n++;
+  uint8_t tmp[6];
+
+  key_put(heap_e + (uint16_t)i * 6, hh, y, x);
+  while (i) {
+    uint16_t parent = (uint16_t)((i - 1) / 2);
+
+    if (key_cmp(heap_e + (uint16_t)parent * 6, heap_e + (uint16_t)i * 6) <= 0)
+      break;
+    key_copy(tmp, heap_e + (uint16_t)i * 6);
+    key_copy(heap_e + (uint16_t)i * 6, heap_e + (uint16_t)parent * 6);
+    key_copy(heap_e + (uint16_t)parent * 6, tmp);
+    i = parent;
+  }
+}
+
+static void heap_pop(uint8_t *out)
+{
+  uint16_t i = 0;
+  uint8_t tmp[6];
+
+  key_copy(out, heap_e);
+  heap_n--;
+  if (!heap_n)
+    return;
+  key_copy(heap_e, heap_e + (uint16_t)heap_n * 6);
+  for (;;) {
+    uint16_t l = (uint16_t)(i * 2 + 1), r = (uint16_t)(l + 1), small = i;
+
+    if (l < heap_n
+        && key_cmp(heap_e + (uint16_t)l * 6, heap_e + (uint16_t)small * 6) < 0)
+      small = l;
+    if (r < heap_n
+        && key_cmp(heap_e + (uint16_t)r * 6, heap_e + (uint16_t)small * 6) < 0)
+      small = r;
+    if (small == i)
+      break;
+    key_copy(tmp, heap_e + (uint16_t)i * 6);
+    key_copy(heap_e + (uint16_t)i * 6, heap_e + (uint16_t)small * 6);
+    key_copy(heap_e + (uint16_t)small * 6, tmp);
+    i = small;
+  }
+}
+
+static void visit(uint16_t ny, uint16_t nx)
+{
+  if (seen_test_set(ny, nx))
+    return;
+  if (level_get(ny, nx) != DRY)      // blocked: already water
+    return;
+  heap_push(field_get(ny, nx), ny, nx);
+}
+
+static void flood_basin(uint16_t cy, uint16_t cx)
+{
+  uint16_t start = field_get(cy, cx);
+  uint16_t surface = start;
+  uint16_t i;
+  uint8_t e[6];
+
+  seen_clear();
+  seen_test_set(cy, cx);
+  heap_n = 0;
+  region_n = 0;
+  heap_push(start, cy, cx);
+
+  while (heap_n && region_n < LAKE_BUDGET) {
+    uint16_t hh, y, x;
+
+    heap_pop(e);
+    hh = key_field(e, 0);
+    y = key_field(e, 2);
+    x = key_field(e, 4);
+    if ((uint32_t)hh > (uint32_t)start + LAKE_RISE) {
+      heap_push(hh, y, x);
+      break;
+    }
+    if (hh > surface)
+      surface = hh;
+    region_y[region_n] = y;
+    region_x[region_n] = x;
+    region_n++;
+
+    // **The four neighbours are spelled out.** A `static const int8_t` array
+    // inside a function is one of this toolchain's documented miscompiles --
+    // see the crosshair in CLAUDE.md, which stored nothing at all -- and
+    // written that way here the flood wandered off and came back with a
+    // surface of 771 where the ground is at 33856.
+    visit((uint16_t)(y - 1) & SIZE_MASK, x);
+    visit((uint16_t)(y + 1) & SIZE_MASK, x);
+    visit(y, (uint16_t)(x - 1) & SIZE_MASK);
+    visit(y, (uint16_t)(x + 1) & SIZE_MASK);
+  }
+
+  // The spill point: whatever is left on the frontier is higher ground the
+  // lake did not take, so its lowest is the highest the surface may stand.
+  for (i = 0; i < heap_n; i++) {
+    uint16_t hh = key_field(heap_e + (uint16_t)i * 6, 0);
+
+    if (hh < surface)
+      surface = hh;
+  }
+
+  for (i = 0; i < region_n; i++) {
+    if (field_get(region_y[i], region_x[i]) <= surface)
+      level_set(region_y[i], region_x[i], surface);
+  }
+}
+
+uint32_t lakes_fill(void)
+{
+  uint8_t taken[MINIMA_MAX / 8];
+  uint16_t placed = 0, got = 0, i;
+  uint16_t a = 0, b = 0, x, y;
+
+  // **The heap needs more room than the frontier ever holds.** Four
+  // neighbours a cell over a 225-cell budget is up to 900 pushes, and the
+  // first arrangement gave it 682 entries -- so it ran off the end into the
+  // region arrays that followed it, and the flood came back with a surface of
+  // 771 where the ground is at 33856. 1024 entries, and the region past them.
+  heap_e = (uint8_t *)work.edge[0][0];        // 1024 entries of six bytes
+  region_y = work.edge[1][2];                 // ... 6144 bytes in
+  region_x = work.edge[1][3];
+
+  for (i = 0; i < sizeof taken; i++)
+    taken[i] = 0;
+
+  // stream.pick(n, n): every candidate in a drawn order, by rejection. The
+  // island needs thirteen draws to shuffle eight, and the loop below stops
+  // long before the shuffle is exhausted -- but the *draws* must all happen,
+  // because Python builds the whole list before it starts placing.
+  while (got < cand_n) {
+    uint16_t v = rnd_below(cand_n);
+
+    if (taken[v >> 3] & (1 << (v & 7)))
+      continue;
+    taken[v >> 3] = (uint8_t)(taken[v >> 3] | (1 << (v & 7)));
+    got++;
+    if (placed == LAKE_COUNT)
+      continue;
+    if (level_get(cand_y[v], cand_x[v]) != DRY)
+      continue;
+    placed++;
+    flood_basin(cand_y[v], cand_x[v]);
+  }
+
+  for (y = 0; y < SIZE; y++) {
+    for (x = 0; x < SIZE; x++) {
+      a = (uint16_t)(a + level_get(y, x));
+      b = (uint16_t)(b + a);
+    }
+  }
+  return (uint32_t)b << 16 | a;
 }

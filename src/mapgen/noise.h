@@ -41,4 +41,8 @@ uint32_t field_checksum(void);
 // than as a field.
 uint32_t minima_find(void);
 
+// Flood the basins at those candidates. The checksum is of the water level
+// field, not the terrain -- `--stage lakes`.
+uint32_t lakes_fill(void);
+
 #endif

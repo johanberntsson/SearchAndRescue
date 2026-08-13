@@ -25,6 +25,10 @@ device has ported so far:
     hills     ... with the hills dropped on it
     minima    the lake candidates: local minima below the median, in scan
               order, checksummed as y then x rather than as a field
+    lakes     ... flooded. The checksum is of the *water level* field, which is
+              -1 where the ground is dry, the sea level where it is sea, and
+              the lake's surface where a basin filled -- so it carries both
+              where the water is and how high it stands
 
 Each new pass gets a stage here on the day it is written, so that every one of
 them has a number to be checked against rather than only the last.
@@ -61,7 +65,7 @@ def main():
     ap.add_argument("--size", type=int, default=512)
     ap.add_argument("--stage", default="shape",
                     choices=("octaves", "stretch", "shape", "terrain", "hills",
-                             "minima"))
+                             "minima", "lakes"))
     args = ap.parse_args()
 
     spec, _items = genmap.read_map(args.mapfile)
@@ -74,15 +78,29 @@ def main():
     # genmap.py reaches the same call, which for the octave sum means freshly
     # seeded: base_terrain is the first thing generate() does.
     stream = F.Stream(spec["seed"])
-    if args.stage in ("terrain", "hills", "minima"):
+    if args.stage in ("terrain", "hills", "minima", "lakes"):
         # genmap.py's own function, so the mask and the draw order after it
         # cannot drift from what the maps are actually built with.
         spec["lattice"] = base
         spec["feature"] = scale["feature"]
         spec["sea"] = genmap.TYPES[spec["type"]]["sea"]
         field = genmap.base_terrain(args.size, spec, stream)
-        if args.stage in ("hills", "minima"):
+        if args.stage in ("hills", "minima", "lakes"):
             genmap.add_hills(field, spec, stream, int(spec["sea"] * F.ONE))
+        if args.stage == "lakes":
+            import numpy as np
+            sea = int(spec["sea"] * F.ONE)
+            wet = field <= sea
+            level = np.where(wet, sea, -1)
+            genmap.fill_lakes(field, wet, level, spec, stream)
+            a = b = 0
+            for row in level:
+                for v in row:
+                    a = (a + (int(v) & 0xFFFF)) & 0xFFFF
+                    b = (b + a) & 0xFFFF
+            print(f"{args.mapfile}: {int((level >= 0).sum())} wet cells")
+            print(f"stage lakes: checksum {(b << 16) | a:08X}")
+            return
         if args.stage == "minima":
             import numpy as np
             sea = int(spec["sea"] * F.ONE)
