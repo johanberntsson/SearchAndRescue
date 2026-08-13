@@ -1777,12 +1777,16 @@ static void items_place(void)
 
       if (tier > PYR_STEPS)
         tier = PYR_STEPS;
-      // **Worked out into a variable, not folded into the store.** The
-      // percentile's `want` was written as one mixed-width expression a few
-      // lines up and reached the callee as zero; the same shape here is not
-      // worth finding out about twice.
-      rise = PYR_HEIGHT * (uint32_t)tier / PYR_STEPS;
-      rowbuf_a[xx] = (uint16_t)(base + rise);
+      // **One operation to a statement.** This compiler has now miscompiled
+      // three mixed-width expressions in this port -- a uint8_t index, an
+      // int8_t coordinate, and the percentile's own `want` four lines up,
+      // which reached the callee as zero. Written as `base + H * tier / steps`
+      // this put 5311 at the apex where the answer is 65535.
+      rise = PYR_HEIGHT;
+      rise *= tier;
+      rise /= PYR_STEPS;
+      rise += base;
+      rowbuf_a[xx] = (uint16_t)rise;
       // 0xFFFF unbuilt, 0 tread, 1 riser. genmap.py stores ONE for a riser,
       // which is seventeen bits; a flag carries the same information and the
       // colour turns it back into ONE where it needs a fraction.

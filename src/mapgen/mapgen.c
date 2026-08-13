@@ -261,8 +261,18 @@ int main(void)
            (uint16_t)(lv >> 16), (uint16_t)lv);
   }
 
-  // built_place is written but its pyramid is not right yet, and it is not
-  // called. See the note above it in src/mapgen/noise.c.
+  {
+    uint32_t mk;
+
+    start = profile_now32();
+    sum = built_place(&mk);
+    ticks = start - profile_now32();
+    printf("     BUILT %lu.%02lu S %04X%04X %04X%04X\n\n",
+           SECS(ticks), HUNDREDTHS(ticks),
+           (uint16_t)(sum >> 16), (uint16_t)sum,
+           (uint16_t)(mk >> 16), (uint16_t)mk);
+  }
+
   // **What stage one costs, which is not what the noise costs.** The wait
   // below is the difference between this and a stopwatch at the machine, and
   // without the line printed here that difference looked like generator time.
