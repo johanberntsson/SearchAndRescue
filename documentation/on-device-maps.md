@@ -584,6 +584,36 @@ loop accounting for perhaps a third, it is the next thing to look at — but the
 estimate at the top of this document is now within reach rather than twenty
 times away.
 
+### Step 4, the stretch: 1.98 seconds, and right first time
+
+`081B1D88` on the device and from `python3 tools/fbmcheck.py maps/island.yaml
+--stage stretch`. The checker takes a `--stage` now, so each pass keeps its own
+number to be checked against rather than only the last one.
+
+This is the **measure** of build, measure, paint, and the reason the pipeline
+cannot be one streaming pass: nothing can be painted until the whole field has
+been looked at. Two more passes over the field, both per-pixel and so both
+assembly from the start — which is the rule step 3 bought, applied.
+
+Three things it settled that the next passes inherit:
+
+- **the histogram fits only because it shares the edge caches.** Stage one had
+  under 4 KB of its 32 spare and the table is 4100 bytes; the caches are 8 KB
+  and are dead the instant the field is finished. A union, and the same bargain
+  the loader's staging buffer strikes with the sprite's. **Later passes should
+  expect to do this too** — the working set is bigger than the program.
+- **a pass over the field costs about a second before any arithmetic**, which
+  is what the two passes here measure at 1.98 s together. That is the number to
+  hold against any proposal to add another one, and the argument for folding
+  per-pixel functions of one value into a single pass.
+- **a constant operand belongs in the multiplier's B input for the whole
+  pass.** The reciprocal goes in once and never moves, as the store pass's
+  weight does. The clip then costs only a test of the product's top four bytes.
+
+Stage one is **11.43 seconds**: 9.26 of noise, 1.98 of stretch, 0.19 of
+everything else — the lattices, the weight tables and the handover block, which
+are worth knowing are negligible before anybody optimises them.
+
 What that means for the plan:
 
 - ~~the next step is the inner loop in assembly~~ — **done, see step 3 below.**
