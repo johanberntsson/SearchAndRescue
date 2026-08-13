@@ -8,6 +8,14 @@ Performance in `CLAUDE.md`), not a measurement of a generator that exists —
 call it good to a factor of two, which is enough to answer "feasible", not
 enough to promise a number.
 
+> **Read the estimate as an assembly estimate.** The first pass to be built,
+> the terrain noise, is correct on the machine and comes out 20x slower than
+> the figure below because it is written in C — and it is 23 seconds even with
+> its multiplies stubbed out to nothing. See "Step 2b" at the end. Nothing here
+> is wrong about the *machine*; the numbers assume an inner loop of the kind
+> `src/voxel_asm.s` is, and the C compiler is a factor of 7 or 8 away from that
+> on this project's own past measurement.
+
 ## What it has to beat — measured, and not what this document first assumed
 
 The first draft of this page compared generation against "~60 seconds of
@@ -403,6 +411,77 @@ with no recursion — is on the critical path for the generator, not a
 nice-to-have. It is also exactly the pressure the split is meant to relieve, in
 the other direction: stage one has the whole 32 KB to itself.
 
-Next is `fbm` in stage one — one 512x512 field into attic RAM, timed with
-`src/profile.c`, checksummed against the PC. That now measures only what it is
-meant to.
+### Step 2b, the noise: done, correct, and twenty times too slow
+
+`src/mapgen/noise.c` is `fbm_octaves` on the machine — `maps/island.yaml`'s
+512x512 field, into attic RAM. It is **right**: the device prints `17DFF8E6`
+and `python3 tools/fbmcheck.py maps/island.yaml` prints `17DFF8E6`. Byte for
+byte, through a sixteen-character report, which is the only channel there is —
+`-dumpmem` writes chip RAM only and cannot see the field at all.
+
+It takes **54.38 seconds**. The costing above assumed 150-400 cycles a pixel;
+this is about **8400**.
+
+The measurement is sound, and both halves of that were checked rather than
+assumed. The profiler's own clock says 54.38 s, and a real-speed run brackets
+it from outside: the report is not up at 45 seconds of wall clock and is up at
+62, with about 4 seconds of ROM boot in front. Note the internal figure is
+identical under `-sleepless`, which is what makes these experiments cheap —
+the profiler's clock is calibrated against the raster inside the emulator, so
+it measures emulated seconds either way. (Do not time the *wall clock* under
+`-sleepless`, and do not expect the speedup to be a constant: a loop that only
+polls the raster runs far faster than one doing work, so a capture timed for
+one is nowhere near the other.)
+
+**Where it goes, by stubbing rather than guessing.** With the three `lerp16`s
+and the `mulhi` in the inner loop replaced by adds of the same operands, and
+everything else untouched:
+
+| | seconds | cycles/px |
+|---|---|---|
+| the loop, with no arithmetic in it | 23.20 | 3580 |
+| the arithmetic on top of it | 31.18 | 4820 |
+| **total** | **54.38** | **8400** |
+
+So **even with free multiplies this is 23 seconds**, and the multiplies
+themselves are only 57% of it. That is not an algorithm problem. The listing
+says what it is: `--list-file` shows `jsr mulhi`, `jsr smoothstep16` and a
+swarm of cross-called `?L1xx` fragments, with the loop's locals living on the
+software stack at `(_Vsp),y`. `--strong-inline` does not fix it — it made the
+`jsr` count *worse*, 62 to 94.
+
+**This is the renderer's history repeating, and it is worth reading that way
+rather than as a disappointment.** The voxel march cost 1392 cycles a sample in
+C and 182 in assembly; the same 7.6x on 54.38 s is about 7 seconds, and the
+forward-difference smoothstep (which removes the multiplies from the inner loop
+entirely, see above) is a further factor on top of that. The estimate in this
+document was implicitly an *assembly* estimate all along. It should be read as
+"150-400 cycles a pixel is reachable, in the language the renderer's inner loop
+is written in", not as something C was ever going to do.
+
+What that means for the plan:
+
+- **the next step is `noise.c`'s inner loop in assembly**, and the checksum is
+  already in place to prove it changes nothing — exactly how the march went
+  302 to 182 cycles a sample with the picture pixel-identical. `C_SPAN`
+  unchanged was the cheap check there; `17DFF8E6` is the cheap check here.
+- **do not port any more of the pipeline in C first.** The next passes are
+  cheaper per pixel than the noise but they are the same shape, and porting
+  them in C would mean writing every one of them twice.
+- the arrangement around the loop is already what the costing asks for, so
+  none of it has to change: octaves summed in a chip RAM row buffer, the field
+  touched in attic exactly once on the way out, CPU stores rather than a DMA
+  out of a row buffer.
+
+Two smaller things the port turned up:
+
+- **`stretch` cannot be ported without a decision.** It ends with
+  `np.clip(..., 0, ONE)`, and ONE is 65536, which does not fit the uint16 a
+  field value is stored in — the top half per cent of the map lands exactly
+  there. `tools/fixed.py`'s own rule is that ONE is only ever an intermediate,
+  so clipping to 65535 on both sides is probably right, but it re-rolls every
+  map by up to one part in 65536 and wants the PNGs diffed before and after.
+  The note is in `noise.c`, where whoever ports it will be standing.
+- **`genmap.py`'s `fbm()` is now `stretch(fbm_octaves())`**, so the half that
+  is ported has a name on both sides and the device and the PC quote one
+  definition rather than two copies of ten lines.

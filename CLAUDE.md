@@ -593,9 +593,35 @@ to stand while 32 KB is loaded over it.
 to match the Makefile's `$(PRG)` basename, because `diskutil.rb` names a file
 on disk after its host file.
 
-What stage one writes today is a proof block, not a map: a raster-drawn seed
+**The NEW in the queued line is not optional.** Calypsi's pseudo registers own
+$02-$7F, which is where BASIC keeps its own pointers, so a C program of any
+size hands BASIC a broken zero page: `RUN"SAR"` comes back `?FORMULA TOO
+COMPLEX ERROR`, its temporary string stack pointer left past its end. NEW runs
+a CLR and puts them all back. It also has to be **its own queued line** — NEW
+resets the interpreter's text pointer, so `NEW:RUN"SAR"` runs the NEW and
+silently drops the rest. Two RETURNs in the queue, which is what ozmoo does.
+
+**Stage one shares `src/profile.c`**, so its figures and the renderer's mean
+the same thing, and it hands CIA2's timers back with Kernal IOINIT (`$FF84`,
+`src/mapgen/kernal.s`) before the chain — the handover is a disk load, and
+`profile_init` is exactly what stops the Kernal doing one.
+
+**Its clock is right under `-sleepless`**, because it is calibrated against the
+raster inside the emulator: the same run reports 54.38 seconds either way, and
+a real-speed run brackets it from outside. That makes these experiments cheap.
+What is *not* constant is the speedup, so a screenshot timed for one build will
+miss on another — a loop that only polls the raster runs far faster than one
+doing work. `make REPORT=200` holds the report up long enough to catch.
+
+What stage one writes today is a proof block and one generated field, not a
+map: a raster-drawn seed
 and 16 KB of xorshift, which the game compares byte for byte and reports on its
-boot screen (`STAGE ONE <seed>`, `NO STAGE ONE`, or `CORRUPT`). Two details
+boot screen (`STAGE ONE <seed>`, `NO STAGE ONE`, or `CORRUPT`) — and, since
+step 2b of the port, `maps/island.yaml`'s 512x512 terrain noise, which stage
+one reports a checksum and a time for. **`python3 tools/fbmcheck.py
+maps/island.yaml` prints the same checksum from the PC** (`17DFF8E6`), and that
+comparison is the only way to check a field at all, because `-dumpmem` writes
+chip RAM only and cannot see attic RAM. Two details
 that are not decoration, because **attic RAM is not cleared by a reset**: the
 seed is drawn rather than fixed, so the block cannot pass its own test forever,
 and the game clears the magic once it has read it, so a stale block reads as
