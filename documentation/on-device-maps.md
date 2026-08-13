@@ -628,20 +628,57 @@ Stage one is **12.10 seconds**: 9.28 of noise, 2.64 of stretch and shape, 0.18
 of everything else — the lattices, the weight tables and the handover block,
 which are worth knowing are negligible before anybody optimises them.
 
+### Step 6, the island mask: five bugs, and the method that found them
+
+`F931D458` both sides (`--stage terrain`), 4.69 s, and with it the whole of
+`base_terrain`. Stage one is **16.90 seconds**.
+
+**The method matters more than the pass.** This was the first thing in the port
+to be wrong, and it was wrong five times. Each was found the same way: have the
+device store an *intermediate* instead of the finished value, checksum that, and
+compare it with the same intermediate computed on the PC. Six checkpoints — r2,
+the root, the noise sample, r plus the wobble, t, the mask — each a one-line
+change and one run, and each says unambiguously whether the fault is before it
+or after. Bisection, on a machine with no debugger and no way to read the
+memory the answer lives in. **Do the rest of the pipeline this way.**
+
+The five, none of which was guessable by reading the code:
+
+- **The multiplier answers combinationally.** Writing `MULTINA` changes
+  `MULTOUT` immediately, so pulling a result out a byte at a time while feeding
+  the next multiply its inputs reads a product of the new A with the old B. The
+  interleaving looked tidy and saved nothing. This is the one to remember.
+- **`i * 2` does not fit Y.** Normalising the root leaves the table index at 64
+  or above, so the entry offset runs past 255 and an 8-bit index wraps on most
+  of the map.
+- **A 32-bit indexed store into the `zpsave` section wrote every entry one byte
+  high**, reading back as `i*i << 8`. `acc[]` is also a 32-bit indexed array and
+  is fine, so the section is implicated; there was no room to move the table out
+  to prove it. It is sixteen bits now, which it should have been anyway.
+- **A value can be signed while being carried in sixteen bits.** The wobble
+  takes the radius below zero near the middle of the map and past 1.0 at the
+  rim; the subtraction that follows gives the right sixteen bits and the wrong
+  branch, so the sign has to be carried alongside.
+- **`dec` does not touch the carry.** Whether the floor correction took the
+  radius below zero had to be asked before the decrement, not after. It was one
+  pixel in the whole map, and the checksum caught it.
+
 ### What is left of the pipeline
 
 In order, with what each needs that is new:
 
 | pass | new machinery |
 |---|---|
-| **island mask** | a per-pixel `sqrt` — the table plus its normalisation — and one more value-noise octave for the coastline's wobble |
-| hills | disc stamps, an exact `isqrt`, and placement draws |
+| ~~island mask~~ | done — see step 6 |
+| **hills** | disc stamps, an exact `isqrt`, and placement draws |
 | water | the priority flood, which is the least 6502-shaped code in the generator |
 | colour | gradients, the ramp, the sun, two dithers, and the palette |
 | planes | nothing: writing them in the layout `voxel_asm.s` addresses is what the generator does anyway |
 
-The mask is next and is the largest single step of the five, because the square
-root is per pixel and nothing else in the generator has needed one yet.
+Hills are next. They are the first pass that is not a function of the pixel it
+is standing on: a handful of stamps at drawn positions, which means the draw
+order has to stay in step with genmap.py's through a rejection loop rather than
+a fixed number of calls.
 
 What that means for the plan:
 
