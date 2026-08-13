@@ -195,4 +195,9 @@ acc$:       ; 64 pixels of acc is exactly 256 bytes, so the low byte cannot move
 
             dec     zp:nz_chunks
             lbne    chunk$
+            ; **Z must go back to zero.** Calypsi's generated code reaches
+            ; through pointers with `lda (zp),z` and keeps Z at zero to do it,
+            ; so a routine that leaves it at 128 hands every C pointer read
+            ; after it an offset of 128 bytes.
+            ldz     #0
             rts

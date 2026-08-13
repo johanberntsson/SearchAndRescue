@@ -46,6 +46,8 @@
 #define RASTER (*(volatile uint8_t *)0xD012)
 
 void kernal_ioinit(void);
+void zp_preserve(void);
+void zp_restore(void);
 
 // Hand the machine to the game by typing for the pilot.
 //
@@ -165,6 +167,10 @@ int main(void)
   uint32_t start, ticks, tps;
   uint32_t sum;
 
+  // BASIC's zero page, before anything of ours is put in it. See
+  // src/mapgen/kernal.s -- without this the handover cannot get back to READY.
+  zp_preserve();
+
   putchar(147);  // clear
   printf("\n\n     SEARCH AND RESCUE\n");
   printf("     STAGE ONE: MAP GENERATOR\n\n\n");
@@ -198,7 +204,9 @@ int main(void)
 
   // Give the Kernal its timers back before anything asks it to read a disk --
   // and the handover is exactly that, since BASIC has to LOAD the game.
+  // Hand the machine back: its timers, then its zero page.
   kernal_ioinit();
+  zp_restore();
 
   // ozmoo clears the screen before it queues its keys; this does not, and can
   // afford not to. The editor executes the *logical line the cursor is on*,

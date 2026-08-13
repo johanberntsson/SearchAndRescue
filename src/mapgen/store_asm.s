@@ -118,4 +118,6 @@ pixel$:     ; --- MULTINA = acc[x], and clear it as it goes ------------------
             inc     zp:nz_out+3
 done$:      dec     zp:nz_chunks
             lbne    chunk$
+            ; **Z must go back to zero** -- see the note in noise_asm.s.
+            ldz     #0
             rts
