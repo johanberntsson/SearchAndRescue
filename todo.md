@@ -29,8 +29,39 @@ owns.
 is stage two; between them they run the **whole** map generator on the MEGA65 —
 terrain, water, items, colour and the planes, eleven passes, every one of them
 byte-identical to what `tools/genmap.py` computes on the PC. Then they hand the
-machine to `SAR`. It costs about two minutes -- 48.5 seconds for stage one and
-64 for stage two -- and the game does not fly the result yet. See Done.
+machine to `SAR`. The game does not fly the result yet. See Done.
+
+**Where the boot goes**, measured 14 Aug 2026 in xemu at real speed, by
+sampling screenshots across a boot and then booting the game alone
+(`xemu -prg build/sar.prg -8 build/sar.d81`) to separate loading from
+generating. About 170 seconds to the title:
+
+| | s | |
+|---|---|---|
+| **map generation** | **118** | stage one 53.2 printed, stage two ~65 |
+| **deliberate holds** | **28** | 4 + 4 stage reports and the game's 20 s benchmark report |
+| loading both maps from the d81, the old way | ~20 | 502 KB |
+| loading the three PRGs | ~3 | 72 KB, and so nearly free |
+| MEGA65 ROM boot | ~2 | |
+
+Three things follow from it:
+
+- **The PRG loading is noise.** Exomizing the game (below) would save perhaps
+  two seconds of this. It is worth doing for other reasons, not for the boot.
+- **28 seconds of it is on purpose**, so that the reports can be read.
+  `make REPORT=0 HOLD=0` takes 16% off the boot today with no code change.
+- **The boot generates one map and then loads both maps from the disk anyway**,
+  because nothing reads what stage two writes yet. So the 118 seconds is
+  currently pure addition. Wiring the game to the generated planes removes the
+  ~20 second row and 502 KB from the disk -- but only if *both* maps are
+  generated, and the second one is the expensive one (see the colour note in
+  Open: the plains are 99.5% land, so its colour pass is more like 120 seconds
+  than 58).
+
+This is xemu, whose drive is far faster than a real one, so the map-loading row
+is bigger on hardware. The two generation figures are off the calibrated clock
+and mean the same on both machines; stage one and stage two print their own, so
+a stopwatch to the title on the MEGA65 gives the hardware split exactly.
 
 Build knobs, all in the Makefile:
 
@@ -179,13 +210,13 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   thing.** What is left is a pixel loop still in C at ~9000 cycles a pixel; the
   32-bit library divide in `sunlight_at` and `sqrt16`'s normalising loop are
   the cheap next steps, and assembly is the real one.
-- **The generator is 48.5 seconds for eight passes**, down from 66.6 -- rows
-  moved by DMA, the blur's inner loops in assembly, and one scan taught to stop
-  early. Every checksum came through untouched, which is what they were for.
-  About six of those seconds are the verification checksums themselves and go
-  when the pipeline is done. Still slower than the ~24 of loading it replaces,
-  so there is more to do: `rivers` is 12.1 and still C, and the passes that
-  clear a 32 KB visited set three times could use `dma_fill`.
+- **Stage one is 53.2 seconds**, which is 48.5 for the eight passes it had at
+  the optimisation pass (down from 66.6 -- rows moved by DMA, the blur's inner
+  loops in assembly, one scan taught to stop early, every checksum untouched)
+  plus `built` and its own setup. About six of those seconds are the
+  verification checksums themselves and go when the pipeline is trusted. More
+  to do: `rivers` is 11.8 and still C, `minima` 4.7 and still C, and the passes
+  that clear a 32 KB visited set three times could use `dma_fill`.
 - ~~Stage one is out of program space~~ **fixed, and the fix is the general
   one**: the 32 KB was `mega65-plain.scm`, not the machine. Stage one banks
   BASIC out and puts its BSS in the RAM underneath (`mega65-sar.scm`,
