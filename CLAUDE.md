@@ -136,10 +136,17 @@ The register is written in `__low_level_init`: after the startup has set the C
 stack pointer and before anything uses it, since a write up there falls through
 to RAM but the read back would come from ROM.
 
-**The game has not had this done to it yet, and it is the one that needs it**:
-`program` is 99.9% used with 44 bytes free. It makes no Kernal call after
-loading, so it could take the same 8 KB — and `$E000-$FFFF` for 8 more, at the
-cost of `SEI` or vectors of its own, since it runs with interrupts on.
+**The game has not been banked yet**, and there is a reason it is not a
+copy-paste: a PRG cannot have two *content* areas, and naming `zdata` or
+`cstack` in a second memory makes one, because the linker rules already give
+those sections a `-bits` half. Stage one gets away with it by owning a section
+name of its own. The game needs its big BSS marked `HIGH_BSS` before the memory
+can be declared; `mega65-game.scm` and `src/bank.s` are waiting for it.
+
+**What the game did get is its stack measured**, which needed no banking at
+all: 144 bytes of the toolchain's 4096, so it builds with 512 and went from
+**44 bytes free to 3.5 KB**. The number is the *boot* — loading the resources
+is a deeper call chain than the renderer, which measures 120.
 
 **The 32 KB fills up fast.** The survivor sprite took it down to about 360
 spare bytes; the game screens needed a couple of kilobytes more. Where the

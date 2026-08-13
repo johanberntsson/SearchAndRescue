@@ -270,8 +270,8 @@ Do not re-litigate these without new measurements.
   long before straight down.
 - The panel is nearly full now: message, ALT/HDG, LAT/LON, FPS/SPD/BATT and
   CARGO/WIND, with the overview map on the right.
-- **About 800 bytes of the 32K are left, and the low free RAM at $1600 is
-  96.5% full** (80 bytes). The easy reclaims are spent: the staging buffers
+- ~~About 800 bytes of the 32K are left~~ **3.5 KB now**, and the low free RAM
+  at $1600 is 96.5% full (80 bytes). The easy reclaims are spent: the staging buffers
   are merged and everything movable is already at $1600. The next lever is
   `cstack`, which is 4096 bytes on a program with no recursion and shallow
   calls — worth measuring with a canary before trusting a smaller one. **This
