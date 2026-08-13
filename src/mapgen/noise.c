@@ -905,15 +905,24 @@ uint32_t minima_find(void)
 // flood_basin's main loop, which cannot iterate more than LAKE_BUDGET times,
 // so what it is really doing is running off something and crashing.
 //
-// **The blocker is not the algorithm, it is space.** Stage one will not link
-// with a C stack above 512 bytes any more, and 512 is the value that was
-// measured as safe *before* this pass existed -- five calls deep with printf
-// in the chain is not the same program the canary measured. Proving or
-// disproving the stack theory needs room to raise it, and there is none: the
-// program section is full. The next move is therefore to make space before
-// touching this again, and the candidates are known -- `acc` and the octave
-// lattices are only live during the noise, and the mask's tables only during
-// the mask.
+// **The C stack theory is dead.** Banking BASIC out gave stage one 11 KB of
+// headroom, so the stack was raised to 2048 and this behaves exactly the same.
+//
+// What the extra room did buy is a much sharper clue. Traced at the call site,
+// the flood is handed the right cell: candidate 4, at 233,192, and
+// `field_get` there reads 33856, which is correct. Traced one call deeper, the
+// first value popped off the heap -- which can only be the one just pushed --
+// comes back as **30528**. The low byte is right and the high byte is not:
+// 0x8440 read back as 0x7740. So a six-byte entry is written correctly and one
+// byte of it reads back wrong, which is not an algorithm fault and not the
+// sign-extension bug already fixed here.
+//
+// That is where the next attempt should start: put a known pattern through
+// key_put and key_field with nothing else running, and find out whether the
+// heap's memory is the problem or the compiler's addressing of it. The array
+// now lives at $A000 under the banked-out ROM, which is new since the bug was
+// first seen -- but the bug is older than the move, so that is a coincidence
+// to rule out rather than a suspect.
 //
 // Three real bugs were found and fixed on the way here, all verified against
 // the PC by the intermediate-checksum method, and all worth keeping:
