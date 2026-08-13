@@ -51,11 +51,26 @@ static uint8_t lshift[OCT];   // log2 of the octave's step, so sx >> this is a c
 static uint16_t offx[OCT], offy[OCT];  // np.roll's two offsets
 static uint32_t amps[OCT];
 
-// The x weight per octave, precomputed: it depends only on the column, and
-// working it out per pixel would put two more multiplies in the inner loop
-// for a number that repeats every row. The y weight is one per row and is
-// worked out there.
-static uint16_t wx[OCT][SIZE];
+// The interpolation weight, per octave. **It is one lattice cell long, not one
+// row**: the weight is smoothstep of how far across a cell the pixel is, so it
+// repeats every `step` pixels and the whole octave needs `step` of them --
+// 128 + 64 + 32 + 16 entries against four rows of 512. That is 3.6 KB back,
+// which is most of what the edge caches below cost.
+#define WTAB (SIZE / BASE * 2 - SIZE / (BASE << (OCT - 1)))
+static uint16_t wtab[WTAB];
+static uint16_t woff[OCT];
+
+// **The two lattice rows an output row sits between, interpolated along x and
+// kept.** This is the whole of why the inner loop is two multiplies and not
+// four: `top` and `bot` depend on the lattice row, not the pixel row, so they
+// are good for the `step` output rows that share a lattice row -- and when it
+// does change, the new top is the old bot, so a pointer swap and one rebuild
+// covers it. 8 KB, which is what the 32 KB has to spare and what the shorter
+// weight table above pays for.
+static uint16_t edge_a[OCT][SIZE], edge_b[OCT][SIZE];
+static uint16_t *e_top[OCT], *e_bot[OCT];
+static uint16_t e_row[OCT];   // which lattice row e_top holds
+#define E_NONE 0xFFFF
 
 // One row of the octave sum, at Q8.16 -- the sum reaches several times ONE
 // before it is normalised. In chip RAM on purpose: see above.
@@ -90,7 +105,7 @@ static uint32_t hash32(uint16_t x, uint16_t y, uint32_t salt)
 // reproduces a map.
 void noise_init(void)
 {
-  uint16_t off = 0;
+  uint16_t off = 0, wo = 0;
   uint32_t amp = ONE;
   uint32_t weight = 0;
   uint8_t o;
@@ -122,10 +137,14 @@ void noise_init(void)
     offy[o] = rnd_below(SIZE);
     offx[o] = rnd_below(SIZE);
 
-    for (x = 0; x < SIZE; x++) {
-      uint16_t sx = (uint16_t)(x - offx[o]) & SIZE_MASK;
-      wx[o][x] = smoothstep16((uint16_t)((sx & (step - 1)) << (FRACBITS - sh)));
-    }
+    woff[o] = wo;
+    for (x = 0; x < step; x++)
+      wtab[wo + x] = smoothstep16((uint16_t)(x << (FRACBITS - sh)));
+    wo = (uint16_t)(wo + step);
+
+    e_top[o] = edge_a[o];
+    e_bot[o] = edge_b[o];
+    e_row[o] = E_NONE;
 
     amps[o] = amp;
     weight += amp;
@@ -133,6 +152,28 @@ void noise_init(void)
   }
 
   weight_recip = recip32(weight);
+}
+
+// One lattice row of an octave, interpolated along x into `dst`: the `top` or
+// `bot` of the two an output row sits between. Rebuilt only when the output
+// row crosses into a new lattice cell, which is every `step` rows.
+static void edge_build(uint8_t o, uint16_t row, uint16_t *dst)
+{
+  uint16_t period = (uint16_t)BASE << o;
+  uint8_t sh = lshift[o];
+  uint16_t pmask = period - 1;
+  uint16_t stepmask = (uint16_t)((1 << sh) - 1);
+  uint16_t ox = offx[o];
+  const uint16_t *c = corner + coff[o] + row * period;
+  const uint16_t *w = wtab + woff[o];
+  uint16_t x;
+
+  for (x = 0; x < SIZE; x++) {
+    uint16_t sx = (uint16_t)(x - ox) & SIZE_MASK;
+    uint16_t i0 = sx >> sh;
+
+    dst[x] = lerp16(c[i0], c[(uint16_t)(i0 + 1) & pmask], w[sx & stepmask]);
+  }
 }
 
 // Build the field into attic RAM and return a checksum of it.
@@ -161,25 +202,38 @@ uint32_t noise_run(void)
       uint8_t sh = lshift[o];
       uint16_t pmask = period - 1;
       uint16_t stepmask = (uint16_t)((1 << sh) - 1);
-      uint16_t ox = offx[o];
       uint16_t sy = (uint16_t)(y - offy[o]) & SIZE_MASK;
       uint16_t iy0 = sy >> sh;
-      uint16_t iy1 = (uint16_t)(iy0 + 1) & pmask;
-      uint16_t wy = smoothstep16((uint16_t)((sy & stepmask) << (FRACBITS - sh)));
-      const uint16_t *c0 = corner + coff[o] + iy0 * period;
-      const uint16_t *c1 = corner + coff[o] + iy1 * period;
-      const uint16_t *w = wx[o];
+      uint16_t wy = wtab[woff[o] + (sy & stepmask)];
+      const uint16_t *top, *bot;
       uint32_t amp = amps[o];
 
-      for (x = 0; x < SIZE; x++) {
-        uint16_t sx = (uint16_t)(x - ox) & SIZE_MASK;
-        uint16_t i0 = sx >> sh;
-        uint16_t i1 = (uint16_t)(i0 + 1) & pmask;
-        uint16_t top = lerp16(c0[i0], c0[i1], w[x]);
-        uint16_t bot = lerp16(c1[i0], c1[i1], w[x]);
+      // The lattice row the output row sits on. When it moves it moves by
+      // exactly one -- sy walks up by a row at a time -- so the new top is the
+      // bot that is already built, and one rebuild covers the change. The
+      // general path is there because a wrong assumption here would be a
+      // wrong map rather than a crash.
+      if (e_row[o] != iy0) {
+        uint16_t next = (uint16_t)(iy0 + 1) & pmask;
 
-        acc[x] += mulhi(lerp16(top, bot, wy), amp);
+        if (e_row[o] != E_NONE
+            && ((uint16_t)(e_row[o] + 1) & pmask) == iy0) {
+          uint16_t *swap = e_top[o];
+
+          e_top[o] = e_bot[o];
+          e_bot[o] = swap;
+        } else {
+          edge_build(o, iy0, e_top[o]);
+        }
+        edge_build(o, next, e_bot[o]);
+        e_row[o] = iy0;
       }
+
+      top = e_top[o];
+      bot = e_bot[o];
+
+      for (x = 0; x < SIZE; x++)
+        acc[x] += mulhi(lerp16(top[x], bot[x], wy), amp);
     }
 
     for (x = 0; x < SIZE; x++) {
