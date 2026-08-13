@@ -200,6 +200,12 @@ __zpage uint16_t nz_dy2;
 __zpage uint16_t nz_edge, nz_wobble;
 __zpage uint8_t nz_neg;
 
+// The blur's two inner loops, in src/mapgen/blur_asm.s. They take the same
+// zero-page block everything else here does: nz_acc the running sums, nz_top
+// and nz_bot the rows, nz_recip the Q0.32 divisor.
+void blur_out(void);
+void blur_roll(void);
+
 void noise_blend(void);
 void noise_store(void);
 void stretch_hist(void);
@@ -1259,18 +1265,22 @@ static void blur_y(void)
       acc[x] += rowbuf_a[x];
   }
 
+  nz_recip = BLUR_RECIP;
   for (y = 0; y < SIZE; y++) {
     row_in(rowbuf_a, NOISE_FIELD
            + (uint32_t)((uint16_t)(y + BLUR_R + 1) & SIZE_MASK) * (SIZE * 2));
     row_in(rowbuf_b, NOISE_FIELD
            + (uint32_t)((uint16_t)(y - BLUR_R) & SIZE_MASK) * (SIZE * 2));
 
-    for (x = 0; x < SIZE; x++)
-      win[0][x] = mulhi32top(acc[x], BLUR_RECIP);
+    nz_acc = acc;
+    nz_top = win[0];
+    blur_out();
     row_out(BLUR_TMP + (uint32_t)y * (SIZE * 2), win[0]);
 
-    for (x = 0; x < SIZE; x++)
-      acc[x] += (uint32_t)rowbuf_a[x] - rowbuf_b[x];
+    nz_acc = acc;
+    nz_top = rowbuf_a;
+    nz_bot = rowbuf_b;
+    blur_roll();
   }
 }
 
@@ -1521,20 +1531,39 @@ uint32_t rivers_carve(uint32_t *level_sum)
     }
   }
 
+  // Find the picked cells in one scan. **Sorted first, so the scan compares
+  // against one number rather than three** -- thirty thousand high cells times
+  // three picks is a hundred thousand comparisons for the sake of three
+  // answers.
   {
-    uint16_t seen = 0;
+    uint16_t seen = 0, want = 0;
+    uint16_t ord[RIVER_COUNT];
 
-    for (y = 0; y < SIZE; y++) {
+    for (i = 0; i < RIVER_COUNT; i++)
+      ord[i] = i;
+    for (i = 0; i < RIVER_COUNT; i++) {
+      uint16_t j;
+
+      for (j = (uint16_t)(i + 1); j < RIVER_COUNT; j++) {
+        if (pick[ord[j]] < pick[ord[i]]) {
+          uint16_t t = ord[i];
+
+          ord[i] = ord[j];
+          ord[j] = t;
+        }
+      }
+    }
+
+    for (y = 0; y < SIZE && want < RIVER_COUNT; y++) {
       row_in(rowbuf_a, NOISE_FIELD + (uint32_t)y * (SIZE * 2));
       row_in(rowbuf_b, LEVEL_FIELD + (uint32_t)y * (SIZE * 2));
       for (x = 0; x < SIZE; x++) {
         if (rowbuf_b[x] != DRY || rowbuf_a[x] <= cut)
           continue;
-        for (i = 0; i < RIVER_COUNT; i++) {
-          if (pick[i] == seen) {
-            sy[i] = y;
-            sx[i] = x;
-          }
+        while (want < RIVER_COUNT && pick[ord[want]] == seen) {
+          sy[ord[want]] = y;
+          sx[ord[want]] = x;
+          want++;
         }
         seen++;
       }
