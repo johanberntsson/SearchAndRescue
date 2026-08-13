@@ -855,6 +855,34 @@ And the space: **`$C000-$CFFF` is banked out alongside BASIC**, so it is 12 KB
 under the ROMs rather than 8. The KERNAL stays mapped, so `printf` and the
 interrupt vectors are untouched and it still needs no `SEI`.
 
+### Step 13, colour: written, and the program is full
+
+The whole of `colourise` is ported and **calling it overflows `code` by about
+2.7 KB**. Stage one's text alone is 27.5 KB of the 32, its constants another
+2.2, and the 12 KB under the banked-out ROMs can hold only BSS — a PRG may not
+have two content areas. Moving every remaining byte of BSS out recovers 2.2 of
+the 2.7.
+
+**This is the case this document has had an answer for from the start:** *"if
+even that is not enough, the generator splits again — terrain, then colour,
+then chain to the game."* Nothing new has to be invented. The handover is
+proved twice over, the fields are already in attic RAM where a second program
+would find them, and a stage two would inherit the whole 32 KB, a fresh 12 KB
+under the ROMs, and the tables. `colour_build` is in the file, uncalled, and
+unverified against `--stage colour`'s `D69C51D9`.
+
+Two findings that hold whoever finishes it:
+
+- **The palette needs no index tables.** The shared ramp is arithmetic — 21
+  land entries at 24 and every sixth after, eight water at 16, two masonry at
+  150 and 156, six shades each — so genmap's three lookup arrays are three
+  multiply-adds on the machine.
+- **The two tables that cannot be derived are generated, not typed.**
+  `tools/mktables.py` emits the gamma and the tanh from `fixed.py`'s own, so a
+  change to either reaches the device by rebuilding. The square root *is*
+  derived on the machine; the line between them is a fractional power and an
+  exponential.
+
 ### What is left of the pipeline
 
 In order, with what each needs that is new:
@@ -866,7 +894,7 @@ In order, with what each needs that is new:
 | ~~water~~ | done — candidates, flood and rivers (steps 8-10) |
 | flatten | done (step 12) |
 | **items** | the pyramid's heights, and nothing else: base and mask verified |
-| **colour** | gradients, the ramp, the sun, two dithers, a gamma table and a tanh table. The biggest per-pixel pass left, and the one the costing puts at 250-350 cycles a pixel |
+| **colour** | written; needs a second generator program to fit (step 13) |
 | planes | nothing: writing them in the layout `voxel_asm.s` addresses is what the generator does anyway |
 
 Water is next, and it is the one the costing has always flagged: a priority
