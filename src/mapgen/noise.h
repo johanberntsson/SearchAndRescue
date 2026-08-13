@@ -45,4 +45,7 @@ uint32_t minima_find(void);
 // field, not the terrain -- `--stage lakes`.
 uint32_t lakes_fill(void);
 
+// The blurred height field the rivers run downhill on: `--stage flow`.
+uint32_t flow_build(void);
+
 #endif

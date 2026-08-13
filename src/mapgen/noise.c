@@ -1193,3 +1193,103 @@ uint32_t lakes_fill(void)
   }
   return (uint32_t)b << 16 | a;
 }
+
+// --- water, part three: the flow field -------------------------------------
+//
+// `box_blur` from tools/genmap.py: a separable moving average, wrapping. It is
+// what the rivers run downhill on -- the raw terrain is too noisy to follow, so
+// steepest descent is taken against a blurred copy of it.
+//
+// **The divide is a reciprocal, as everywhere else here.** The window is
+// 2r + 1 wide and never a power of two, so the running sum is multiplied by
+// Q0.32 of 1/17 and the answer comes out of the *top* half of the product.
+//
+// Two passes, down and then across, each reading one field and writing
+// another. Stage one has slots 0 and 1 of attic RAM entirely to itself -- the
+// game does not load its maps until stage one is gone -- so there is room for
+// the two scratch fields this needs without disturbing anything.
+#define BLUR_R     8
+#define BLUR_N     (2 * BLUR_R + 1)
+#define BLUR_RECIP 252645136UL      // ((1 << 32) + 16) / 17, exactly
+
+#define FLOW_FIELD MAP_SLOT(0)
+#define BLUR_TMP   (MAP_SLOT(0) + 0x80000UL)
+
+static uint16_t __far *fieldrow(uint32_t base, uint16_t y)
+{
+  return (uint16_t __far *)(base + (uint32_t)y * (SIZE * 2));
+}
+
+// Down the columns. The running sums are one per column, which is what `acc`
+// is -- 512 of them, and it has been idle since the octaves were summed.
+static void blur_y(void)
+{
+  uint16_t x, y;
+
+  for (x = 0; x < SIZE; x++)
+    acc[x] = 0;
+  for (y = 0; y < BLUR_N; y++) {
+    const uint16_t __far *row =
+        fieldrow(NOISE_FIELD, (uint16_t)(y - BLUR_R) & SIZE_MASK);
+
+    for (x = 0; x < SIZE; x++)
+      acc[x] += row[x];
+  }
+
+  for (y = 0; y < SIZE; y++) {
+    uint16_t __far *out = fieldrow(BLUR_TMP, y);
+    const uint16_t __far *add =
+        fieldrow(NOISE_FIELD, (uint16_t)(y + BLUR_R + 1) & SIZE_MASK);
+    const uint16_t __far *sub =
+        fieldrow(NOISE_FIELD, (uint16_t)(y - BLUR_R) & SIZE_MASK);
+
+    for (x = 0; x < SIZE; x++)
+      out[x] = mulhi32top(acc[x], BLUR_RECIP);
+    for (x = 0; x < SIZE; x++)
+      acc[x] += (uint32_t)add[x] - sub[x];
+  }
+}
+
+// Across the rows. The row is copied into chip RAM first: the sum walks it
+// back and forth over a 17-wide window, and paying an attic read for each of
+// those would be seventeen times the traffic.
+static void blur_x(void)
+{
+  uint16_t *buf = work.edge[0][0];
+  uint16_t x, y;
+
+  for (y = 0; y < SIZE; y++) {
+    const uint16_t __far *src = fieldrow(BLUR_TMP, y);
+    uint16_t __far *out = fieldrow(FLOW_FIELD, y);
+    uint32_t sum = 0;
+
+    for (x = 0; x < SIZE; x++)
+      buf[x] = src[x];
+    for (x = 0; x < BLUR_N; x++)
+      sum += buf[(uint16_t)(x - BLUR_R) & SIZE_MASK];
+    for (x = 0; x < SIZE; x++) {
+      out[x] = mulhi32top(sum, BLUR_RECIP);
+      sum += (uint32_t)buf[(uint16_t)(x + BLUR_R + 1) & SIZE_MASK]
+           - buf[(uint16_t)(x - BLUR_R) & SIZE_MASK];
+    }
+  }
+}
+
+uint32_t flow_build(void)
+{
+  uint16_t a = 0, b = 0;
+  uint16_t x, y;
+
+  blur_y();
+  blur_x();
+
+  for (y = 0; y < SIZE; y++) {
+    const uint16_t __far *row = fieldrow(FLOW_FIELD, y);
+
+    for (x = 0; x < SIZE; x++) {
+      a = (uint16_t)(a + row[x]);
+      b = (uint16_t)(b + a);
+    }
+  }
+  return (uint32_t)b << 16 | a;
+}

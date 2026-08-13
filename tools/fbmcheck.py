@@ -25,6 +25,10 @@ device has ported so far:
     hills     ... with the hills dropped on it
     minima    the lake candidates: local minima below the median, in scan
               order, checksummed as y then x rather than as a field
+    flow      the box-blurred height field the rivers run downhill on, which
+              is an intermediate rather than a stage of the map
+    rivers    ... carved. Two checksums, of the terrain and of the level, since
+              carving moves both
     lakes     ... flooded. The checksum is of the *water level* field, which is
               -1 where the ground is dry, the sea level where it is sea, and
               the lake's surface where a basin filled -- so it carries both
@@ -65,7 +69,7 @@ def main():
     ap.add_argument("--size", type=int, default=512)
     ap.add_argument("--stage", default="shape",
                     choices=("octaves", "stretch", "shape", "terrain", "hills",
-                             "minima", "lakes"))
+                             "minima", "lakes", "flow", "rivers"))
     args = ap.parse_args()
 
     spec, _items = genmap.read_map(args.mapfile)
@@ -78,15 +82,33 @@ def main():
     # genmap.py reaches the same call, which for the octave sum means freshly
     # seeded: base_terrain is the first thing generate() does.
     stream = F.Stream(spec["seed"])
-    if args.stage in ("terrain", "hills", "minima", "lakes"):
+    if args.stage in ("terrain", "hills", "minima", "lakes", "flow", "rivers"):
         # genmap.py's own function, so the mask and the draw order after it
         # cannot drift from what the maps are actually built with.
         spec["lattice"] = base
         spec["feature"] = scale["feature"]
         spec["sea"] = genmap.TYPES[spec["type"]]["sea"]
         field = genmap.base_terrain(args.size, spec, stream)
-        if args.stage in ("hills", "minima", "lakes"):
+        if args.stage in ("hills", "minima", "lakes", "flow", "rivers"):
             genmap.add_hills(field, spec, stream, int(spec["sea"] * F.ONE))
+        if args.stage in ("flow", "rivers"):
+            import numpy as np
+            sea = int(spec["sea"] * F.ONE)
+            wet = field <= sea
+            level = np.where(wet, sea, -1)
+            genmap.fill_lakes(field, wet, level, spec, stream)
+            if args.stage == "flow":
+                r = max(1, round(genmap.FLOW_BLUR * spec["feature"]
+                                 * args.size / genmap.DEFAULT_SIZE))
+                flow = genmap.box_blur(field, r)
+                print(f"{args.mapfile}: blur radius {r}")
+                print(f"stage flow: checksum {fletcher(flow):08X}")
+                return
+            genmap.carve_rivers(field, wet, level, spec, stream)
+            print(f"{args.mapfile}: {int((level >= 0).sum())} wet cells")
+            print(f"stage rivers: terrain {fletcher(field):08X} "
+                  f"level {fletcher(np.bitwise_and(level, 0xFFFF)):08X}")
+            return
         if args.stage == "lakes":
             import numpy as np
             sea = int(spec["sea"] * F.ONE)

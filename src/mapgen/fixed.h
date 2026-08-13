@@ -47,6 +47,15 @@ static inline uint32_t mulhi32(uint32_t a, uint32_t b)
        | ((uint32_t)MATH.multout[4] << 16) | ((uint32_t)MATH.multout[5] << 24);
 }
 
+// (a * b) >> 32: bytes 4 and 5 of the product. The box blur's reciprocal is a
+// Q0.32 value, so its window sum comes back out of the top half.
+static inline uint16_t mulhi32top(uint32_t a, uint32_t b)
+{
+  MATH.multina32 = a;
+  MATH.multinb32 = b;
+  return (uint16_t)MATH.multout[4] | ((uint16_t)MATH.multout[5] << 8);
+}
+
 // a + ((b - a) * w >> 16), with w in Q0.16 -- and with the shift *arithmetic*,
 // which is the part that cannot be got wrong.
 //
