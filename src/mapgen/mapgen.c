@@ -273,6 +273,9 @@ int main(void)
            (uint16_t)(mk >> 16), (uint16_t)mk);
   }
 
+  // colour_build is written and **does not fit**. See the note above it in
+  // src/mapgen/noise.c: stage one's 32 KB is full, and the answer is the
+  // second generator program the design has always had in reserve.
   // **What stage one costs, which is not what the noise costs.** The wait
   // below is the difference between this and a stopwatch at the machine, and
   // without the line printed here that difference looked like generator time.

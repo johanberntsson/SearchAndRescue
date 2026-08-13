@@ -56,4 +56,8 @@ uint32_t rivers_carve(uint32_t *level_sum);
 // file's items in: `--stage built`.
 uint32_t built_place(uint32_t *mask_sum);
 
+// Turn the finished terrain into palette indices, which is what the renderer
+// eats: `--stage colour`.
+uint32_t colour_build(void);
+
 #endif

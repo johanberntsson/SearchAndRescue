@@ -147,7 +147,12 @@ $(PRG): $(ELF)
 $(BUILD)/mapgen:
 	mkdir -p $@
 
-$(BUILD)/mapgen/%.o: src/mapgen/%.c $(wildcard src/*.h) $(wildcard src/mapgen/*.h) \
+# The colour pass's gamma and tanh tables, generated from tools/fixed.py so
+# they cannot drift from the arithmetic the PC checks against.
+src/mapgen/tables.h: tools/mktables.py tools/fixed.py tools/genmap.py
+	python3 tools/mktables.py $@
+
+$(BUILD)/mapgen/%.o: src/mapgen/%.c src/mapgen/tables.h $(wildcard src/*.h) $(wildcard src/mapgen/*.h) \
                      $(CONFIG_STAMP) | $(BUILD)/mapgen
 	cc6502 $(CFLAGS) -c -o $@ $<
 
