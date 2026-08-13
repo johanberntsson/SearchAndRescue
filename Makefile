@@ -30,6 +30,12 @@ HOLD    ?= 4
 # stage one measures its own high-water mark with a canary and prints it. Set
 # per program below, because they are not the same program.
 CSTACK_GEN ?= 512
+# The game's, measured the same way: src/bank.s fills it with a canary and
+# main prints how much survived.
+# 144 bytes is the measured high-water mark, at the boot rather than in the
+# flight. 512 is three and a half times that, and it hands 3.5 KB back to a
+# program that had 44 bytes free.
+CSTACK_GAME ?= 512
 # Map resolutions, powers of two from 256 up to the source PNGs' 1024. Above
 # 256 the heightmap leaves chip RAM and the inner loop pays for it; the
 # colourmap is read once per span and is nearly free at any size. Both maps
@@ -114,7 +120,7 @@ $(BUILD):
 # rebuild. Without it, `make PROFILE=0` and then `make` leaves every object
 # built against the wrong flag and the counters silently stay off -- and a
 # half-rebuilt WIDE change is a memory map that disagrees with itself.
-CONFIG_STAMP = $(BUILD)/config-$(PROFILE)-$(WIDE)-$(HGT_SIZE)-$(COL_SIZE)-$(FLYNOW)-$(REPORT)-$(HOLD)-$(CSTACK_GEN).stamp
+CONFIG_STAMP = $(BUILD)/config-$(PROFILE)-$(WIDE)-$(HGT_SIZE)-$(COL_SIZE)-$(FLYNOW)-$(REPORT)-$(HOLD)-$(CSTACK_GEN)-$(CSTACK_GAME).stamp
 
 $(CONFIG_STAMP): | $(BUILD)
 	rm -f $(BUILD)/config-*.stamp
@@ -130,7 +136,7 @@ $(BUILD)/%.o: src/%.s $(wildcard src/*.h) $(CONFIG_STAMP) | $(BUILD)
 	as6502 $(ASFLAGS) -o $@ $<
 
 $(ELF): $(OBJS)
-	ln6502 $(LDFLAGS) -o $@ $(LINKFILE) $(OBJS)
+	ln6502 $(LDFLAGS) --cstack-size $(CSTACK_GAME) -o $@ $(LINKFILE) $(OBJS)
 
 # -o names the ELF; ln6502 writes the PRG beside it under the same stem.
 # diskutil.rb names the file on disk after the host file, so both programs are

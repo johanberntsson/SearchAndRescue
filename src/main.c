@@ -47,6 +47,13 @@ static const int16_t speed_limit[SPEED_MODES] = {40, 96, 176};
 
 #define STANDBY "SAR DRONE READY"
 
+// Filled with a canary by src/bank.s before anything uses the stack, and
+// counted by cstack_measure(). **The game's high-water mark is 144 bytes** --
+// measured at the boot, which is deeper than the flight's 120 -- against the
+// toolchain's default of 4096. That is where the 3.5 KB in the Makefile's
+// CSTACK_GAME came from. To re-take it after anything that adds call depth:
+// call cstack_measure() and print cstack_unused.
+uint16_t cstack_unused;
 static uint8_t speed_mode = SPEED_DEFAULT;
 
 // The battery, in 8.8 percent -- so the figure the panel shows is simply the
