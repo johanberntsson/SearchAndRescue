@@ -72,7 +72,7 @@ GEN_ASRCS = $(wildcard src/mapgen/*.s)
 # so the two sets of figures mean the same thing.
 GEN_OBJS = $(patsubst src/mapgen/%.c,$(BUILD)/mapgen/%.o,$(GEN_SRCS)) \
            $(patsubst src/mapgen/%.s,$(BUILD)/mapgen/%.o,$(GEN_ASRCS)) \
-           $(BUILD)/profile.o
+           $(BUILD)/profile.o $(BUILD)/dma.o
 GEN_ELF  = $(BUILD)/mapgen.elf
 GEN_PRG  = $(BUILD)/autoboot.c65
 # One sprite sheet per figure the game can stand in the world, in the order

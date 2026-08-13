@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 
+#include "../dma.h"
 #include "../handover.h"
 #include "../loader.h"     /* LOW_FREE */
 #include "fixed.h"
@@ -152,6 +153,23 @@ static uint16_t e_row[OCT];   // which lattice row e_top holds
 static uint32_t acc[SIZE];
 
 static uint32_t weight_recip;
+
+// **Rows move by DMA, not by far pointers.** A field pass in C costs a 32-bit
+// pointer setup per access; the DMAgic moves a whole row at 16.11 cycles a byte
+// coming out of attic RAM and 9.54 going in, which is a fraction of that -- and
+// once a row is in chip RAM the arithmetic on it is near addressing.
+// documentation/on-device-maps.md has the measured rates.
+static uint16_t rowbuf_a[SIZE], rowbuf_b[SIZE];
+
+static void row_in(uint16_t *dst, uint32_t src)
+{
+  dma_copy(src, (uint32_t)(uint16_t)dst, SIZE * 2);
+}
+
+static void row_out(uint32_t dst, const uint16_t *src)
+{
+  dma_copy((uint32_t)(uint16_t)src, dst, SIZE * 2);
+}
 
 // The inner loop's parameters, in zero page where src/mapgen/noise_asm.s can
 // reach them -- the same arrangement the renderer's `vx_*` block uses. The
@@ -713,11 +731,9 @@ uint32_t field_checksum(void)
   uint16_t x, y;
 
   for (y = 0; y < SIZE; y++) {
-    const uint16_t __far *row =
-        (const uint16_t __far *)(NOISE_FIELD + (uint32_t)y * (SIZE * 2));
-
+    row_in(rowbuf_a, NOISE_FIELD + (uint32_t)y * (SIZE * 2));
     for (x = 0; x < SIZE; x++) {
-      a = (uint16_t)(a + row[x]);
+      a = (uint16_t)(a + rowbuf_a[x]);
       b = (uint16_t)(b + a);
     }
   }
@@ -787,13 +803,7 @@ static uint16_t *win[3];
 
 static void win_load(uint8_t slot, uint16_t y)
 {
-  const uint16_t __far *src =
-      (const uint16_t __far *)(NOISE_FIELD + (uint32_t)y * (SIZE * 2));
-  uint16_t *dst = win[slot];
-  uint16_t x;
-
-  for (x = 0; x < SIZE; x++)
-    dst[x] = src[x];
+  row_in(win[slot], NOISE_FIELD + (uint32_t)y * (SIZE * 2));
 }
 
 // Is (x) of the middle row a minimum? `up`, `mid` and `dn` are the three rows.
@@ -829,9 +839,10 @@ static void minima_scan(uint8_t keep, uint16_t cut)
 
       // The water level starts here, folded into a pass that is reading
       // every cell anyway: the sea where the ground is under it, dry
-      // otherwise. The flood writes lake surfaces over it afterwards.
+      // otherwise. Built in a row buffer and sent out once, rather than a
+      // far write per cell.
       if (!keep)
-        level_set(y, x, v <= SEA ? (uint16_t)SEA : (uint16_t)DRY);
+        rowbuf_a[x] = v <= SEA ? (uint16_t)SEA : (uint16_t)DRY;
 
       if (v <= SEA || !is_min(up, mid, dn, x))
         continue;
@@ -845,6 +856,9 @@ static void minima_scan(uint8_t keep, uint16_t cut)
         work.hist[v >> BUCKETSHIFT]++;
       }
     }
+
+    if (!keep)
+      row_out(LEVEL_FIELD + (uint32_t)y * (SIZE * 2), rowbuf_a);
 
     // the window rolls: the row two below the new middle, wrapping
     win_load((uint8_t)((y + 0) % 3), (uint16_t)(y + 2) & SIZE_MASK);
@@ -1239,24 +1253,24 @@ static void blur_y(void)
   for (x = 0; x < SIZE; x++)
     acc[x] = 0;
   for (y = 0; y < BLUR_N; y++) {
-    const uint16_t __far *row =
-        fieldrow(NOISE_FIELD, (uint16_t)(y - BLUR_R) & SIZE_MASK);
-
+    row_in(rowbuf_a, NOISE_FIELD
+           + (uint32_t)((uint16_t)(y - BLUR_R) & SIZE_MASK) * (SIZE * 2));
     for (x = 0; x < SIZE; x++)
-      acc[x] += row[x];
+      acc[x] += rowbuf_a[x];
   }
 
   for (y = 0; y < SIZE; y++) {
-    uint16_t __far *out = fieldrow(BLUR_TMP, y);
-    const uint16_t __far *add =
-        fieldrow(NOISE_FIELD, (uint16_t)(y + BLUR_R + 1) & SIZE_MASK);
-    const uint16_t __far *sub =
-        fieldrow(NOISE_FIELD, (uint16_t)(y - BLUR_R) & SIZE_MASK);
+    row_in(rowbuf_a, NOISE_FIELD
+           + (uint32_t)((uint16_t)(y + BLUR_R + 1) & SIZE_MASK) * (SIZE * 2));
+    row_in(rowbuf_b, NOISE_FIELD
+           + (uint32_t)((uint16_t)(y - BLUR_R) & SIZE_MASK) * (SIZE * 2));
 
     for (x = 0; x < SIZE; x++)
-      out[x] = mulhi32top(acc[x], BLUR_RECIP);
+      win[0][x] = mulhi32top(acc[x], BLUR_RECIP);
+    row_out(BLUR_TMP + (uint32_t)y * (SIZE * 2), win[0]);
+
     for (x = 0; x < SIZE; x++)
-      acc[x] += (uint32_t)add[x] - sub[x];
+      acc[x] += (uint32_t)rowbuf_a[x] - rowbuf_b[x];
   }
 }
 
@@ -1269,19 +1283,17 @@ static void blur_x(void)
   uint16_t x, y;
 
   for (y = 0; y < SIZE; y++) {
-    const uint16_t __far *src = fieldrow(BLUR_TMP, y);
-    uint16_t __far *out = fieldrow(FLOW_FIELD, y);
     uint32_t sum = 0;
 
-    for (x = 0; x < SIZE; x++)
-      buf[x] = src[x];
+    row_in(buf, BLUR_TMP + (uint32_t)y * (SIZE * 2));
     for (x = 0; x < BLUR_N; x++)
       sum += buf[(uint16_t)(x - BLUR_R) & SIZE_MASK];
     for (x = 0; x < SIZE; x++) {
-      out[x] = mulhi32top(sum, BLUR_RECIP);
+      rowbuf_a[x] = mulhi32top(sum, BLUR_RECIP);
       sum += (uint32_t)buf[(uint16_t)(x + BLUR_R + 1) & SIZE_MASK]
            - buf[(uint16_t)(x - BLUR_R) & SIZE_MASK];
     }
+    row_out(FLOW_FIELD + (uint32_t)y * (SIZE * 2), rowbuf_a);
   }
 }
 
@@ -1294,10 +1306,9 @@ uint32_t flow_build(void)
   blur_x();
 
   for (y = 0; y < SIZE; y++) {
-    const uint16_t __far *row = fieldrow(FLOW_FIELD, y);
-
+    row_in(rowbuf_a, FLOW_FIELD + (uint32_t)y * (SIZE * 2));
     for (x = 0; x < SIZE; x++) {
-      a = (uint16_t)(a + row[x]);
+      a = (uint16_t)(a + rowbuf_a[x]);
       b = (uint16_t)(b + a);
     }
   }
@@ -1393,16 +1404,18 @@ static void stand_snapshot(void)
   uint16_t x, y;
 
   for (y = 0; y < SIZE; y++) {
-    const uint16_t __far *lv = fieldrow(LEVEL_FIELD, y);
-    uint8_t __far *p = (uint8_t __far *)(STAND_BITS + (uint32_t)y * (SIZE / 8));
+    uint8_t *bits = (uint8_t *)rowbuf_b;
     uint16_t i;
 
+    row_in(rowbuf_a, LEVEL_FIELD + (uint32_t)y * (SIZE * 2));
     for (i = 0; i < SIZE / 8; i++)
-      p[i] = 0;
+      bits[i] = 0;
     for (x = 0; x < SIZE; x++) {
-      if (lv[x] != DRY)
-        p[x >> 3] = (uint8_t)(p[x >> 3] | (1 << (x & 7)));
+      if (rowbuf_a[x] != DRY)
+        bits[x >> 3] = (uint8_t)(bits[x >> 3] | (1 << (x & 7)));
     }
+    dma_copy((uint32_t)(uint16_t)bits,
+             STAND_BITS + (uint32_t)y * (SIZE / 8), SIZE / 8);
   }
 }
 
@@ -1451,13 +1464,11 @@ uint32_t rivers_carve(uint32_t *level_sum)
   // A copy of the terrain before anything is cut, and the wander lattice --
   // whose salt is the next draw after the lakes'.
   for (y = 0; y < SIZE; y++) {
-    const uint16_t __far *src = fieldrow(NOISE_FIELD, y);
-    uint16_t __far *dst = fieldrow(SURFACE_FIELD, y);
-
+    row_in(rowbuf_a, NOISE_FIELD + (uint32_t)y * (SIZE * 2));
+    row_out(SURFACE_FIELD + (uint32_t)y * (SIZE * 2), rowbuf_a);
     for (x = 0; x < SIZE; x++) {
-      uint16_t v = src[x];
+      uint16_t v = rowbuf_a[x];
 
-      dst[x] = v;
       if (v < lo)
         lo = v;
       if (v > hi)
@@ -1483,11 +1494,10 @@ uint32_t rivers_carve(uint32_t *level_sum)
   // asks for. pick(n, 3) is three draws and a handful of collisions, so the
   // list is never built -- it is counted, drawn from, and then found.
   for (y = 0; y < SIZE; y++) {
-    const uint16_t __far *hrow = fieldrow(NOISE_FIELD, y);
-    const uint16_t __far *lrow = fieldrow(LEVEL_FIELD, y);
-
+    row_in(rowbuf_a, NOISE_FIELD + (uint32_t)y * (SIZE * 2));
+    row_in(rowbuf_b, LEVEL_FIELD + (uint32_t)y * (SIZE * 2));
     for (x = 0; x < SIZE; x++) {
-      if (lrow[x] == DRY && hrow[x] > cut)
+      if (rowbuf_b[x] == DRY && rowbuf_a[x] > cut)
         n++;
     }
   }
@@ -1515,11 +1525,10 @@ uint32_t rivers_carve(uint32_t *level_sum)
     uint16_t seen = 0;
 
     for (y = 0; y < SIZE; y++) {
-      const uint16_t __far *hrow = fieldrow(NOISE_FIELD, y);
-      const uint16_t __far *lrow = fieldrow(LEVEL_FIELD, y);
-
+      row_in(rowbuf_a, NOISE_FIELD + (uint32_t)y * (SIZE * 2));
+      row_in(rowbuf_b, LEVEL_FIELD + (uint32_t)y * (SIZE * 2));
       for (x = 0; x < SIZE; x++) {
-        if (lrow[x] != DRY || hrow[x] <= cut)
+        if (rowbuf_b[x] != DRY || rowbuf_a[x] <= cut)
           continue;
         for (i = 0; i < RIVER_COUNT; i++) {
           if (pick[i] == seen) {
@@ -1595,10 +1604,9 @@ uint32_t rivers_carve(uint32_t *level_sum)
   }
 
   for (y = 0; y < SIZE; y++) {
-    const uint16_t __far *row = fieldrow(NOISE_FIELD, y);
-
+    row_in(rowbuf_a, NOISE_FIELD + (uint32_t)y * (SIZE * 2));
     for (x = 0; x < SIZE; x++) {
-      a = (uint16_t)(a + row[x]);
+      a = (uint16_t)(a + rowbuf_a[x]);
       b = (uint16_t)(b + a);
     }
   }
@@ -1606,10 +1614,9 @@ uint32_t rivers_carve(uint32_t *level_sum)
     uint16_t la = 0, lb = 0;
 
     for (y = 0; y < SIZE; y++) {
-      const uint16_t __far *row = fieldrow(LEVEL_FIELD, y);
-
+      row_in(rowbuf_a, LEVEL_FIELD + (uint32_t)y * (SIZE * 2));
       for (x = 0; x < SIZE; x++) {
-        la = (uint16_t)(la + row[x]);
+        la = (uint16_t)(la + rowbuf_a[x]);
         lb = (uint16_t)(lb + la);
       }
     }
