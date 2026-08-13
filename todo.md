@@ -159,8 +159,8 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   in the generator -- though **measuring it first shrank it**: the island has
   16 minima, 8 candidates, a heap never over 221 entries and 466 cells
   flooded, against the tens of thousands the costing assumed. The candidates
-  are found (`76AC0EB9`); **the flood is written but does not work and is not
-  called** -- see the note above `lakes_fill` in `src/mapgen/noise.c`.
+  are found (`76AC0EB9`) and **the flood works** (`EE773E32`, 4.74 s). Stage
+  one is 32.93 seconds for six passes. Rivers are the rest of the water.
 - ~~Stage one is out of program space~~ **fixed, and the fix is the general
   one**: the 32 KB was `mega65-plain.scm`, not the machine. Stage one banks
   BASIC out and puts its BSS in the RAM underneath (`mega65-sar.scm`,

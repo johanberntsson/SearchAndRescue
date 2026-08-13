@@ -730,21 +730,35 @@ the checksum already in place to prove the move changes nothing.
 Stage one is **25.05 seconds** with it, of which about three are the
 verification checksum.
 
-### Step 9, the flood: stopped at a wall worth naming
+### Step 9, the flood: `EE773E32`, 4.74 s
 
-`lakes_fill` is written and **not called**. It gives the wrong answer and hangs
-in a loop that cannot iterate more than the lake's budget, so it is running off
-something rather than looping.
+Done. Stage one is **32.93 seconds** for six passes, and it chains through to
+the game.
 
-**The blocker is space, not the algorithm.** Stage one will not link with a C
-stack above 512 bytes, and 512 is what the canary measured *before* this pass
-existed — five calls deep with `printf` in the chain is not the program that
-was measured, so the obvious theory cannot be tested without room to raise it.
-Making space comes first, and the technique is already proved: the `work` union
-carries six things at six different times, and `acc`, the octave lattices and
-the mask's tables are each live for exactly one pass.
+It took three attempts, and the first two failed on things that were not the
+algorithm — worth recording, because the instinct each time was to re-read the
+flood:
 
-Three bugs were found and fixed on the way, all by the intermediate-checksum
+**The 32 KB was a linker script.** The pass would not link at all, which forced
+a hand-placed pointer, a six-way union, a halved table and a shrunken C stack
+before anyone asked whether the wall was real. It was not: bank BASIC out and
+`$A000-$BFFF` is RAM. See the Memory map notes in `CLAUDE.md`.
+
+**`key_field` was reading the pointer, not the byte.** A known pattern through
+the pack and unpack with nothing else running: `84 40` went in and came back as
+`0x7840` from a local and `0xA040` from the heap — those high bytes are the
+*pointers'* own. The parameter was `uint8_t at`, an index in a narrow type,
+which is the family `CLAUDE.md` already warns about. Widening it fixed both the
+wrong answers and the hang.
+
+**Bank 1's foot is CBDOS' buffers.** The 32 KB visited bitmap went in at
+`$10000`, and the symptom was not a wrong map: every stage checksummed and then
+the *handover* came back `?DEVICE NOT PRESENT`, because the Kernal could no
+longer reach the drive. ozmoo's `asm/constants.asm` already has the span — the
+safe part of bank 1 is `$18000-$1F7FF` — and the bitmap is in bank 4 now, which
+is free end to end while stage one runs.
+
+Three more were found and fixed on the way, all by the intermediate-checksum
 method and all invisible in the source:
 
 - **`e[0] << 8` promotes a byte to a *signed* 16-bit int.** Anything above
@@ -767,7 +781,7 @@ In order, with what each needs that is new:
 |---|---|
 | ~~island mask~~ | done — see step 6 |
 | ~~hills~~ | done — see step 7 |
-| **water** | half done — the candidates are found (step 8); the flood itself is a heap of at most a few hundred entries and a visited set |
+| ~~water~~ | done — candidates (step 8) and the flood (step 9). Rivers are still to come |
 | colour | gradients, the ramp, the sun, two dithers, and the palette |
 | planes | nothing: writing them in the layout `voxel_asm.s` addresses is what the generator does anyway |
 
