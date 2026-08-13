@@ -158,8 +158,18 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   **the next pass is water** -- the priority flood, the least 6502-shaped code
   in the generator -- though **measuring it first shrank it**: the island has
   16 minima, 8 candidates, a heap never over 221 entries and 466 cells
-  flooded, against the tens of thousands the costing assumed. Half of it is
-  done (`76AC0EB9`): the candidates are found. What is left is the flood. `documentation/on-device-maps.md` has the
+  flooded, against the tens of thousands the costing assumed. The candidates
+  are found (`76AC0EB9`); **the flood is written but does not work and is not
+  called** -- see the note above `lakes_fill` in `src/mapgen/noise.c`.
+- **Stage one is out of program space, and that is what blocks the flood.** It
+  will not link with a C stack above 512 bytes, and 512 was measured as safe
+  *before* the flood existed -- so the stack theory for the hang cannot even be
+  tested. Make room first. The candidates are known and the `work` union
+  already proves the technique: `acc` (2 KB) and the octave lattices are only
+  live during the noise, the sqrt and square tables only during the mask, and
+  the low free RAM at $1600 has 256 bytes left. The other lever is moving more
+  of the C into assembly, which is smaller as well as faster -- `minima_find`
+  is 9.4 seconds of C and the obvious candidate. `documentation/on-device-maps.md` has the
   costing, every measurement, the handover mechanism and the traps.
 - ~~`stretch` needs a decision before it can be ported~~ **settled**: it clips
   to 65535 now, so a field value fits the uint16 the device stores it in. See

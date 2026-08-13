@@ -730,6 +730,35 @@ the checksum already in place to prove the move changes nothing.
 Stage one is **25.05 seconds** with it, of which about three are the
 verification checksum.
 
+### Step 9, the flood: stopped at a wall worth naming
+
+`lakes_fill` is written and **not called**. It gives the wrong answer and hangs
+in a loop that cannot iterate more than the lake's budget, so it is running off
+something rather than looping.
+
+**The blocker is space, not the algorithm.** Stage one will not link with a C
+stack above 512 bytes, and 512 is what the canary measured *before* this pass
+existed — five calls deep with `printf` in the chain is not the program that
+was measured, so the obvious theory cannot be tested without room to raise it.
+Making space comes first, and the technique is already proved: the `work` union
+carries six things at six different times, and `acc`, the octave lattices and
+the mask's tables are each live for exactly one pass.
+
+Three bugs were found and fixed on the way, all by the intermediate-checksum
+method and all invisible in the source:
+
+- **`e[0] << 8` promotes a byte to a *signed* 16-bit int.** Anything above
+  0x8000 shifts into the sign bit — and these were terrain heights, so half the
+  map. A cell at 32771 read back as 771. The pop path got away with it and the
+  spill scan did not, which is the worst way for it to present. Read a packed
+  field with `((unsigned)e[0] << 8) | e[1]`, never a cast afterwards.
+- **`SIZE * SIZE` does not fit an int.** 262144 in sixteen bits is zero, so the
+  visited set's clearing loop never ran and every flood ran against the one
+  before it. This is the trap `CLAUDE.md` opens its Performance section with.
+- **A heap needs room for the pushes, not for the frontier.** Four neighbours a
+  cell over a 225-cell budget is up to 900 pushes; 682 entries ran into the
+  arrays behind it.
+
 ### What is left of the pipeline
 
 In order, with what each needs that is new:
