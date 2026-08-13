@@ -153,7 +153,10 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   hills.** The mask was the first thing in the port to be wrong, five times
   over, and the method that found each is the one to reuse: have the device
   store an intermediate, checksum it, and compare against the same intermediate
-  on the PC. Six checkpoints, one run each, no guessing. `documentation/on-device-maps.md` has the
+  on the PC. Six checkpoints, one run each, no guessing. Hills are done too
+  (`0A1B2AA5`, 0.53 s, right first time), so stage one is 18.78 seconds and
+  **the next pass is water** -- the priority flood, the least 6502-shaped code
+  in the generator. `documentation/on-device-maps.md` has the
   costing, every measurement, the handover mechanism and the traps.
 - ~~`stretch` needs a decision before it can be ported~~ **settled**: it clips
   to 65535 now, so a field value fits the uint16 the device stores it in. See

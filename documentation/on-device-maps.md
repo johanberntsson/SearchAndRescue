@@ -663,6 +663,35 @@ The five, none of which was guessable by reading the code:
   radius below zero had to be asked before the decrement, not after. It was one
   pixel in the whole map, and the checksum caught it.
 
+### Step 7, hills: in C, and the C stack answered
+
+`0A1B2AA5` both sides (`--stage hills`), 0.53 s, right first time.
+
+**Written in C, and that does not break the rule.** Structural work in C and
+per-pixel loops in assembly is about loops over the *field*; six hills of radius
+12 is 3750 pixels against the quarter of a million every earlier pass touched.
+What is delicate here is the **draw order**: hills are placed by rejection, so
+the number of values taken from the stream depends on the terrain. It is the
+first pass whose stream position is data-dependent, and it only works because
+the terrain already matches bit for bit.
+
+The dome is worked out once rather than once per hill — the distance, its exact
+root, the divide and the smoothstep depend on the offset from the centre and
+nothing else. 1.71 s to 0.53 for ten lines.
+
+**The `cstack` question is answered: 127 bytes of the toolchain's 4096.** Stage
+one fills the stack with a canary in `__low_level_init` — the hook the startup
+calls after setting the stack pointer and before anything uses it, the one
+moment the whole span can be written — and prints how much of the pattern
+survives. It builds with 512 now, a fourfold margin, and that 3.5 KB is what
+made room for this pass: the first attempt was 1433 bytes short of linking.
+**The game's stack is untouched and still unmeasured**; the same canary would
+answer it, and `todo.md` has wanted that number for a while.
+
+Stage one is **18.78 seconds**, of which about three are `field_checksum` —
+scaffolding that reads the whole field back purely to verify. The passes that
+write the field checksum it as they go and pay nothing.
+
 ### What is left of the pipeline
 
 In order, with what each needs that is new:
@@ -670,15 +699,17 @@ In order, with what each needs that is new:
 | pass | new machinery |
 |---|---|
 | ~~island mask~~ | done — see step 6 |
-| **hills** | disc stamps, an exact `isqrt`, and placement draws |
-| water | the priority flood, which is the least 6502-shaped code in the generator |
+| ~~hills~~ | done — see step 7 |
+| **water** | the priority flood, which is the least 6502-shaped code in the generator |
 | colour | gradients, the ramp, the sun, two dithers, and the palette |
 | planes | nothing: writing them in the layout `voxel_asm.s` addresses is what the generator does anyway |
 
-Hills are next. They are the first pass that is not a function of the pixel it
-is standing on: a handful of stamps at drawn positions, which means the draw
-order has to stay in step with genmap.py's through a rejection loop rather than
-a fixed number of calls.
+Water is next, and it is the one the costing has always flagged: a priority
+flood is a heap and a visited set, which is the least 6502-shaped code in the
+generator. `documentation/procedural-maps.md` has the traps that were found
+building it on the PC — a river measured against the live map digs itself a
+canyon, and water is only ever cut into the ground, never built up out of it —
+and those are properties of the algorithm, so they carry over unchanged.
 
 What that means for the plan:
 
