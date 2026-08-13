@@ -27,7 +27,9 @@ owns.
 
 **The disk boots in two stages.** `AUTOBOOT.C65` is stage one, which prepares
 attic RAM and hands the machine to `SAR`; it is the frame the on-device map
-generator goes in, and today it carries a proof block instead. See Done.
+generator goes in, and it already generates one map's terrain noise there --
+about 11 seconds on hardware, byte-identical to what `tools/genmap.py`
+computes. The game does not fly it yet. See Done.
 
 Build knobs, all in the Makefile:
 
@@ -131,21 +133,29 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   (there is a spare 2 MB attic slot and 270 KB spare on the disk), and a
   mission is a table entry naming one. What is *not* cheap is a third figure —
   see the palette budget in Resources.
-- **On-device map generation, step 3: the noise inner loop in assembly.**
-  Steps 1, 2a and 2b are done — the generator is integers, the two-stage boot
-  works, and the terrain noise runs on the machine and **agrees with the PC
-  byte for byte** (`17DFF8E6` both sides, `tools/fbmcheck.py`). What it does
-  not do is run fast enough: **54.38 seconds in xemu, 1m05s on the real
-  machine**, for one 512x512 field — about 10000 cycles a pixel against the
-  costing's 150-400. Stubbing the arithmetic out says why — the loop is 23.20 s
-  with *no multiplies in it at all*, and the listing shows `jsr` fragments and
-  locals on the software stack. This is the march's own history: 1392 cycles a
-  sample in C, 182 in assembly, which would put this at about 8.5 s. So the
-  next step is that same rewrite, and the checksum is already there to prove it
-  changes nothing. **Do not port more of the pipeline in C first** — the later
-  passes are the same shape and would each be written twice.
-  `documentation/on-device-maps.md` has the costing, the measurements, the
-  handover mechanism, and the traps.
+- **On-device map generation, step 4: the rest of the pipeline.** Steps 1 to 3
+  are done -- the generator is integers, the two-stage boot works, and the
+  terrain noise runs on the machine, **agrees with the PC byte for byte**
+  (`17DFF8E6` both sides, `tools/fbmcheck.py`) and has come down from 1m05s to
+  about 11 seconds estimated on hardware (54.38 to 9.26 in xemu). Next in
+  pipeline order: the percentile stretch, the island mask, hills, water,
+  colour, planes. Two rules learned getting here -- **write the structural win
+  in C and the per-pixel loop in assembly straight away**, never the loop in C
+  first; and keep a checksum per stage, because it is what lets an optimisation
+  be proved not to change the output. `documentation/on-device-maps.md` has the
+  costing, every measurement, the handover mechanism and the traps.
+- **`stretch` needs a decision before it can be ported**, and it is the very
+  next pass. It ends with `np.clip(..., 0, ONE)` and ONE is 65536, which does
+  not fit the uint16 a field value is stored in -- the top half per cent of the
+  map lands exactly there. `tools/fixed.py`'s own rule says ONE is only ever an
+  intermediate, so clipping to 65535 on both sides is probably right, but it
+  re-rolls every map by up to one part in 65536 and wants the PNGs diffed
+  before and after.
+- **Loading the game is 30 seconds on hardware**, and Johan's suggestion is to
+  exomizer it the way the maps already are. `src/exo_asm.s` is the decruncher;
+  it is stage one that would need a copy of it. Worth doing once the generator
+  is real, since the maps stop being files then and most of those 30 seconds
+  goes with them.
 - **Procedural maps, stage three.** The generator and the previewer are both
   done, and the items that are terrain are built (see Done). Next is
   **`mission.bin`, and it is a different file from `map.bin`** — a mission has
@@ -253,6 +263,16 @@ Do not re-litigate these without new measurements.
 
 ## Done
 
+- **The noise inner loop in assembly: 54.38 to 9.26 seconds in xemu**, and
+  `17DFF8E6` at every step of the way. Three changes, in order of what they
+  bought: caching the two lattice rows an output row sits between, which is a C
+  change and 1.7x on its own -- they depend on the lattice row, not the pixel
+  row, and when it moves it moves by one so the new top is the bot already
+  built; then the blend loop in `src/mapgen/noise_asm.s`; then the store pass
+  in `src/mapgen/store_asm.s`, which also clears the accumulator as it reads it
+  and so deleted a whole pass over each row. The checksum is what made this
+  safe to do at all -- it is the march's `C_SPAN` trick, one number that says
+  the arithmetic did not move.
 - **The terrain noise on the machine, verified against the PC.**
   `src/mapgen/noise.c` is `genmap.py`'s `fbm_octaves` in C, generating
   `maps/island.yaml`'s 512x512 field into attic RAM, and the two agree **byte

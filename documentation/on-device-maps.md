@@ -478,15 +478,62 @@ document was implicitly an *assembly* estimate all along. It should be read as
 "150-400 cycles a pixel is reachable, in the language the renderer's inner loop
 is written in", not as something C was ever going to do.
 
+### Step 3, the rewrite: 1m05s to about 11 seconds
+
+Done, in three steps, with `17DFF8E6` unchanged at every one of them — which is
+the whole value of having built the checksum before the optimisation.
+
+| | xemu | note |
+|---|---|---|
+| straight C | 54.38 s | 1m05s on the real machine |
+| keep the two lattice rows | 31.53 s | four multiplies a pixel down to two |
+| the blend loop in assembly | 11.26 s | `src/mapgen/noise_asm.s` |
+| the store pass in assembly | **9.26 s** | `src/mapgen/store_asm.s` |
+
+**The first of those is not an assembly win and is the one worth remembering.**
+`top` and `bot` — the two lattice rows an output row sits between, interpolated
+along x — depend on the lattice row, not the pixel row, so they are good for
+the `step` output rows that share one; and when the lattice row moves it moves
+by exactly one, so the new top is the bot already built and a pointer swap plus
+one rebuild covers it. That alone was 1.7x, in C, before a line of assembly.
+It paid for its 8 KB by shortening the weight table, which is one lattice cell
+per octave rather than one row: the weight is how far across a cell a pixel is,
+so it repeats.
+
+The two assembly loops are arranged around the same few facts. 64 pixels a
+chunk, because that keeps both index registers eight bits wide — the edge rows
+are 16-bit entries so Z walks by twos, `acc` is 32-bit so Y walks by fours, and
+64 pixels of `acc` is exactly 256 bytes so its pointer's high byte simply
+increments. The multiplier's A high half is zeroed once a call; B's is
+rewritten per multiply only because `amp` is ONE on the first octave and does
+not fit sixteen bits. The store pass clears `acc` as it reads it, which deleted
+a whole pass over the row, and keeps `weight_recip` in the multiplier's B input
+for the entire field — the one operand in either loop that never moves.
+
+And the arithmetic trap that survives into assembly: **numpy's `>>` floors**, so
+a downward interpolation is `top - hi - (lo != 0)`. The product's low word is
+read for no other reason.
+
+9.26 s scaled by the 19.5% the real machine ran slower on the C version is
+about **11 seconds** — but that is arithmetic, not a measurement, and the
+instruction mix is exactly what changed, so it wants checking on the machine.
+
+What is left is **`edge_build`**, the one loop that runs per lattice row rather
+than per pixel and is still C. At 1430 cycles a pixel overall with the blend
+loop accounting for perhaps a third, it is the next thing to look at — but the
+estimate at the top of this document is now within reach rather than twenty
+times away.
+
 What that means for the plan:
 
-- **the next step is `noise.c`'s inner loop in assembly**, and the checksum is
-  already in place to prove it changes nothing — exactly how the march went
-  302 to 182 cycles a sample with the picture pixel-identical. `C_SPAN`
-  unchanged was the cheap check there; `17DFF8E6` is the cheap check here.
+- ~~the next step is the inner loop in assembly~~ — **done, see step 3 below.**
+  The checksum did exactly the job it was built for: `17DFF8E6` through three
+  rewrites, the way `C_SPAN` unchanged was the march's cheap check.
 - **do not port any more of the pipeline in C first.** The next passes are
   cheaper per pixel than the noise but they are the same shape, and porting
-  them in C would mean writing every one of them twice.
+  them in C would mean writing every one of them twice. Write the row cache's
+  kind of structural win in C, where it is easy to find, and the per-pixel loop
+  in assembly straight away.
 - the arrangement around the loop is already what the costing asks for, so
   none of it has to change: octaves summed in a chip RAM row buffer, the field
   touched in attic exactly once on the way out, CPU stores rather than a DMA
