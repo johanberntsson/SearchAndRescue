@@ -932,15 +932,18 @@ Nothing. In order, with what each needed that was new:
 | ~~planes~~ | done — nothing new; the layout `voxel_asm.s` addresses is what the generator writes anyway |
 
 What is left is **time**, and the first pass at it took colour from 175.9
-seconds to 58.5 with the checksum unchanged at every step — which is what the
-checksum is for. Three changes, smallest first:
+seconds to 36.2 with the checksum unchanged at every step — which is what the
+checksum is for. In order:
 
 | | s | |
 |---|---|---|
 | as written | 175.9 | |
-| the hardware multiplier and near lattices | 145.0 | −18% |
-| a shift for the lattice row step | — | folded into the next |
+| the hardware multiplier and near lattices, a shift for their row step | 145.0 | |
 | **water and masonry decided first** | **58.5** | **−60%** |
+| the sun's divide, sqrt in sixteen bits, the dither's row invariants hoisted | 48.0 | |
+| the row pointers into zero page | 47.2 | 2%, and that was the tell |
+| the product read as longwords instead of out of `multout[]` | 43.0 | |
+| `--no-cross-call` on stage two | 36.2 | |
 
 - **Five 32-bit library multiplies in the pixel loop** — two squares and three
   by constants of 21, 8 and 6 — at 2203 cycles each against the multiplier's
@@ -959,12 +962,25 @@ checksum is for. Three changes, smallest first:
   answer for 40% of the cost. **Where the PC version's shape is chosen for
   numpy, porting it faithfully ports the wrong thing.**
 
-What is left after that is a per-pixel loop still in C — about 9000 cycles a
-pixel averaged over the map — and the rule this port started with says the
-answer is assembly. Cheaper first: the 32-bit library divide in `sunlight_at`
-(the MEGA65 has a hardware divider at `$D768`, `MATH.divout_whole32`, which
-needs a settle delay that xemu will not tell the truth about), and `sqrt16`'s
-normalising loop.
+**The last three rows are the interesting ones, because they say the cost was
+never the arithmetic — it was reaching the multiplier.** Putting the seven row
+pointers in zero page, which is the obvious thing to try, bought 2%. Reading
+the product as one `ldq` from `$D77A` instead of assembling it from
+`multout[2..5]` bought 9%, and turning off Calypsi's cross-calling — which had
+turned `mulhi32` into a chain of six `jsr` fragments with `pha/phx/phy/phz`
+around each — bought 16%. The multiplier is one piece of shared hardware
+addressed through memory, and everything expensive here is the walk to it.
+
+Which is also why `--strong-inline` is not the answer even though it looks like
+one: it is worth 9% and it **generates a different map** (`C24E6E26` against
+`D69C51D9`), because three `lerp16`s in one expression are three calls whose
+bodies C does not promise stay unbroken, and merged into one basic block they
+trample each other's operands.
+
+What is left is a per-pixel loop still in C, and the rule this port started with
+says the answer is assembly with the operands in zero page — the same move that
+took the renderer's march from 1392 cycles a sample to 182. The checksum is what
+makes it safe to attempt.
 
 Water is next, and it is the one the costing has always flagged: a priority
 flood is a heap and a visited set, which is the least 6502-shaped code in the

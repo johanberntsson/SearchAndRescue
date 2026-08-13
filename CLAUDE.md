@@ -136,12 +136,18 @@ The register is written in `__low_level_init`: after the startup has set the C
 stack pointer and before anything uses it, since a write up there falls through
 to RAM but the read back would come from ROM.
 
-**The game has not been banked yet**, and there is a reason it is not a
-copy-paste: a PRG cannot have two *content* areas, and naming `zdata` or
-`cstack` in a second memory makes one, because the linker rules already give
-those sections a `-bits` half. Stage one gets away with it by owning a section
-name of its own. The game needs its big BSS marked `HIGH_BSS` before the memory
-can be declared; `mega65-game.scm` and `src/bank.s` are waiting for it.
+**The trap in copying it is `(type any)`.** A PRG cannot have two *content*
+areas, and a second memory declared `(type any)` becomes one the moment the
+linker puts anything initialised there — `zdata`'s data half or `cstack`, both
+of which the rules make eligible. Stage one never hit it only because its
+`highbss` fills `$A000-$CFFF` to the byte; stage two left a kilobyte spare and
+failed at once with *multiple program areas not allowed in prg output*. The fix
+is to declare the window the way the stock script declares `freeSpace` — a
+name and a section and **no `(type …)` at all** — which takes the named section
+and never becomes a content area. `(type ram)` does not work.
+
+**The game has not been banked yet**, and what it needs first is its big BSS
+marked `HIGH_BSS`; `mega65-game.scm` and `src/bank.s` are waiting for it. 
 
 **What the game did get is its stack measured**, which needed no banking at
 all: 144 bytes of the toolchain's 4096, so it builds with 512 and went from
@@ -1052,10 +1058,38 @@ Calypsi 5.18 emits a call to `_FillZPQ` — a runtime helper that is in none of
 its libraries — when a function call appears inside a 32-bit expression. The
 link fails with an undefined symbol. Hoist the call into a variable.
 
-Three things that sound like optimisations and measured slower:
-`--no-cross-call` and `--strong-inline` (615 ms a frame against 533 ms), and
-using the 45GS02's 32-bit `ADCQ` to step the ray position in one instruction
-instead of two 16-bit adds (68.5 ms against 64.7).
+Three things that sound like optimisations and measured slower **for the
+renderer**: `--no-cross-call` and `--strong-inline` (615 ms a frame against
+533 ms), and using the 45GS02's 32-bit `ADCQ` to step the ray position in one
+instruction instead of two 16-bit adds (68.5 ms against 64.7).
+
+**Both of those flags are per-directory decisions, not global ones**, and the
+map generator's stage two wants the opposite answer on one of them:
+
+- **`--no-cross-call` is worth 16% there** (43.0 seconds of colour to 36.2).
+  Calypsi shares common instruction runs between functions by turning them
+  into `jsr` fragments, and `mulhi32` came out as a chain of *six* of them with
+  `pha/phx/phy/phz` around each. That is a good trade where the hot loop is
+  already assembly and a bad one where it is still C. It cannot change what is
+  computed — it is a speed-for-size flag and nothing else.
+- **`--strong-inline` produces the wrong answer.** It is worth 9% and it
+  generated a different map: colour came out `C24E6E26` against the PC's
+  `D69C51D9`. `MATH` is volatile, so the write-write-read of one multiplier
+  wrapper is safe; but three `lerp16`s in one expression are three *calls*,
+  and C only promises those are indeterminately sequenced, not that their
+  bodies stay unbroken once inlined. Merged into a single basic block they
+  trample each other's operands. **The `jsr` per multiply is the price of the
+  multiplier being one piece of shared hardware addressed through memory; the
+  way out is assembly, not an inliner.**
+
+**Read the product as words and longwords, not out of `multout[]`.** The
+product's eight bytes at `$D778` are consecutive and the 45GS02 has 32-bit
+loads, so `(a * b) >> 16` is one `ldq` from `$D77A` — but written as
+`multout[2] | (multout[3] << 8) | …` it compiles to four loads, three shifts
+and three ors, about twenty instructions. `fixed.h` names the four useful
+windows (`MATH_OUT16`, `MATH_OUT_H16`, `MATH_OUT_H32`, `MATH_OUT_T16`); using
+them took the colour pass from 47.2 seconds to 43.0 and changed no checksum
+anywhere, stage one included.
 
 **The Q pseudo-register *is* A/X/Y/Z**, which is why: the march keeps its step
 index in Y across the whole column, so any Q operation destroys it. Moving

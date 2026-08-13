@@ -25,8 +25,15 @@
     ;; Named rather than taking `zdata` wholesale: BSS is 11 KB and this is 8,
     ;; so all-or-nothing does not place. What goes here is chosen in the source
     ;; with HIGH_BSS, and the first tenant is the 8 KB work union.
+    ;; **`ram`, not `any`.** With `any` the linker may also place `zdata`'s
+    ;; initialised half and `cstack` here, and either of those makes a second
+    ;; *content* area, which a PRG cannot have -- "multiple program areas not
+    ;; allowed in prg output". Stage one never hit it only because its highbss
+    ;; fills the window to the byte; stage two leaves a kilobyte spare and hit
+    ;; it at once. `ram` says uninitialised, which is all this window is for:
+    ;; nothing up here may need to arrive from disk with the ROM still mapped.
     (memory highram
-            (address (#xa000 . #xcfff)) (type any)
+            (address (#xa000 . #xcfff))
             (section highbss))
     (memory zeroPage (address (#x2 . #x7f)) (type ram) (qualifier zpage)
             (section (registers #x2)))

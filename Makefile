@@ -133,7 +133,11 @@ $(BUILD):
 # half-rebuilt WIDE change is a memory map that disagrees with itself.
 CONFIG_STAMP = $(BUILD)/config-$(PROFILE)-$(WIDE)-$(HGT_SIZE)-$(COL_SIZE)-$(FLYNOW)-$(REPORT)-$(HOLD)-$(CSTACK_GEN)-$(CSTACK_GAME).stamp
 
-$(CONFIG_STAMP): | $(BUILD)
+# **Depends on this file.** Adding a per-directory compiler flag below and
+# rebuilding changed nothing at all, because no object lists the Makefile as a
+# prerequisite -- the measurement came back byte-identical and looked like the
+# flag doing nothing.
+$(CONFIG_STAMP): Makefile | $(BUILD)
 	rm -f $(BUILD)/config-*.stamp
 	touch $@
 
@@ -163,6 +167,9 @@ $(BUILD)/mapgen:
 src/mapgen/tables.h: tools/mktables.py tools/fixed.py tools/genmap.py
 	python3 tools/mktables.py $@
 
+# Stage one does *not* get --no-cross-call: it overflows its 32 KB with it, and
+# the RAM under BASIC is already full to the byte with its work buffers. Its
+# hot loops are assembly anyway, which is where cross-calling stops mattering.
 $(BUILD)/mapgen/%.o: src/mapgen/%.c src/mapgen/tables.h $(wildcard src/*.h) $(wildcard src/mapgen/*.h) \
                      $(CONFIG_STAMP) | $(BUILD)/mapgen
 	cc6502 $(CFLAGS) -c -o $@ $<
@@ -174,13 +181,32 @@ $(BUILD)/mapgen/%.o: src/mapgen/%.s $(wildcard src/*.h) $(wildcard src/mapgen/*.
 $(BUILD)/mapgen2:
 	mkdir -p $@
 
+# **Do not add --strong-inline here.** It was tried, it is worth 9%, and it
+# produces the *wrong map*: colour came out C24E6E26 against the PC's
+# D69C51D9. `fixed.h`'s wrappers each write MULTINA/MULTINB and then read
+# MULTOUT, and `MATH` is volatile, so within one of them the order is safe --
+# but three `lerp16`s in one expression are three separate calls, and C only
+# promises they are *indeterminately sequenced*, not that their bodies cannot
+# be interleaved once inlined. Merged into one basic block they trample each
+# other's operands. The jsr per multiply is the price of the multiplier being a
+# single piece of shared hardware addressed through memory; the way out is
+# assembly, not an inliner.
+#
+# **--no-cross-call, on the other hand, belongs here.** Calypsi shares common
+# instruction runs between functions by turning them into `jsr` fragments, and
+# `mulhi32` came out as a chain of six of them with `pha/phx/phy/phz` around
+# each. That is a good trade for code the size of the game and a bad one for a
+# loop that runs a quarter of a million times. It is a speed/size flag only --
+# it cannot change what is computed. CLAUDE.md records it measuring *slower*
+# for the renderer, which is the same story as --strong-inline: that hot loop
+# is already assembly.
 $(BUILD)/mapgen2/%.o: src/mapgen2/%.c $(wildcard src/*.h) \
                       $(wildcard src/mapgen/*.h) $(wildcard src/mapgen2/*.h) \
                       src/mapgen/tables.h $(CONFIG_STAMP) | $(BUILD)/mapgen2
-	cc6502 $(CFLAGS) -c -o $@ $<
+	cc6502 $(CFLAGS) --no-cross-call -c -o $@ $<
 
 $(GEN2_ELF): $(GEN2_OBJS)
-	ln6502 $(LDFLAGS) --cstack-size $(CSTACK_GEN) -o $@ mega65-plain.scm $(GEN2_OBJS)
+	ln6502 $(LDFLAGS) --cstack-size $(CSTACK_GEN) -o $@ $(GEN_LINKFILE) $(GEN2_OBJS)
 
 $(GEN2_PRG): $(GEN2_ELF)
 	cp $(BUILD)/mg2.prg $@

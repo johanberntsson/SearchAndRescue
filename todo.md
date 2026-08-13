@@ -34,11 +34,12 @@ machine to `SAR`. The game does not fly the result yet. See Done.
 **Where the boot goes**, measured 14 Aug 2026 in xemu at real speed, by
 sampling screenshots across a boot and then booting the game alone
 (`xemu -prg build/sar.prg -8 build/sar.d81`) to separate loading from
-generating. About 170 seconds to the title:
+generating. About 170 seconds to the title then; the colour pass has since come
+down by 22 of those seconds, so about 147 now:
 
 | | s | |
 |---|---|---|
-| **map generation** | **118** | stage one 53.2 printed, stage two ~65 |
+| **map generation** | **94** | stage one 53.4 printed, stage two ~41 |
 | **deliberate holds** | **28** | 4 + 4 stage reports and the game's 20 s benchmark report |
 | loading both maps from the d81, the old way | ~20 | 502 KB |
 | loading the three PRGs | ~3 | 72 KB, and so nearly free |
@@ -51,12 +52,12 @@ Three things follow from it:
 - **28 seconds of it is on purpose**, so that the reports can be read.
   `make REPORT=0 HOLD=0` takes 16% off the boot today with no code change.
 - **The boot generates one map and then loads both maps from the disk anyway**,
-  because nothing reads what stage two writes yet. So the 118 seconds is
+  because nothing reads what stage two writes yet. So the 94 seconds is
   currently pure addition. Wiring the game to the generated planes removes the
   ~20 second row and 502 KB from the disk -- but only if *both* maps are
   generated, and the second one is the expensive one (see the colour note in
-  Open: the plains are 99.5% land, so its colour pass is more like 120 seconds
-  than 58).
+  Open: the plains are 99.5% land, so its colour pass costs far more than the
+  island's -- most of the win below was skipping water).
 
 This is xemu, whose drive is far faster than a real one, so the map-loading row
 is bigger on hardware. The two generation figures are off the calibrated clock
@@ -197,19 +198,34 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   stage one's 32 KB would not hold them -- which is the split
   `documentation/on-device-maps.md` has had in reserve since the costing. All
   eleven passes agree with the PC bit for bit. What is left is time, below.
-- **Colour is 58.5 seconds, down from 175.9**, and the checksum never moved --
-  which is what it is for. The hardware multiplier for five library multiplies
-  in the pixel loop, the two dither lattices moved from far pointers into near
-  RAM over the dead histogram, and a shift for their row step took it to 145;
-  **deciding water and masonry before the land ramp took it to 58.5**. That
-  last one is the lesson: `colourise` paints the land colour everywhere and
-  covers it with water because in numpy a `where` is free either way, and this
-  island is two thirds water -- 167745 pixels were paying for a ramp, a square
-  root, a sun and two dithers that the next line threw away. **Where the PC
-  version's shape is chosen for numpy, porting it faithfully ports the wrong
-  thing.** What is left is a pixel loop still in C at ~9000 cycles a pixel; the
-  32-bit library divide in `sunlight_at` and `sqrt16`'s normalising loop are
-  the cheap next steps, and assembly is the real one.
+- **Colour is 36.2 seconds, down from 175.9**, and the checksum `D69C51D9`
+  never moved -- which is what it is for. Seven steps, largest first:
+
+  | | s | what |
+  |---|---|---|
+  | as written | 175.9 | |
+  | water and masonry decided first | 58.5 | see below |
+  | the hardware multiplier for five library multiplies, near dither lattices, a shift for their row step | 145.0 → 58.5 | folded into the row above |
+  | the sun's divide, sqrt in sixteen bits, the dither's row invariants hoisted | 48.0 | |
+  | the row pointers into zero page | 47.2 | only 2%, and that was the tell |
+  | reading the product as longwords instead of out of `multout[]` | 43.0 | |
+  | `--no-cross-call` on stage two | 36.2 | |
+
+  Two lessons worth more than the numbers. **Where the PC version's shape is
+  chosen for numpy, porting it faithfully ports the wrong thing**: `colourise`
+  paints the land colour everywhere and covers it with water, because a numpy
+  `where` costs the same either way, and this island is two thirds water --
+  167745 pixels were paying for a ramp, a square root, a sun and two dithers
+  that the next line threw away. And **the cost was never the arithmetic, it
+  was reaching the multiplier**: zero-paging the pointers bought 2% while
+  reading the product in one `ldq` and turning off cross-calling bought 25%
+  between them. See the toolchain notes in CLAUDE.md, including
+  `--strong-inline`, which is worth 9% and generates the wrong map.
+- **The land pixel is still C, and that is where the rest is.** The remaining
+  cost is Calypsi reaching a hardware multiply through memory about twenty
+  times a pixel; in assembly, with the operands in zero page, that is a tenth
+  of the work. The rule this project started with says so and the renderer's
+  march is the precedent. The checksum makes it safe to attempt.
 - **Stage one is 53.2 seconds**, which is 48.5 for the eight passes it had at
   the optimisation pass (down from 66.6 -- rows moved by DMA, the blur's inner
   loops in assembly, one scan taught to stop early, every checksum untouched)

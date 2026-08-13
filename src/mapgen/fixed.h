@@ -20,6 +20,20 @@
 #define FRACBITS 16
 #define ONE      65536UL
 
+// **The product's windows, addressed directly.** `MATH.multout[]` is a byte
+// array, so `multout[2] | (multout[3] << 8) | ...` compiles to four loads,
+// three shifts and three ors -- around twenty instructions to read a number
+// the 45GS02 can fetch in one `ldq`, because the eight product bytes at $D778
+// are consecutive and the machine has 32-bit loads. Naming the windows as
+// words and longwords of their own is the whole difference.
+//
+// Volatile, and read *after* both operands are written: the multiplier is
+// combinational, so the product is whatever the inputs currently say.
+#define MATH_OUT16   (*(volatile uint16_t *)0xD778UL)  // (a * b), low word
+#define MATH_OUT_H16 (*(volatile uint16_t *)0xD77AUL)  // (a * b) >> 16, word
+#define MATH_OUT_H32 (*(volatile uint32_t *)0xD77AUL)  // (a * b) >> 16, long
+#define MATH_OUT_T16 (*(volatile uint16_t *)0xD77CUL)  // (a * b) >> 32, word
+
 // (a * b) >> 16, on the 45GS02's multiplier at $D770.
 //
 // It is a 32x32 -> 64 multiply, so bytes 2 and 3 of the result *are* the
@@ -32,7 +46,7 @@ static inline uint16_t mulhi(uint32_t a, uint32_t b)
 {
   MATH.multina32 = a;
   MATH.multinb32 = b;
-  return (uint16_t)MATH.multout[2] | ((uint16_t)MATH.multout[3] << 8);
+  return MATH_OUT_H16;
 }
 
 // The same product, kept to thirty-two bits. ONE is a legal *intermediate*
@@ -43,8 +57,7 @@ static inline uint32_t mulhi32(uint32_t a, uint32_t b)
 {
   MATH.multina32 = a;
   MATH.multinb32 = b;
-  return (uint32_t)MATH.multout[2] | ((uint32_t)MATH.multout[3] << 8)
-       | ((uint32_t)MATH.multout[4] << 16) | ((uint32_t)MATH.multout[5] << 24);
+  return MATH_OUT_H32;
 }
 
 // The low thirty-two bits: a *plain* multiply, not a Q0.16 one, for the places
@@ -69,7 +82,7 @@ static inline uint16_t mulhi32top(uint32_t a, uint32_t b)
 {
   MATH.multina32 = a;
   MATH.multinb32 = b;
-  return (uint16_t)MATH.multout[4] | ((uint16_t)MATH.multout[5] << 8);
+  return MATH_OUT_T16;
 }
 
 // a + ((b - a) * w >> 16), with w in Q0.16 -- and with the shift *arithmetic*,
@@ -88,14 +101,14 @@ static inline uint16_t lerp16(uint16_t a, uint16_t b, uint16_t w)
   if (b >= a) {
     MATH.multina32 = (uint32_t)(uint16_t)(b - a);
     MATH.multinb32 = w;
-    hi = (uint16_t)MATH.multout[2] | ((uint16_t)MATH.multout[3] << 8);
+    hi = MATH_OUT_H16;
     return (uint16_t)(a + hi);
   }
 
   MATH.multina32 = (uint32_t)(uint16_t)(a - b);
   MATH.multinb32 = w;
-  lo = (uint16_t)MATH.multout[0] | ((uint16_t)MATH.multout[1] << 8);
-  hi = (uint16_t)MATH.multout[2] | ((uint16_t)MATH.multout[3] << 8);
+  lo = MATH_OUT16;
+  hi = MATH_OUT_H16;
   return (uint16_t)(a - hi - (lo != 0));
 }
 
