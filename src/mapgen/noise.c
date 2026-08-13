@@ -567,3 +567,167 @@ uint32_t mask_apply(void)
   return (uint32_t)nz_sum_b << 16 | nz_sum_a;
 }
 
+
+// --- hills -----------------------------------------------------------------
+//
+// `add_hills` from tools/genmap.py: a few domed bumps dropped on dry land,
+// roughened by a fine noise field.
+//
+// **This one is C, and that is not a lapse.** The rule the port has been
+// following -- structural work in C, per-pixel loops in assembly -- is about
+// loops over the *field*. Six hills of radius 12 is 3750 pixels against the
+// quarter of a million every earlier pass touched, so the whole thing costs
+// less than a tenth of a second even at the compiler's usual rate, and the
+// arithmetic is fiddly enough to be worth writing in the language that can be
+// read.
+//
+// What is delicate here is not speed but **the draw order**. Hills are placed
+// by rejection: a position is drawn, and if it lands in the sea it is thrown
+// away and another is drawn. So the number of values taken from the stream
+// depends on the terrain -- which is fine, and only fine because the terrain
+// is already identical to the PC's. The first pass whose *stream* position is
+// data-dependent.
+#define HILL_COUNT   6
+#define HILL_RADIUS  12
+#define HILL_HEIGHT  13107UL   // 0.25 of the type's range
+#define HILL_ROUGH   26214UL   // 0.4: how far the texture may vary a dome
+#define SEA          17039UL   // TYPES["island"]["sea"], 0.26
+#define TEX_OCTAVE   (OCT - 1) // the texture's period is lattice << 3, which
+#define TEX_PERIOD   (BASE << 3)  // ... is the finest octave's
+
+static uint16_t *tex_corner;   // 32x32, in the work union: see mask_init
+
+// **The dome is the same shape every time**, so its profile is worked out once
+// rather than six times: the distance, its exact root, the divide by the
+// radius and the smoothstep all depend on the offset from the centre and
+// nothing else. Only the texture and the ground underneath differ per hill.
+// A pixel outside the disc is stored as zero and added anyway -- which is what
+// genmap.py does, since it scales the whole box by the texture and adds it.
+#define HILL_SPAN (HILL_RADIUS * 2 + 1)
+static uint16_t hill_profile[HILL_SPAN * HILL_SPAN];
+
+static uint16_t texture_at(uint16_t y, uint16_t x)
+{
+  uint8_t sh = lshift[TEX_OCTAVE];
+  uint16_t stepmask = (uint16_t)((1 << sh) - 1);
+  const uint16_t *w = wtab + woff[TEX_OCTAVE];
+  uint16_t iy0 = y >> sh, ix0 = x >> sh;
+  uint16_t iy1 = (uint16_t)(iy0 + 1) & (TEX_PERIOD - 1);
+  uint16_t ix1 = (uint16_t)(ix0 + 1) & (TEX_PERIOD - 1);
+  const uint16_t *c0 = tex_corner + (uint16_t)iy0 * TEX_PERIOD;
+  const uint16_t *c1 = tex_corner + (uint16_t)iy1 * TEX_PERIOD;
+  uint16_t wx = w[x & stepmask];
+
+  return lerp16(lerp16(c0[ix0], c0[ix1], wx),
+                lerp16(c1[ix0], c1[ix1], wx), w[y & stepmask]);
+}
+
+// smoothstep over a domain that includes 1.0 exactly. The hill's centre is
+// smoothstep(ONE), which is ONE, and neither fits the sixteen bits the field
+// itself is stored in.
+static uint32_t smoothstep32(uint32_t t)
+{
+  return mulhi32(mulhi32(t, t), 3UL * ONE - 2UL * t);
+}
+
+static uint16_t field_get(uint16_t y, uint16_t x)
+{
+  const uint16_t __far *row =
+      (const uint16_t __far *)(NOISE_FIELD + (uint32_t)y * (SIZE * 2));
+
+  return row[x];
+}
+
+static void hill_profile_build(void)
+{
+  int16_t dy, dx;
+  uint16_t i = 0;
+
+  for (dy = -HILL_RADIUS; dy <= HILL_RADIUS; dy++) {
+    for (dx = -HILL_RADIUS; dx <= HILL_RADIUS; dx++) {
+      // The distance is exact -- the digit-by-digit root, not the table --
+      // because this is where a rounding error becomes a stair on a hillside.
+      // Measured at eight fractional bits and shifted up afterwards, which is
+      // what keeps isqrt inside its 32-bit domain.
+      uint32_t dd = (uint32_t)(dy * dy + dx * dx) << 16;
+      uint32_t d = (isqrt32(dd) << 8) / HILL_RADIUS;
+
+      hill_profile[i++] = d > ONE
+                        ? 0
+                        : mulhi(smoothstep32(ONE - d), HILL_HEIGHT);
+    }
+  }
+}
+
+static void hill_stamp(uint16_t cy, uint16_t cx)
+{
+  int16_t dy, dx;
+  uint16_t i = 0;
+
+  for (dy = -HILL_RADIUS; dy <= HILL_RADIUS; dy++) {
+    uint16_t yy = (uint16_t)(cy + dy) & SIZE_MASK;
+    uint16_t __far *row =
+        (uint16_t __far *)(NOISE_FIELD + (uint32_t)yy * (SIZE * 2));
+
+    for (dx = -HILL_RADIUS; dx <= HILL_RADIUS; dx++) {
+      uint16_t patch = hill_profile[i++];
+      uint16_t xx;
+      uint32_t factor;
+
+      if (!patch)
+        continue;
+
+      xx = (uint16_t)(cx + dx) & SIZE_MASK;
+      factor = ONE - HILL_ROUGH
+             + 2UL * mulhi(texture_at(yy, xx), HILL_ROUGH);
+      row[xx] = (uint16_t)(row[xx] + mulhi(patch, factor));
+    }
+  }
+}
+
+// The field's Fletcher checksum, read back out of attic RAM. **Verification
+// scaffolding**, not part of generating a map: it is a quarter of a million
+// far reads and costs about three seconds, which is more than every pass it
+// checks. The passes that write the field checksum it as they go and pay
+// nothing; this exists for the ones that do not, and goes when the pipeline
+// is finished.
+uint32_t field_checksum(void)
+{
+  uint16_t a = 0, b = 0;
+  uint16_t x, y;
+
+  for (y = 0; y < SIZE; y++) {
+    const uint16_t __far *row =
+        (const uint16_t __far *)(NOISE_FIELD + (uint32_t)y * (SIZE * 2));
+
+    for (x = 0; x < SIZE; x++) {
+      a = (uint16_t)(a + row[x]);
+      b = (uint16_t)(b + a);
+    }
+  }
+  return (uint32_t)b << 16 | a;
+}
+
+void hills_apply(void)
+{
+  uint32_t salt = rnd_next();
+  uint16_t i, x, y, placed = 0;
+
+  tex_corner = work.edge[0][0];
+  i = 0;
+  for (y = 0; y < TEX_PERIOD; y++)
+    for (x = 0; x < TEX_PERIOD; x++)
+      tex_corner[i++] = (uint16_t)hash32(x, y, salt);
+
+  hill_profile_build();
+
+  for (i = 0; i < HILL_COUNT * 8 && placed < HILL_COUNT; i++) {
+    uint16_t cy = rnd_below(SIZE);
+    uint16_t cx = rnd_below(SIZE);
+
+    if (field_get(cy, cx) <= SEA)
+      continue;
+    hill_stamp(cy, cx);
+    placed++;
+  }
+}

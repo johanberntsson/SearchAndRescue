@@ -26,6 +26,10 @@ REPORT  ?= 20
 # mistaken for generator time, which is exactly what happened when it was
 # eight: `make HOLD=60` to actually read it at the machine.
 HOLD    ?= 4
+# The C stack. The toolchain defaults to 4096 and neither program comes close:
+# stage one measures its own high-water mark with a canary and prints it. Set
+# per program below, because they are not the same program.
+CSTACK_GEN ?= 512
 # Map resolutions, powers of two from 256 up to the source PNGs' 1024. Above
 # 256 the heightmap leaves chip RAM and the inner loop pays for it; the
 # colourmap is read once per span and is nearly free at any size. Both maps
@@ -107,7 +111,7 @@ $(BUILD):
 # rebuild. Without it, `make PROFILE=0` and then `make` leaves every object
 # built against the wrong flag and the counters silently stay off -- and a
 # half-rebuilt WIDE change is a memory map that disagrees with itself.
-CONFIG_STAMP = $(BUILD)/config-$(PROFILE)-$(WIDE)-$(HGT_SIZE)-$(COL_SIZE)-$(FLYNOW)-$(REPORT)-$(HOLD).stamp
+CONFIG_STAMP = $(BUILD)/config-$(PROFILE)-$(WIDE)-$(HGT_SIZE)-$(COL_SIZE)-$(FLYNOW)-$(REPORT)-$(HOLD)-$(CSTACK_GEN).stamp
 
 $(CONFIG_STAMP): | $(BUILD)
 	rm -f $(BUILD)/config-*.stamp
@@ -143,7 +147,7 @@ $(BUILD)/mapgen/%.o: src/mapgen/%.s $(wildcard src/*.h) $(wildcard src/mapgen/*.
 	as6502 $(ASFLAGS) -o $@ $<
 
 $(GEN_ELF): $(GEN_OBJS)
-	ln6502 $(LDFLAGS) -o $@ $(LINKFILE) $(GEN_OBJS)
+	ln6502 $(LDFLAGS) --cstack-size $(CSTACK_GEN) -o $@ $(LINKFILE) $(GEN_OBJS)
 
 # The MEGA65 ROM only autoboots a file called autoboot.c65, and that is stage
 # one now.

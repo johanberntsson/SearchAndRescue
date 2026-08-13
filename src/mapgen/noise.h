@@ -28,4 +28,12 @@ uint32_t noise_stretch(void);
 void mask_init(void);
 uint32_t mask_apply(void);
 
+// Drop the hills on the dry land: `--stage hills`.
+void hills_apply(void);
+
+// Read the whole field back and checksum it. Verification only -- it costs
+// more than the passes it checks, because it is a quarter of a million reads
+// out of attic RAM and nothing else.
+uint32_t field_checksum(void);
+
 #endif

@@ -59,3 +59,61 @@ zp_restore:
             dex
             bpl     -
             rts
+
+; --- how much of the C stack is actually used -----------------------------
+;
+; **4096 bytes is the toolchain's default and nothing here needs it.** todo.md
+; has wanted this measured since the game's 32 KB got tight, and stage one is
+; the right place to do it: no recursion, and a call chain three deep. The
+; measurement is a canary rather than an estimate -- fill the stack before it
+; is used and see how far the pattern survives.
+;
+; __low_level_init is the hook the startup calls after setting the stack
+; pointer and before anything uses it, which is the one moment the whole span
+; can be written.
+
+CANARY:     .equ 0xa5
+
+            .extern _Zp, cstack_unused
+            .section cstack
+
+            .section code, text
+            .public __low_level_init, cstack_measure
+
+__low_level_init:
+            lda     #.byte0 (.sectionStart cstack)
+            sta     zp:_Zp
+            lda     #.byte1 (.sectionStart cstack)
+            sta     zp:_Zp+1
+            ldx     #.byte1 (.sectionSize cstack)   ; whole pages of it
+            beq     nofill$
+            lda     #CANARY
+            ldy     #0
+fill$:      sta     (_Zp),y
+            iny
+            bne     fill$
+            inc     zp:_Zp+1
+            dex
+            bne     fill$
+nofill$:    rts
+
+; Leaves the count in cstack_unused rather than returning it, so that nothing
+; here has to guess at the calling convention for a sixteen-bit result.
+cstack_measure:
+            lda     #.byte0 (.sectionStart cstack)
+            sta     zp:_Zp
+            lda     #.byte1 (.sectionStart cstack)
+            sta     zp:_Zp+1
+            ldx     #0
+            ldy     #0
+free$:      lda     (_Zp),y
+            cmp     #CANARY
+            bne     done$
+            iny
+            bne     free$
+            inc     zp:_Zp+1
+            inx
+            bra     free$
+done$:      sty     cstack_unused
+            stx     cstack_unused+1
+            rts

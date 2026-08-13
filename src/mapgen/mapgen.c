@@ -55,6 +55,8 @@
 void kernal_ioinit(void);
 void zp_preserve(void);
 void zp_restore(void);
+void cstack_measure(void);
+uint16_t cstack_unused;
 
 // Hand the machine to the game by typing for the pilot.
 //
@@ -213,7 +215,15 @@ int main(void)
   start = profile_now32();
   sum = mask_apply();
   ticks = start - profile_now32();
-  printf("     MASK %lu.%02lu S  %04X%04X\n\n",
+  printf("     MASK %lu.%02lu S  %04X%04X\n",
+         SECS(ticks), HUNDREDTHS(ticks),
+         (uint16_t)(sum >> 16), (uint16_t)sum);
+
+  start = profile_now32();
+  hills_apply();
+  ticks = start - profile_now32();
+  sum = field_checksum();
+  printf("     HILLS %lu.%02lu S  %04X%04X\n\n",
          SECS(ticks), HUNDREDTHS(ticks),
          (uint16_t)(sum >> 16), (uint16_t)sum);
 
@@ -226,6 +236,9 @@ int main(void)
     printf("     STAGE ONE %lu.%02lu SECONDS\n", SECS(all), HUNDREDTHS(all));
   }
   printf("     HANDOVER SEED %u\n", seed);
+
+  cstack_measure();
+  printf("     CSTACK SPARE %u\n", cstack_unused);
 
   hold(STAGE1_HOLD, tps);
 

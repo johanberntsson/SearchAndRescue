@@ -35,6 +35,18 @@ static inline uint16_t mulhi(uint32_t a, uint32_t b)
   return (uint16_t)MATH.multout[2] | ((uint16_t)MATH.multout[3] << 8);
 }
 
+// The same product, kept to thirty-two bits. ONE is a legal *intermediate*
+// even though a stored field value is sixteen bits -- the hill profile is
+// smoothstep(ONE - d), which is exactly 1.0 at the centre of every hill -- so
+// the few places that reach it need the wider window.
+static inline uint32_t mulhi32(uint32_t a, uint32_t b)
+{
+  MATH.multina32 = a;
+  MATH.multinb32 = b;
+  return (uint32_t)MATH.multout[2] | ((uint32_t)MATH.multout[3] << 8)
+       | ((uint32_t)MATH.multout[4] << 16) | ((uint32_t)MATH.multout[5] << 24);
+}
+
 // a + ((b - a) * w >> 16), with w in Q0.16 -- and with the shift *arithmetic*,
 // which is the part that cannot be got wrong.
 //
