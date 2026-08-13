@@ -36,4 +36,9 @@ void hills_apply(void);
 // out of attic RAM and nothing else.
 uint32_t field_checksum(void);
 
+// Where a lake could go: the dry local minima below the median of their own
+// heights. `--stage minima` on the PC side, checksummed as positions rather
+// than as a field.
+uint32_t minima_find(void);
+
 #endif

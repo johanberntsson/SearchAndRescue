@@ -23,6 +23,8 @@ device has ported so far:
               range, which is genmap.py's base_terrain without its mask
     terrain   ... times the island mask: base_terrain itself
     hills     ... with the hills dropped on it
+    minima    the lake candidates: local minima below the median, in scan
+              order, checksummed as y then x rather than as a field
 
 Each new pass gets a stage here on the day it is written, so that every one of
 them has a number to be checked against rather than only the last.
@@ -58,7 +60,8 @@ def main():
     ap.add_argument("mapfile")
     ap.add_argument("--size", type=int, default=512)
     ap.add_argument("--stage", default="shape",
-                    choices=("octaves", "stretch", "shape", "terrain", "hills"))
+                    choices=("octaves", "stretch", "shape", "terrain", "hills",
+                             "minima"))
     args = ap.parse_args()
 
     spec, _items = genmap.read_map(args.mapfile)
@@ -71,15 +74,37 @@ def main():
     # genmap.py reaches the same call, which for the octave sum means freshly
     # seeded: base_terrain is the first thing generate() does.
     stream = F.Stream(spec["seed"])
-    if args.stage in ("terrain", "hills"):
+    if args.stage in ("terrain", "hills", "minima"):
         # genmap.py's own function, so the mask and the draw order after it
         # cannot drift from what the maps are actually built with.
         spec["lattice"] = base
         spec["feature"] = scale["feature"]
         spec["sea"] = genmap.TYPES[spec["type"]]["sea"]
         field = genmap.base_terrain(args.size, spec, stream)
-        if args.stage == "hills":
+        if args.stage in ("hills", "minima"):
             genmap.add_hills(field, spec, stream, int(spec["sea"] * F.ONE))
+        if args.stage == "minima":
+            import numpy as np
+            sea = int(spec["sea"] * F.ONE)
+            wet = field <= sea
+            minima = genmap.local_minima(field, wet)
+            depth = field[minima[:, 0], minima[:, 1]]
+            counts = np.bincount(depth >> genmap.BUCKETSHIFT,
+                                 minlength=genmap.BUCKETS + 1)
+            want = max(len(depth) // 2, genmap.COUNTS[spec["lakes"]])
+            half = int(np.searchsorted(np.cumsum(counts), want))
+            cand = minima[depth <= (half << genmap.BUCKETSHIFT)]
+            if not len(cand):
+                cand = minima
+            a = b = 0
+            for cy, cx in cand:
+                for v in (int(cy), int(cx)):
+                    a = (a + v) & 0xFFFF
+                    b = (b + a) & 0xFFFF
+            print(f"{args.mapfile}: {len(minima)} minima, {len(cand)} candidates, "
+                  f"median bucket {half}")
+            print(f"stage minima: checksum {(b << 16) | a:08X}")
+            return
         print(f"{args.mapfile}: size {args.size}, base {base}, "
               f"octaves {octaves}, gain {int(gain * F.ONE)}, seed {spec['seed']}")
         print(f"stage {args.stage}: checksum {fletcher(field):08X}")

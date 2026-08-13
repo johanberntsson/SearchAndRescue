@@ -227,6 +227,13 @@ int main(void)
          SECS(ticks), HUNDREDTHS(ticks),
          (uint16_t)(sum >> 16), (uint16_t)sum);
 
+  start = profile_now32();
+  sum = minima_find();
+  ticks = start - profile_now32();
+  printf("     MINIMA %lu.%02lu S  %04X%04X\n",
+         SECS(ticks), HUNDREDTHS(ticks),
+         (uint16_t)(sum >> 16), (uint16_t)sum);
+
   // **What stage one costs, which is not what the noise costs.** The wait
   // below is the difference between this and a stopwatch at the machine, and
   // without the line printed here that difference looked like generator time.

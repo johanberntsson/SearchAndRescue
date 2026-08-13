@@ -603,8 +603,11 @@ static uint16_t *tex_corner;   // 32x32, in the work union: see mask_init
 // nothing else. Only the texture and the ground underneath differ per hill.
 // A pixel outside the disc is stored as zero and added anyway -- which is what
 // genmap.py does, since it scales the whole box by the texture and adds it.
+// It lives in the work union too, past the texture's lattice: 625 entries
+// against the 2048 bytes tex_corner takes of the 8192 there. Nothing else is
+// live while hills are being stamped.
 #define HILL_SPAN (HILL_RADIUS * 2 + 1)
-static uint16_t hill_profile[HILL_SPAN * HILL_SPAN];
+static uint16_t *hill_profile;
 
 static uint16_t texture_at(uint16_t y, uint16_t x)
 {
@@ -713,7 +716,8 @@ void hills_apply(void)
   uint32_t salt = rnd_next();
   uint16_t i, x, y, placed = 0;
 
-  tex_corner = work.edge[0][0];
+  tex_corner = work.edge[0][0];      // 32 x 32, the first 2 KB
+  hill_profile = work.edge[0][2];    // and the dome past it
   i = 0;
   for (y = 0; y < TEX_PERIOD; y++)
     for (x = 0; x < TEX_PERIOD; x++)
@@ -730,4 +734,140 @@ void hills_apply(void)
     hill_stamp(cy, cx);
     placed++;
   }
+}
+
+// --- water, part one: where a lake could go --------------------------------
+//
+// `local_minima` and the median cut from `fill_lakes`: the cells no higher
+// than any of their eight neighbours and not already wet, then the lower half
+// of those by height.
+//
+// **Two passes, because the median cannot be known until every minimum has
+// been seen** -- the same build-measure-paint shape the stretch has, and for
+// the same reason. The first counts them into the histogram; the second keeps
+// the ones under the cut. Neither stores every minimum, which is what makes
+// the memory affordable: the island has sixteen of them and eight candidates,
+// so the list is bytes rather than the tens of thousands the costing feared.
+//
+// A three-row window in chip RAM is what makes this bearable at all. The eight
+// neighbours of every cell would otherwise be eight reads out of attic RAM,
+// which is the expensive direction; streamed a row at a time they are chip
+// reads, and the field is touched once.
+// The island has sixteen minima and eight candidates. 128 is a cap with room
+// to spare rather than a budget, and a map that overran it would lose the
+// tail of its candidate list, not break -- but it would stop matching the PC,
+// which is what the checksum is for.
+#define MINIMA_MAX 128
+
+static uint16_t cand_y[MINIMA_MAX], cand_x[MINIMA_MAX];
+static uint16_t cand_n;
+
+// The three rows, and which of them is which. Indexed by (y + 2) % 3 so that
+// stepping down the map is one row read and a rotation.
+static uint16_t *win[3];
+
+static void win_load(uint8_t slot, uint16_t y)
+{
+  const uint16_t __far *src =
+      (const uint16_t __far *)(NOISE_FIELD + (uint32_t)y * (SIZE * 2));
+  uint16_t *dst = win[slot];
+  uint16_t x;
+
+  for (x = 0; x < SIZE; x++)
+    dst[x] = src[x];
+}
+
+// Is (x) of the middle row a minimum? `up`, `mid` and `dn` are the three rows.
+static uint8_t is_min(const uint16_t *up, const uint16_t *mid,
+                      const uint16_t *dn, uint16_t x)
+{
+  uint16_t v = mid[x];
+  uint16_t l = (uint16_t)(x - 1) & SIZE_MASK;
+  uint16_t r = (uint16_t)(x + 1) & SIZE_MASK;
+
+  return v <= up[l] && v <= up[x] && v <= up[r]
+      && v <= mid[l] && v <= mid[r]
+      && v <= dn[l] && v <= dn[x] && v <= dn[r];
+}
+
+// Walk the field with the window, calling back on every dry minimum. `keep`
+// says whether to record it or only to count it.
+static void minima_scan(uint8_t keep, uint16_t cut)
+{
+  uint16_t y, x;
+
+  win_load(0, SIZE - 1);      // the row above row 0, which wraps
+  win_load(1, 0);
+  win_load(2, 1);
+
+  for (y = 0; y < SIZE; y++) {
+    const uint16_t *up = win[(y + 0) % 3];
+    const uint16_t *mid = win[(y + 1) % 3];
+    const uint16_t *dn = win[(y + 2) % 3];
+
+    for (x = 0; x < SIZE; x++) {
+      uint16_t v = mid[x];
+
+      if (v <= SEA || !is_min(up, mid, dn, x))
+        continue;
+      if (keep) {
+        if (v <= cut && cand_n < MINIMA_MAX) {
+          cand_y[cand_n] = y;
+          cand_x[cand_n] = x;
+          cand_n++;
+        }
+      } else {
+        work.hist[v >> BUCKETSHIFT]++;
+      }
+    }
+
+    // the window rolls: the row two below the new middle, wrapping
+    win_load((uint8_t)((y + 0) % 3), (uint16_t)(y + 2) & SIZE_MASK);
+  }
+}
+
+uint32_t minima_find(void)
+{
+  uint32_t cum = 0;
+  uint16_t b, half = 0, total = 0;
+  uint16_t a = 0, sum_b = 0, i;
+
+  // The window shares the work union with the histogram, which is the same
+  // 1025 four-byte entries the stretch used -- 4100 bytes, so it runs four
+  // bytes past the first half of the union. The window starts a row further on
+  // than that, which is why these are [1], [2] and [3] and not [0], [1], [2].
+  win[0] = work.edge[1][1];
+  win[1] = work.edge[1][2];
+  win[2] = work.edge[1][3];
+
+  for (b = 0; b <= BUCKETS; b++)
+    work.hist[b] = 0;
+
+  minima_scan(0, 0);
+  for (b = 0; b <= BUCKETS; b++)
+    total = (uint16_t)(total + work.hist[b]);
+
+  {
+    uint16_t want = total / 2;
+
+    if (want < 3)             // COUNTS["few"]; a map must get its lakes
+      want = 3;
+    for (b = 0; b <= BUCKETS; b++) {
+      cum += work.hist[b];
+      if (cum >= want)
+        break;
+    }
+    half = b;
+  }
+
+  cand_n = 0;
+  minima_scan(1, (uint16_t)(half << BUCKETSHIFT));
+
+  for (i = 0; i < cand_n; i++) {
+    a = (uint16_t)(a + cand_y[i]);
+    sum_b = (uint16_t)(sum_b + a);
+    a = (uint16_t)(a + cand_x[i]);
+    sum_b = (uint16_t)(sum_b + a);
+  }
+  return (uint32_t)sum_b << 16 | a;
 }
