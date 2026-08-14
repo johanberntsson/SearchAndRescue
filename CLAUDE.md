@@ -32,7 +32,7 @@ make prg          # skip the disk, run the game PRG directly
 make PROFILE=0    # without the per-column instrumentation; use this for timing
 make FLYNOW=1     # skip the title and menus, launch straight into mission 1
 make FLYNOW=2     # ... or mission 2, the only headless way to reach its map
-make REPORT=n     # hold the startup benchmark report n seconds, not 20
+make REPORT=n     # hold the startup benchmark report n seconds; 0 by default
 make HGT_SIZE=1024 COL_SIZE=512     # map resolutions, 256..1024
 make release      # PROFILE=0 disk, copied to release/sar-latest.d81
 make clean
@@ -926,8 +926,11 @@ resources take roughly twice as long to load as the generator takes to run, and
 longer on hardware than under xemu -- a real drive against an instant one.
 
 Real hardware has no `-dumpmem`, so `profile_report` prints the same memory
-table to the Kernal's text screen at startup and waits for a key (or 20
-seconds, so unattended runs still get on with rendering). It is boxed in on
+table to the Kernal's text screen at startup and waits for a key. **The wait is
+`REPORT_SECONDS` and it defaults to 0**, because with the map generator gone
+the boot is 24 seconds in xemu and a twenty-second pause was most of it — the
+table still prints, it just scrolls past. `make REPORT=120` at the machine,
+where that table is the only way to read the attic RAM figures. It is boxed in on
 both sides: after the resources, because `profile_init` takes the timers the
 Kernal reads a disk with, and before `vic4_init`, which takes the text screen
 away. The figures come out identical to `profread`'s, so either route can be

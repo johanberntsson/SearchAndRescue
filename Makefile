@@ -15,10 +15,13 @@ WIDE    ?= 0
 # Never for timing comparisons of anything but itself -- it is the same code,
 # just entered differently.
 FLYNOW  ?= 0
-# REPORT=n holds the startup benchmark report on screen for n seconds instead
-# of 20. For a session at the real MEGA65, where that report is the only way to
-# read the attic RAM figures: `make REPORT=120`.
-REPORT  ?= 20
+# REPORT=n holds the startup benchmark report on screen for n seconds. It is 0
+# now, because with the map generator gone the boot is short enough that a
+# twenty-second pause was most of it -- the report still prints, it just does
+# not wait. **For a session at the real MEGA65 pass a number**, because that
+# report is the only way to read the attic RAM figures there: there is no
+# -dumpmem on the hardware. `make REPORT=120`. Any key ends the wait early.
+REPORT  ?= 0
 # The C stack. The toolchain defaults to 4096 and the game comes nowhere near:
 # src/bank.s fills it with a canary and main prints how much survived.
 # 144 bytes is the measured high-water mark, at the boot rather than in the

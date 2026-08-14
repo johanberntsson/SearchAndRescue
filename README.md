@@ -79,7 +79,8 @@ four times the work at every pass: about 255 seconds a map, against 66 to load
 both maps off a floppy and 31 off SD. The code is on the `mega65-mapgen` branch
 and `documentation/on-device-maps-experiment.md` is the write-up, with the
 arithmetic at the top. The maps are generated on the PC, which is where they
-were always generated.
+were always generated — and the boot is about 24 seconds in the emulator, 34
+off SD and 69 off a floppy, nearly all of it reading the two maps.
 
 `tools/preview.py` flies one on the PC **with the game's own
 renderer** — the same march, projection, map sampling and flight model, at the

@@ -43,9 +43,11 @@ almost all of the boot now:
 | MEGA65, SD card | 48 | 28 | 32 | 108 |
 | MEGA65, floppy | 52 | 29 | **67** | 148 |
 
-So a boot today is about **54 seconds on SD and 89 on floppy**: 3 of ROM boot
-and the game's own 27 KB, then the resources, then the 20-second benchmark
-report. Two things follow:
+So a boot today is about **24 seconds in xemu, 34 on SD and 69 on floppy**: two
+of ROM boot and the game's own 27 KB, then the resources, then the benchmark
+report, which no longer waits -- `REPORT` defaults to 0 now and the 20 seconds
+it used to hold for were most of what was left. `make REPORT=120` to read the
+table at the machine. Two things follow:
 
 - **The PRG load is free and exomizing it would buy nothing.** Stage two above
   is one second slower on hardware than in the emulator and nearly all of that
@@ -53,7 +55,7 @@ report. Two things follow:
   27 KB is the same. Measured, not argued.
 - **The resources are the boot.** 502 KB is 66 seconds off a floppy, about
   7.6 KB a second, and 31 off SD at about 16. Everything else is a rounding
-  error, and `make REPORT=0` takes another 20 off both.
+  error, now that the report no longer holds the boot up.
 
 **And there is 41 seconds of it available for a build flag.** `COL_SIZE=512`
 takes the disk from 502 KB to 186 and a floppy's loading from 66 seconds to
@@ -185,9 +187,9 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
 - **The resources are the boot, and 41 seconds of them are a build flag.** See
   the timings at the top: 502 KB is 66 seconds off a floppy and 31 off SD, and
   everything else in the boot is a rounding error. `COL_SIZE=512` takes that to
-  24.5 and 11.5, at the cost of a coarser colourmap; `make REPORT=0` takes 20
-  off both for nothing at all. Exomizing the game PRG is **not** worth doing --
-  27 KB off a floppy is about a second, measured.
+  24.5 and 11.5 -- **a floppy boot of about 27 seconds** -- at the cost of a
+  coarser colourmap. Exomizing the game PRG is **not** worth doing: 27 KB off a
+  floppy is about a second, measured.
 - **Procedural maps, stage three.** The generator and the previewer are both
   done, and the items that are terrain are built (see Done). Next is
   **`mission.bin`, and it is a different file from `map.bin`** — a mission has
