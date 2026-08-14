@@ -208,6 +208,25 @@ __zpage uint16_t cl_wy;
 // one replaces. Up here too: each is one operand of a multiply per pixel.
 __zpage uint32_t recip_slope, recip_sun, recip_top;
 
+// **The dither is in assembly now**; see src/mapgen2/dither_asm.s for what it
+// does and why. These are its half of the contract: the lattice columns as
+// byte offsets, the x weight, the two amplitudes, the two signed results, and
+// the scratch it works in. Declared here because zero page is allocated by the
+// C compiler and the assembler only externs what it is given.
+extern void cl_dither(void);
+
+__zpage uint8_t cl_ox0, cl_ox1;
+__zpage uint16_t cl_wx;
+__zpage uint16_t cl_p0, cl_p1, cl_a, cl_b, cl_w, cl_r, cl_t0;
+__zpage uint32_t cl_v;
+
+uint32_t cl_amps[2];
+int32_t cl_dith[2];
+
+// The C version it replaces, kept for reference and no longer called: it is
+// what dither_asm.s was written from, and the thing to read first if the
+// colour checksum ever moves.
+#if 0
 // value noise at MOTTLE_PER, scaled and signed: scale(2n - ONE, amp), the same
 // shape the mask's wobble and the river's meander take.
 // **Everything the row already knows is passed in.** `c0`/`c1` are the two
@@ -246,6 +265,7 @@ static int32_t dither_at(const uint16_t *c0, const uint16_t *c1, uint16_t wy,
     v++;
   return -(int32_t)v;
 }
+#endif
 
 // A 257-entry table read at eight bits with the rest interpolated, which is
 // fixed.lookup. The gamma's entries pass ONE, so this one is 32-bit
@@ -416,6 +436,8 @@ uint32_t colour_build(void)
   recip_top = recip32(top > SEA ? top - SEA : 1);
   recip_slope = recip32(SLOPE_REF);
   recip_sun = recip32(SUN_REF);
+  cl_amps[0] = MOTTLE;
+  cl_amps[1] = SUN_MOTTLE;
 
   // The two dither lattices, in genmap.py's draw order: the ramp's, then the
   // sun's. Over the histogram, which has just been read for the last time.
@@ -507,9 +529,15 @@ uint32_t colour_build(void)
           uint16_t hh = cl_mid[x];
           uint16_t ix0 = x >> DITHER_SH;
           uint16_t ix1 = (uint16_t)(ix0 + 1) & (MOTTLE_PER - 1);
-          uint16_t wx = dwt[x & ((1 << DITHER_SH) - 1)];
           uint32_t t, sq, slope;
           uint16_t step, face;
+
+          // Both lattices, in one call, before anything else touches the
+          // multiplier.
+          cl_ox0 = (uint8_t)(ix0 << 1);
+          cl_ox1 = (uint8_t)(ix1 << 1);
+          cl_wx = dwt[x & ((1 << DITHER_SH) - 1)];
+          cl_dither();
 
           // the ramp: height over the country's own top, through the gamma
           t = hh > (uint16_t)SEA ? mulhi32(hh - (uint16_t)SEA, recip_top) : 0;
@@ -541,14 +569,13 @@ uint32_t colour_build(void)
           t = mulhi32(t, CEILING);
 
           {
-            int32_t sc = (int32_t)mul32(t, (uint32_t)RAMP_LEN)
-                       + dither_at(cl_m0, cl_m1, cl_wy, ix0, ix1, wx, MOTTLE);
+            int32_t sc = (int32_t)mul32(t, (uint32_t)RAMP_LEN) + cl_dith[0];
 
             sc >>= FRACBITS;
             step = sc < 0 ? 0 : (sc >= RAMP_LEN ? RAMP_LEN - 1 : (uint16_t)sc);
           }
           {
-            int32_t sf = sun + dither_at(cl_s0, cl_s1, cl_wy, ix0, ix1, wx, SUN_MOTTLE);
+            int32_t sf = sun + cl_dith[1];
 
             sf >>= FRACBITS;
             face = sf < 0 ? 0 : (sf >= SHADES ? SHADES - 1 : (uint16_t)sf);

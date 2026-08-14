@@ -87,7 +87,9 @@ GEN_PRG  = $(BUILD)/autoboot.c65
 # the banking and the clock with stage one and nothing else; attic RAM carries
 # the fields between them.
 GEN2_SRCS = $(wildcard src/mapgen2/*.c)
+GEN2_ASRCS = $(wildcard src/mapgen2/*.s)
 GEN2_OBJS = $(patsubst src/mapgen2/%.c,$(BUILD)/mapgen2/%.o,$(GEN2_SRCS)) \
+            $(patsubst src/mapgen2/%.s,$(BUILD)/mapgen2/%.o,$(GEN2_ASRCS)) \
             $(BUILD)/mapgen/rnd.o $(BUILD)/mapgen/kernal.o \
             $(BUILD)/profile.o $(BUILD)/dma.o
 GEN2_ELF = $(BUILD)/mg2.elf
@@ -204,6 +206,11 @@ $(BUILD)/mapgen2/%.o: src/mapgen2/%.c $(wildcard src/*.h) \
                       $(wildcard src/mapgen/*.h) $(wildcard src/mapgen2/*.h) \
                       src/mapgen/tables.h $(CONFIG_STAMP) | $(BUILD)/mapgen2
 	cc6502 $(CFLAGS) --no-cross-call -c -o $@ $<
+
+$(BUILD)/mapgen2/%.o: src/mapgen2/%.s $(wildcard src/*.h) \
+                      $(wildcard src/mapgen/*.h) $(wildcard src/mapgen2/*.h) \
+                      $(CONFIG_STAMP) | $(BUILD)/mapgen2
+	as6502 $(ASFLAGS) -o $@ $<
 
 $(GEN2_ELF): $(GEN2_OBJS)
 	ln6502 $(LDFLAGS) --cstack-size $(CSTACK_GEN) -o $@ $(GEN_LINKFILE) $(GEN2_OBJS)
