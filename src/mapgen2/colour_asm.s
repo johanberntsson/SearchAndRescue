@@ -66,6 +66,11 @@ cl_dither:
             sta     zp:cl_p1+1
             ldx     #4
             jsr     one$
+            ; **Z must be zero on the way back to C.** Calypsi reaches through
+            ; pointers with `lda (zp),z` and leaves the index there between
+            ; uses, so a routine that returns with Z set offsets every later
+            ; read. The lattice loads above leave it at the last column read.
+            ldz     #0
             rts
 
 ; One lattice. X is the byte offset of this lattice's amp and result, so 0 for
@@ -571,6 +576,7 @@ half$:
             sta     cl_sunv+2
             lda     MULTOUT+3
             sta     cl_sunv+3
+            ldz     #0                ; see the note at the end of cl_dither
             rts
 
 ; MULTINB = SUN_REF, all four bytes.
@@ -608,4 +614,553 @@ bump$:
             bne     bumped$
             inc     zp:cl_v+3
 bumped$:
+            rts
+
+; --- the land ramp -----------------------------------------------------------
+;
+; What is left of the land pixel after the sun and the dither: the height
+; through the gamma, the slope that pushes a pixel up the ramp, and the two
+; clamps that turn the result into a palette index.
+;
+;   t     = gamma(clip(h - sea) / top)
+;   slope = sqrt(dy^2 + dx^2) / SLOPE_REF
+;   t     = (t + slope * SLOPE_PUSH) * CEILING
+;   step  = clip((t * 21 + mottle) >> 16, 0, 20)
+;   face  = clip((sun + smottle) >> 16, 0, 5)
+;   index = 24 + step * 6 + face
+;
+; The caller leaves h in cl_hh and the two vertical neighbours in cl_du and
+; cl_dd; cl_hl and cl_hr are still the sun's, and the horizontal difference is
+; taken from them again rather than passed. cl_dith and cl_sunv are read where
+; the two routines above left them. The answer is one byte in cl_idx.
+;
+; Two things the C version does that are dead here and are not ported:
+;
+;   - **the sum of two squares cannot exceed 1.0 once shifted**, because it is
+;     a 32-bit value shifted right sixteen, so `sq > ONE` is unreachable. Only
+;     the carry out of the addition means anything, and it means 1.0.
+;   - for the same reason `sqrt16`'s `x >= ONE` early-out never fires, so the
+;     root below is always the table read.
+
+            .extern cl_hh, cl_du, cl_dd, cl_sea, cl_idx, cl_s
+            .extern cl_gammap, cl_sqrtp, cl_sqrtdp, cl_ceiling, cl_push
+            .extern recip_top, recip_slope
+
+            .section code, text
+            .public cl_land
+
+cl_land:
+            ; --- t = (h - sea) / (top - sea) ------------------------------
+            lda     cl_hh
+            cmp     cl_sea
+            lda     cl_hh+1
+            sbc     cl_sea+1
+            bcc     under$
+
+            sec
+            lda     cl_hh
+            sbc     cl_sea
+            sta     MULTINA
+            lda     cl_hh+1
+            sbc     cl_sea+1
+            sta     MULTINA+1
+            lda     #0
+            sta     MULTINA+2
+            sta     MULTINA+3
+            lda     zp:recip_top
+            sta     MULTINB
+            lda     zp:recip_top+1
+            sta     MULTINB+1
+            lda     zp:recip_top+2
+            sta     MULTINB+2
+            lda     zp:recip_top+3
+            sta     MULTINB+3
+            lda     MULTOUT+2
+            sta     zp:cl_v
+            lda     MULTOUT+3
+            sta     zp:cl_v+1
+            lda     MULTOUT+4
+            sta     zp:cl_v+2
+            lda     MULTOUT+5
+            sta     zp:cl_v+3
+            bra     ceil$
+under$:
+            lda     #0
+            sta     zp:cl_v
+            sta     zp:cl_v+1
+            sta     zp:cl_v+2
+            sta     zp:cl_v+3
+
+ceil$:
+            ; the gamma is read over 0..2, so clip there and halve
+            lda     zp:cl_v+3
+            bne     over$
+            lda     zp:cl_v+2
+            cmp     #3
+            bcs     over$
+            cmp     #2
+            bcc     halve$
+            lda     zp:cl_v
+            ora     zp:cl_v+1
+            beq     halve$
+over$:
+            lda     #0
+            sta     zp:cl_v
+            sta     zp:cl_v+1
+            sta     zp:cl_v+3
+            lda     #2
+            sta     zp:cl_v+2
+halve$:
+            lsr     zp:cl_v+3
+            ror     zp:cl_v+2
+            ror     zp:cl_v+1
+            ror     zp:cl_v
+
+            ; --- t = gamma[t], interpolated -------------------------------
+            ; A 257-entry table of longwords. The third byte is set only when
+            ; the argument is exactly 1.0, which is the last entry.
+            lda     zp:cl_v+2
+            beq     ginterp$
+            jmp     gtop$
+ginterp$:
+            lda     zp:cl_v+1
+            asl     a
+            sta     zp:cl_p0
+            lda     #0
+            rol     a
+            sta     zp:cl_p0+1
+            asl     zp:cl_p0
+            rol     zp:cl_p0+1
+            clc
+            lda     zp:cl_p0
+            adc     cl_gammap
+            sta     zp:cl_p0
+            lda     zp:cl_p0+1
+            adc     cl_gammap+1
+            sta     zp:cl_p0+1
+
+            ldz     #0
+            lda     (zp:cl_p0),z
+            sta     zp:cl_s
+            inz
+            lda     (zp:cl_p0),z
+            sta     zp:cl_s+1
+            inz
+            lda     (zp:cl_p0),z
+            sta     zp:cl_s+2
+            inz
+            lda     (zp:cl_p0),z
+            sta     zp:cl_s+3
+            ; the next entry, differenced against this one as it is read: the
+            ; ramp only rises, so the difference is never negative.
+            inz
+            sec
+            lda     (zp:cl_p0),z
+            sbc     zp:cl_s
+            sta     MULTINA
+            inz
+            lda     (zp:cl_p0),z
+            sbc     zp:cl_s+1
+            sta     MULTINA+1
+            inz
+            lda     (zp:cl_p0),z
+            sbc     zp:cl_s+2
+            sta     MULTINA+2
+            inz
+            lda     (zp:cl_p0),z
+            sbc     zp:cl_s+3
+            sta     MULTINA+3
+            lda     #0
+            sta     MULTINB
+            lda     zp:cl_v                 ; the weight, one byte shifted up
+            sta     MULTINB+1
+            lda     #0
+            sta     MULTINB+2
+            sta     MULTINB+3
+            clc
+            lda     zp:cl_s
+            adc     MULTOUT+2
+            sta     zp:cl_v
+            lda     zp:cl_s+1
+            adc     MULTOUT+3
+            sta     zp:cl_v+1
+            lda     zp:cl_s+2
+            adc     MULTOUT+4
+            sta     zp:cl_v+2
+            lda     zp:cl_s+3
+            adc     MULTOUT+5
+            sta     zp:cl_v+3
+            bra     rise$
+gtop$:
+            clc
+            lda     cl_gammap
+            sta     zp:cl_p0
+            lda     cl_gammap+1
+            adc     #4                      ; 256 entries of four bytes
+            sta     zp:cl_p0+1
+            ldz     #0
+            lda     (zp:cl_p0),z
+            sta     zp:cl_v
+            inz
+            lda     (zp:cl_p0),z
+            sta     zp:cl_v+1
+            inz
+            lda     (zp:cl_p0),z
+            sta     zp:cl_v+2
+            inz
+            lda     (zp:cl_p0),z
+            sta     zp:cl_v+3
+
+rise$:
+            ; --- the slope ------------------------------------------------
+            sec
+            lda     cl_dd
+            sbc     cl_du
+            sta     zp:cl_a
+            lda     cl_dd+1
+            sbc     cl_du+1
+            sta     zp:cl_a+1
+            bcs     dyup$
+            sec
+            lda     cl_du
+            sbc     cl_dd
+            sta     zp:cl_a
+            lda     cl_du+1
+            sbc     cl_dd+1
+            sta     zp:cl_a+1
+dyup$:
+            jsr     square$
+            lda     MULTOUT
+            sta     zp:cl_s
+            lda     MULTOUT+1
+            sta     zp:cl_s+1
+            lda     MULTOUT+2
+            sta     zp:cl_s+2
+            lda     MULTOUT+3
+            sta     zp:cl_s+3
+
+            sec
+            lda     zp:cl_hr
+            sbc     zp:cl_hl
+            sta     zp:cl_a
+            lda     zp:cl_hr+1
+            sbc     zp:cl_hl+1
+            sta     zp:cl_a+1
+            bcs     dxup$
+            sec
+            lda     zp:cl_hl
+            sbc     zp:cl_hr
+            sta     zp:cl_a
+            lda     zp:cl_hl+1
+            sbc     zp:cl_hr+1
+            sta     zp:cl_a+1
+dxup$:
+            jsr     square$
+            clc
+            lda     zp:cl_s
+            adc     MULTOUT
+            sta     zp:cl_s
+            lda     zp:cl_s+1
+            adc     MULTOUT+1
+            sta     zp:cl_s+1
+            lda     zp:cl_s+2
+            adc     MULTOUT+2
+            sta     zp:cl_s+2
+            lda     zp:cl_s+3
+            adc     MULTOUT+3
+            sta     zp:cl_s+3
+            bcs     steep$
+
+            lda     zp:cl_s+2
+            sta     zp:cl_a
+            lda     zp:cl_s+3
+            sta     zp:cl_a+1
+            jsr     root$
+            bra     push$
+steep$:
+            lda     #0                      ; the sum carried: 1.0, and its
+            sta     zp:cl_s                 ; root is 1.0 as well
+            sta     zp:cl_s+1
+            sta     zp:cl_s+3
+            lda     #1
+            sta     zp:cl_s+2
+
+push$:
+            ; slope / SLOPE_REF, clipped at 1.0
+            jsr     slopein$
+            lda     zp:recip_slope
+            sta     MULTINB
+            lda     zp:recip_slope+1
+            sta     MULTINB+1
+            lda     zp:recip_slope+2
+            sta     MULTINB+2
+            lda     zp:recip_slope+3
+            sta     MULTINB+3
+            lda     MULTOUT+2
+            sta     zp:cl_s
+            lda     MULTOUT+3
+            sta     zp:cl_s+1
+            lda     MULTOUT+4
+            sta     zp:cl_s+2
+            lda     MULTOUT+5
+            sta     zp:cl_s+3
+
+            lda     zp:cl_s+3
+            bne     clip$
+            lda     zp:cl_s+2
+            beq     pushed$
+            cmp     #1
+            bne     clip$
+            lda     zp:cl_s
+            ora     zp:cl_s+1
+            beq     pushed$
+clip$:
+            lda     #0
+            sta     zp:cl_s
+            sta     zp:cl_s+1
+            sta     zp:cl_s+3
+            lda     #1
+            sta     zp:cl_s+2
+pushed$:
+            ; t += slope * SLOPE_PUSH
+            jsr     slopein$
+            lda     cl_push
+            sta     MULTINB
+            lda     cl_push+1
+            sta     MULTINB+1
+            lda     cl_push+2
+            sta     MULTINB+2
+            lda     cl_push+3
+            sta     MULTINB+3
+            clc
+            lda     zp:cl_v
+            adc     MULTOUT+2
+            sta     zp:cl_v
+            lda     zp:cl_v+1
+            adc     MULTOUT+3
+            sta     zp:cl_v+1
+            lda     zp:cl_v+2
+            adc     MULTOUT+4
+            sta     zp:cl_v+2
+            lda     zp:cl_v+3
+            adc     MULTOUT+5
+            sta     zp:cl_v+3
+
+            ; t *= the type's ceiling
+            jsr     tin$
+            lda     cl_ceiling
+            sta     MULTINB
+            lda     cl_ceiling+1
+            sta     MULTINB+1
+            lda     cl_ceiling+2
+            sta     MULTINB+2
+            lda     cl_ceiling+3
+            sta     MULTINB+3
+            lda     MULTOUT+2
+            sta     zp:cl_v
+            lda     MULTOUT+3
+            sta     zp:cl_v+1
+            lda     MULTOUT+4
+            sta     zp:cl_v+2
+            lda     MULTOUT+5
+            sta     zp:cl_v+3
+
+            ; --- step = clip((t * 21 + mottle) >> 16, 0, 20) --------------
+            jsr     tin$
+            lda     #21
+            sta     MULTINB
+            lda     #0
+            sta     MULTINB+1
+            sta     MULTINB+2
+            sta     MULTINB+3
+            clc
+            lda     MULTOUT
+            adc     cl_dith
+            lda     MULTOUT+1
+            adc     cl_dith+1
+            lda     MULTOUT+2
+            adc     cl_dith+2
+            sta     zp:cl_a
+            lda     MULTOUT+3
+            adc     cl_dith+3
+            bmi     nostep$
+            bne     maxstep$
+            lda     zp:cl_a
+            cmp     #21
+            bcc     gotstep$
+maxstep$:
+            lda     #20
+            sta     zp:cl_a
+            bra     gotstep$
+nostep$:
+            lda     #0
+            sta     zp:cl_a
+gotstep$:
+            ; --- face = clip((sun + smottle) >> 16, 0, 5) -----------------
+            clc
+            lda     cl_sunv
+            adc     cl_dith+4
+            lda     cl_sunv+1
+            adc     cl_dith+5
+            lda     cl_sunv+2
+            adc     cl_dith+6
+            sta     zp:cl_b
+            lda     cl_sunv+3
+            adc     cl_dith+7
+            bmi     noface$
+            bne     maxface$
+            lda     zp:cl_b
+            cmp     #6
+            bcc     gotface$
+maxface$:
+            lda     #5
+            sta     zp:cl_b
+            bra     gotface$
+noface$:
+            lda     #0
+            sta     zp:cl_b
+gotface$:
+            ; --- 24 + step * 6 + face -------------------------------------
+            lda     zp:cl_a
+            asl     a
+            sta     zp:cl_t0
+            asl     a
+            clc
+            adc     zp:cl_t0
+            clc
+            adc     zp:cl_b
+            clc
+            adc     #24
+            sta     cl_idx
+            ldz     #0                ; see the note at the end of cl_dither
+            rts
+
+; cl_a squared, in MULTOUT. Both differences fit a word, so both squares fit a
+; longword and only the low half of the product is ever read.
+square$:
+            lda     zp:cl_a
+            sta     MULTINA
+            sta     MULTINB
+            lda     zp:cl_a+1
+            sta     MULTINA+1
+            sta     MULTINB+1
+            lda     #0
+            sta     MULTINA+2
+            sta     MULTINA+3
+            sta     MULTINB+2
+            sta     MULTINB+3
+            rts
+
+; MULTINA = the slope, MULTINA = t: the two operands this routine multiplies
+; more than once.
+slopein$:
+            lda     zp:cl_s
+            sta     MULTINA
+            lda     zp:cl_s+1
+            sta     MULTINA+1
+            lda     zp:cl_s+2
+            sta     MULTINA+2
+            lda     zp:cl_s+3
+            sta     MULTINA+3
+            rts
+tin$:
+            lda     zp:cl_v
+            sta     MULTINA
+            lda     zp:cl_v+1
+            sta     MULTINA+1
+            lda     zp:cl_v+2
+            sta     MULTINA+2
+            lda     zp:cl_v+3
+            sta     MULTINA+3
+            rts
+
+; The square root of cl_a, a Q0.16 fraction under 1.0, into cl_s.
+;
+; **The input is normalised into 0.25..1 first**, and that is the whole trick:
+; a root's slope is infinite at zero, so a table read straight at small x is
+; wrong by up to 1.5% of full scale. Shifting up in pairs of bits until the top
+; is set puts every input on the flat part of the curve, and shifting the
+; result back down by half as many is exact, because sqrt(4^k) is 2^k.
+root$:
+            lda     zp:cl_a
+            ora     zp:cl_a+1
+            bne     rt1$
+            sta     zp:cl_s
+            sta     zp:cl_s+1
+            sta     zp:cl_s+2
+            sta     zp:cl_s+3
+            rts
+rt1$:
+            ldx     #0
+rtnorm$:
+            lda     zp:cl_a+1
+            cmp     #0x40                   ; 0.25 in the high byte
+            bcs     rtread$
+            asl     zp:cl_a
+            rol     zp:cl_a+1
+            asl     zp:cl_a
+            rol     zp:cl_a+1
+            inx
+            bra     rtnorm$
+rtread$:
+            lda     zp:cl_a+1
+            asl     a
+            sta     zp:cl_t0
+            lda     #0
+            rol     a
+            sta     zp:cl_t0+1
+
+            clc
+            lda     zp:cl_t0
+            adc     cl_sqrtdp
+            sta     zp:cl_p0
+            lda     zp:cl_t0+1
+            adc     cl_sqrtdp+1
+            sta     zp:cl_p0+1
+            ldz     #0
+            lda     (zp:cl_p0),z
+            sta     MULTINA
+            inz
+            lda     (zp:cl_p0),z
+            sta     MULTINA+1
+            lda     #0
+            sta     MULTINA+2
+            sta     MULTINA+3
+            sta     MULTINB
+            lda     zp:cl_a
+            sta     MULTINB+1
+            lda     #0
+            sta     MULTINB+2
+            sta     MULTINB+3
+
+            clc
+            lda     zp:cl_t0
+            adc     cl_sqrtp
+            sta     zp:cl_p0
+            lda     zp:cl_t0+1
+            adc     cl_sqrtp+1
+            sta     zp:cl_p0+1
+            ldz     #0
+            clc
+            lda     (zp:cl_p0),z
+            adc     MULTOUT+2
+            sta     zp:cl_s
+            inz
+            lda     (zp:cl_p0),z
+            adc     MULTOUT+3
+            sta     zp:cl_s+1
+            lda     #0
+            adc     #0
+            sta     zp:cl_s+2               ; sqrt(1.0) is seventeen bits
+            lda     #0
+            sta     zp:cl_s+3
+rtdown$:
+            cpx     #0
+            beq     rtend$
+            lsr     zp:cl_s+2
+            ror     zp:cl_s+1
+            ror     zp:cl_s
+            dex
+            bra     rtdown$
+rtend$:
             rts

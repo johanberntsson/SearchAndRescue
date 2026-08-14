@@ -215,6 +215,7 @@ __zpage uint32_t recip_slope, recip_sun, recip_top;
 // C compiler and the assembler only externs what it is given.
 extern void cl_dither(void);
 extern void cl_sun(void);
+extern void cl_land(void);
 
 __zpage uint8_t cl_ox0, cl_ox1;
 __zpage uint16_t cl_wx;
@@ -233,6 +234,17 @@ uint32_t cl_sunref;
 uint16_t cl_sunsat;
 const uint16_t *cl_tanhp;
 int32_t cl_sunv;
+
+// And the ramp's. Its inputs are ordinary memory rather than zero page -- they
+// are read once each per pixel, and zero page is down to its last few bytes.
+__zpage uint32_t cl_s;
+
+uint16_t cl_hh, cl_du, cl_dd;
+uint16_t cl_sea;
+uint32_t cl_ceiling, cl_push;
+const uint32_t *cl_gammap;
+const uint16_t *cl_sqrtp, *cl_sqrtdp;
+uint8_t cl_idx;
 
 // The C version it replaces, kept for reference and no longer called: it is
 // what dither_asm.s was written from, and the thing to read first if the
@@ -458,6 +470,12 @@ uint32_t colour_build(void)
   cl_sunref = SUN_REF;
   cl_sunsat = 4 * SUN_REF;
   cl_tanhp = tanh_tab;
+  cl_sea = (uint16_t)SEA;
+  cl_ceiling = CEILING;
+  cl_push = SLOPE_PUSH;
+  cl_gammap = gamma_tab;
+  cl_sqrtp = sqrt_tab;
+  cl_sqrtdp = sqrt_delta;
 
   // The two dither lattices, in genmap.py's draw order: the ramp's, then the
   // sun's. Over the histogram, which has just been read for the last time.
@@ -548,20 +566,30 @@ uint32_t colour_build(void)
           idx = (uint16_t)(STONE_BASE + (course << 2) + (course << 1)
                            + dressed);
         } else {
-          int32_t ddx = (int32_t)cl_hr - cl_hl;   // the two the sun just read
-          int32_t ddy = (int32_t)cl_dn[x] - cl_up[x];
-          uint16_t hh = cl_mid[x];
           uint16_t ix0 = x >> DITHER_SH;
           uint16_t ix1 = (uint16_t)(ix0 + 1) & (MOTTLE_PER - 1);
-          uint32_t t, sq, slope;
-          uint16_t step, face;
 
-          // Both lattices, in one call, before anything else touches the
-          // multiplier.
+          // Both lattices, then the ramp. The order matters: the three
+          // routines share their scratch, and the ramp reads what the other
+          // two leave in cl_sunv and cl_dith.
           cl_ox0 = (uint8_t)(ix0 << 1);
           cl_ox1 = (uint8_t)(ix1 << 1);
           cl_wx = dwt[x & ((1 << DITHER_SH) - 1)];
           cl_dither();
+
+          cl_hh = cl_mid[x];
+          cl_du = cl_up[x];
+          cl_dd = cl_dn[x];
+          cl_land();
+          idx = cl_idx;
+        }
+      }
+#if 0
+        {
+          int32_t ddx = 0, ddy = 0;
+          uint16_t hh = 0;
+          uint32_t t, sq, slope;
+          uint16_t step, face;
 
           // the ramp: height over the country's own top, through the gamma
           t = hh > (uint16_t)SEA ? mulhi32(hh - (uint16_t)SEA, recip_top) : 0;
@@ -606,7 +634,7 @@ uint32_t colour_build(void)
           }
           idx = (uint16_t)(RAMP_BASE + (step << 2) + (step << 1) + face);
         }
-      }
+#endif
       cl_out[x] = (uint8_t)idx;
       a = (uint16_t)(a + idx);
       b = (uint16_t)(b + a);

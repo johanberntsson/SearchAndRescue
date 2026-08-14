@@ -84,9 +84,10 @@ BASIC is back.
 **Every one of the eleven passes is byte-identical to what `tools/genmap.py`
 computes on the PC** — each stage prints a checksum and `tools/fbmcheck.py`
 prints the same one from Python, which is how the port was built and what makes
-it safe to optimise — the colour pass has come down from 176 seconds to 36 with
-it unchanged at every step. A whole world costs about a minute and a half to
-build; the game does not fly the result yet.
+it safe to optimise — the colour pass has come down from 176 seconds to under
+19 with it unchanged at every step, the last third of that by moving the
+per-pixel arithmetic into 45GS02 assembly. A whole world costs about eighty
+seconds to build; the game does not fly the result yet.
 
 `tools/preview.py` flies one on the PC **with the game's own
 renderer** — the same march, projection, map sampling and flight model, at the

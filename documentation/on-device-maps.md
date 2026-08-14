@@ -931,9 +931,9 @@ Nothing. In order, with what each needed that was new:
 | ~~colour~~ | done — in a second program (steps 13-14) |
 | ~~planes~~ | done — nothing new; the layout `voxel_asm.s` addresses is what the generator writes anyway |
 
-What is left is **time**, and the first pass at it took colour from 175.9
-seconds to 36.2 with the checksum unchanged at every step — which is what the
-checksum is for. In order:
+What is left is **time**, and working on it took colour from 175.9 seconds to
+18.8 with the checksum unchanged at every step — which is what the checksum is
+for. In order:
 
 | | s | |
 |---|---|---|
@@ -944,6 +944,9 @@ checksum is for. In order:
 | the row pointers into zero page | 47.2 | 2%, and that was the tell |
 | the product read as longwords instead of out of `multout[]` | 43.0 | |
 | `--no-cross-call` on stage two | 36.2 | |
+| the dither in assembly | 31.0 | |
+| the sun in assembly | 26.7 | |
+| the ramp, slope and gamma in assembly | 18.8 | |
 
 - **Five 32-bit library multiplies in the pixel loop** — two squares and three
   by constants of 21, 8 and 6 — at 2203 cycles each against the multiplier's
@@ -977,10 +980,15 @@ one: it is worth 9% and it **generates a different map** (`C24E6E26` against
 bodies C does not promise stay unbroken, and merged into one basic block they
 trample each other's operands.
 
-What is left is a per-pixel loop still in C, and the rule this port started with
-says the answer is assembly with the operands in zero page — the same move that
-took the renderer's march from 1392 cycles a sample to 182. The checksum is what
-makes it safe to attempt.
+**And the last three rows are that rule being followed.** `colour_asm.s` is the
+per-pixel arithmetic in 45GS02: the two dither lattices, the sun, and the ramp,
+in three routines that share their scratch because zero page is 91% full and
+they are never live at once. Between them they halved what six rounds of C had
+left. Each was written straight from the C beside it — kept under `#if 0` in
+`colour.c` for that purpose — and each was right first try, which is the
+checksum earning its keep rather than any particular care.
+
+What remains in C is the row loop, the array reads and the water branch.
 
 Water is next, and it is the one the costing has always flagged: a priority
 flood is a heap and a visited set, which is the least 6502-shaped code in the
