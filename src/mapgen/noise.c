@@ -190,6 +190,13 @@ uint32_t *__attribute__((zpage)) nz_hist;
 __zpage uint32_t nz_recip;
 __zpage uint16_t nz_sum_a, nz_sum_b, nz_lo, nz_ptr, nz_floor, nz_range;
 
+// ... and the horizontal blur's: a 32-bit running window sum and the two edges
+// walking it. The edges are addresses rather than indices because the caller
+// pads the row, so neither ever has to wrap.
+__zpage uint32_t nz_sum;
+uint16_t *__attribute__((zpage)) nz_lead;
+uint16_t *__attribute__((zpage)) nz_trail;
+
 // ... and the mask pass's.
 uint16_t *__attribute__((zpage)) nz_sqrt;
 uint16_t *__attribute__((zpage)) nz_delta;
@@ -202,6 +209,7 @@ __zpage uint8_t nz_neg;
 // zero-page block everything else here does: nz_acc the running sums, nz_top
 // and nz_bot the rows, nz_recip the Q0.32 divisor.
 void blur_out(void);
+void blur_x_row(void);
 void blur_roll(void);
 
 void noise_blend(void);
@@ -722,25 +730,37 @@ static void hill_stamp(uint16_t cy, uint16_t cx)
   }
 }
 
-// The field's Fletcher checksum, read back out of attic RAM. **Verification
-// scaffolding**, not part of generating a map: it is a quarter of a million
-// far reads and costs about three seconds, which is more than every pass it
-// checks. The passes that write the field checksum it as they go and pay
-// nothing; this exists for the ones that do not, and goes when the pipeline
-// is finished.
+// Any field's Fletcher checksum, read back out of attic RAM.
+//
+// **Verification scaffolding**, not part of generating a map -- and it was the
+// most expensive thing in stage one. Seven passes call it, each summing a
+// quarter of a million words, and in C that was around three hundred cycles
+// an element. The row loop is `src/mapgen/fletcher_asm.s` now, at about
+// thirty, and this is the DMA around it.
+//
+// The whole of it goes when the pipeline is trusted enough not to be checked
+// on every boot.
+extern void fl_row(void);
+
+uint32_t field_sum(uint32_t base)
+{
+  uint16_t y;
+
+  // It works in the store pass's zero page -- see fletcher_asm.s. Zero page
+  // has four bytes spare, not twelve.
+  nz_sum_a = 0;
+  nz_sum_b = 0;
+  for (y = 0; y < SIZE; y++) {
+    row_in(rowbuf_a, base + (uint32_t)y * (SIZE * 2));
+    nz_top = rowbuf_a;
+    fl_row();
+  }
+  return (uint32_t)nz_sum_b << 16 | nz_sum_a;
+}
+
 uint32_t field_checksum(void)
 {
-  uint16_t a = 0, b = 0;
-  uint16_t x, y;
-
-  for (y = 0; y < SIZE; y++) {
-    row_in(rowbuf_a, NOISE_FIELD + (uint32_t)y * (SIZE * 2));
-    for (x = 0; x < SIZE; x++) {
-      a = (uint16_t)(a + rowbuf_a[x]);
-      b = (uint16_t)(b + a);
-    }
-  }
-  return (uint32_t)b << 16 | a;
+  return field_sum(NOISE_FIELD);
 }
 
 void hills_apply(void)
@@ -1210,13 +1230,7 @@ uint32_t lakes_fill(void)
     flood_basin(cand_y[v], cand_x[v], LAKE_BUDGET, LAKE_RISE);
   }
 
-  for (y = 0; y < SIZE; y++) {
-    for (x = 0; x < SIZE; x++) {
-      a = (uint16_t)(a + level_get(y, x));
-      b = (uint16_t)(b + a);
-    }
-  }
-  return (uint32_t)b << 16 | a;
+  return field_sum(LEVEL_FIELD);
 }
 
 // --- water, part three: the flow field -------------------------------------
@@ -1280,22 +1294,28 @@ static void blur_y(void)
 // Across the rows. The row is copied into chip RAM first: the sum walks it
 // back and forth over a 17-wide window, and paying an attic read for each of
 // those would be seventeen times the traffic.
+// **The row is padded rather than the index masked.** The window runs from
+// x - R to x + R and the row is a torus, so the C version masked both edges on
+// every one of the 512 pixels. Copying the last R entries in front of the row
+// and the first R + 1 after it is seventeen words against a thousand masks,
+// and it makes all three walks in blur_x_row linear.
 static void blur_x(void)
 {
-  uint16_t *buf = work.edge[0][0];
+  uint16_t *pad = work.edge[0][0];
+  uint16_t *buf = pad + BLUR_R;
   uint16_t x, y;
 
   for (y = 0; y < SIZE; y++) {
-    uint32_t sum = 0;
-
     row_in(buf, BLUR_TMP + (uint32_t)y * (SIZE * 2));
-    for (x = 0; x < BLUR_N; x++)
-      sum += buf[(uint16_t)(x - BLUR_R) & SIZE_MASK];
-    for (x = 0; x < SIZE; x++) {
-      rowbuf_a[x] = mulhi32top(sum, BLUR_RECIP);
-      sum += (uint32_t)buf[(uint16_t)(x + BLUR_R + 1) & SIZE_MASK]
-           - buf[(uint16_t)(x - BLUR_R) & SIZE_MASK];
-    }
+    for (x = 0; x < BLUR_R; x++)
+      pad[x] = buf[SIZE - BLUR_R + x];
+    for (x = 0; x <= BLUR_R; x++)
+      buf[SIZE + x] = buf[x];
+
+    nz_top = pad;
+    nz_bot = rowbuf_a;
+    nz_recip = BLUR_RECIP;
+    blur_x_row();
     row_out(FLOW_FIELD + (uint32_t)y * (SIZE * 2), rowbuf_a);
   }
 }
@@ -1308,14 +1328,7 @@ uint32_t flow_build(void)
   blur_y();
   blur_x();
 
-  for (y = 0; y < SIZE; y++) {
-    row_in(rowbuf_a, FLOW_FIELD + (uint32_t)y * (SIZE * 2));
-    for (x = 0; x < SIZE; x++) {
-      a = (uint16_t)(a + rowbuf_a[x]);
-      b = (uint16_t)(b + a);
-    }
-  }
-  return (uint32_t)b << 16 | a;
+  return field_sum(FLOW_FIELD);
 }
 
 // --- water, part four: the rivers ------------------------------------------
@@ -1624,26 +1637,8 @@ uint32_t rivers_carve(uint32_t *level_sum)
     }
   }
 
-  for (y = 0; y < SIZE; y++) {
-    row_in(rowbuf_a, NOISE_FIELD + (uint32_t)y * (SIZE * 2));
-    for (x = 0; x < SIZE; x++) {
-      a = (uint16_t)(a + rowbuf_a[x]);
-      b = (uint16_t)(b + a);
-    }
-  }
-  {
-    uint16_t la = 0, lb = 0;
-
-    for (y = 0; y < SIZE; y++) {
-      row_in(rowbuf_a, LEVEL_FIELD + (uint32_t)y * (SIZE * 2));
-      for (x = 0; x < SIZE; x++) {
-        la = (uint16_t)(la + rowbuf_a[x]);
-        lb = (uint16_t)(lb + la);
-      }
-    }
-    *level_sum = (uint32_t)lb << 16 | la;
-  }
-  return (uint32_t)b << 16 | a;
+  *level_sum = field_sum(LEVEL_FIELD);
+  return field_sum(NOISE_FIELD);
 }
 
 // --- the water flattened in, and the things built on top -------------------
@@ -1794,19 +1789,7 @@ uint32_t built_place(uint32_t *mask_sum)
   water_flatten();
   items_place();
 
-  for (y = 0; y < SIZE; y++) {
-    row_in(rowbuf_a, NOISE_FIELD + (uint32_t)y * (SIZE * 2));
-    for (x = 0; x < SIZE; x++) {
-      a = (uint16_t)(a + rowbuf_a[x]);
-      b = (uint16_t)(b + a);
-    }
-    row_in(rowbuf_a, BUILT_FIELD + (uint32_t)y * (SIZE * 2));
-    for (x = 0; x < SIZE; x++) {
-      ma = (uint16_t)(ma + rowbuf_a[x]);
-      mb = (uint16_t)(mb + ma);
-    }
-  }
-  *mask_sum = (uint32_t)mb << 16 | ma;
-  return (uint32_t)b << 16 | a;
+  *mask_sum = field_sum(BUILT_FIELD);
+  return field_sum(NOISE_FIELD);
 }
 

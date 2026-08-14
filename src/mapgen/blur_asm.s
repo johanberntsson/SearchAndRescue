@@ -33,6 +33,7 @@ CHUNKS:     .equ 512 / CHUNK
 
             .section code, text
             .public blur_out, blur_roll
+            .extern nz_sum, nz_lead, nz_trail
 
 ; --- out[x] = (acc[x] * recip) >> 32 --------------------------------------
 ;
@@ -154,4 +155,148 @@ rbot$:      clc
 rdone$:     dec     zp:nz_chunks
             lbne    rchunk$
             ldz     #0
+            rts
+
+; --- one row across --------------------------------------------------------
+;
+; `blur_x` from noise.c: a moving average along a row. The vertical half of the
+; blur has been assembly since it was written -- this was the half left in C,
+; and it is the same 262144 iterations, each with a `jsr` to the multiplier and
+; two masked array reads.
+;
+;   for x: out[x] = (sum * recip) >> 32
+;          sum += pad[x + 2R + 1] - pad[x]
+;
+; **The caller pads the row instead of wrapping the index.** The window runs
+; from x - R to x + R and the row is a torus, so the C masked both edges on
+; every pixel. Copying the last R entries in front of the row and the first R
+; after it -- seventeen words a row, against a thousand masks -- makes all
+; three walks linear, which is what lets them be pointers stepped by two with
+; Z never leaving 0 and 1.
+;
+; nz_top is the padded row, nz_bot the output, nz_recip the Q0.32 reciprocal,
+; which never changes and so is written to the multiplier's B input once.
+
+BLUR_R2:    .equ 2 * 8                ; BLUR_R, in bytes
+
+            .section code, text
+            .public blur_x_row
+
+blur_x_row:
+            ; the first window: pad[0 .. 2R], which is BLUR_N entries
+            lda     #0
+            sta     zp:nz_sum
+            sta     zp:nz_sum+1
+            sta     zp:nz_sum+2
+            sta     zp:nz_sum+3
+            lda     zp:nz_top
+            sta     zp:nz_lead
+            lda     zp:nz_top+1
+            sta     zp:nz_lead+1
+            ldx     #17               ; BLUR_N
+prime$:
+            jsr     takelead$
+            dex
+            bne     prime$
+
+            ; the trailing edge starts at the front of the pad; the leading one
+            ; is where priming left it, at pad[2R + 1].
+            lda     zp:nz_top
+            sta     zp:nz_trail
+            lda     zp:nz_top+1
+            sta     zp:nz_trail+1
+
+            lda     zp:nz_recip
+            sta     MULTINB
+            lda     zp:nz_recip+1
+            sta     MULTINB+1
+            lda     zp:nz_recip+2
+            sta     MULTINB+2
+            lda     zp:nz_recip+3
+            sta     MULTINB+3
+
+            ldx     #2                ; two runs of 256 is the row
+outer$:
+            ldy     #0
+pixel$:
+            lda     zp:nz_sum
+            sta     MULTINA
+            lda     zp:nz_sum+1
+            sta     MULTINA+1
+            lda     zp:nz_sum+2
+            sta     MULTINA+2
+            lda     zp:nz_sum+3
+            sta     MULTINA+3
+            ldz     #0
+            lda     MULTOUT+4
+            sta     (zp:nz_bot),z
+            inz
+            lda     MULTOUT+5
+            sta     (zp:nz_bot),z
+            clc
+            lda     zp:nz_bot
+            adc     #2
+            sta     zp:nz_bot
+            bcc     out$
+            inc     zp:nz_bot+1
+out$:
+            jsr     takelead$
+            jsr     droptrail$
+            iny
+            bne     pixel$
+            dex
+            bne     outer$
+            ldz     #0                ; Calypsi keeps its pointer index in Z
+            rts
+
+; sum += the entry at the leading edge, then step it on.
+takelead$:
+            ldz     #0
+            clc
+            lda     (zp:nz_lead),z
+            adc     zp:nz_sum
+            sta     zp:nz_sum
+            inz
+            lda     (zp:nz_lead),z
+            adc     zp:nz_sum+1
+            sta     zp:nz_sum+1
+            lda     #0
+            adc     zp:nz_sum+2
+            sta     zp:nz_sum+2
+            lda     #0
+            adc     zp:nz_sum+3
+            sta     zp:nz_sum+3
+            clc
+            lda     zp:nz_lead
+            adc     #2
+            sta     zp:nz_lead
+            bcc     ledone$
+            inc     zp:nz_lead+1
+ledone$:
+            rts
+
+; sum -= the entry at the trailing edge, then step it on.
+droptrail$:
+            ldz     #0
+            sec
+            lda     zp:nz_sum
+            sbc     (zp:nz_trail),z
+            sta     zp:nz_sum
+            inz
+            lda     zp:nz_sum+1
+            sbc     (zp:nz_trail),z
+            sta     zp:nz_sum+1
+            lda     zp:nz_sum+2
+            sbc     #0
+            sta     zp:nz_sum+2
+            lda     zp:nz_sum+3
+            sbc     #0
+            sta     zp:nz_sum+3
+            clc
+            lda     zp:nz_trail
+            adc     #2
+            sta     zp:nz_trail
+            bcc     trdone$
+            inc     zp:nz_trail+1
+trdone$:
             rts

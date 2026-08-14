@@ -34,12 +34,12 @@ machine to `SAR`. The game does not fly the result yet. See Done.
 **Where the boot goes**, measured 14 Aug 2026 in xemu at real speed, by
 sampling screenshots across a boot and then booting the game alone
 (`xemu -prg build/sar.prg -8 build/sar.d81`) to separate loading from
-generating. About 170 seconds to the title then; the colour pass has since come
-down by 40 of those seconds, so about 130 now:
+generating. About 170 seconds to the title then; the two generator stages have
+since come down by 52 of those seconds between them, so about 118 now:
 
 | | s | |
 |---|---|---|
-| **map generation** | **77** | stage one 53.4 printed, stage two ~24 |
+| **map generation** | **66** | stage one 42.4 printed, stage two ~24 |
 | **deliberate holds** | **28** | 4 + 4 stage reports and the game's 20 s benchmark report |
 | loading both maps from the d81, the old way | ~20 | 502 KB |
 | loading the three PRGs | ~3 | 72 KB, and so nearly free |
@@ -52,7 +52,7 @@ Three things follow from it:
 - **28 seconds of it is on purpose**, so that the reports can be read.
   `make REPORT=0 HOLD=0` takes 16% off the boot today with no code change.
 - **The boot generates one map and then loads both maps from the disk anyway**,
-  because nothing reads what stage two writes yet. So the 77 seconds is
+  because nothing reads what stage two writes yet. So the 66 seconds is
   currently pure addition. Wiring the game to the generated planes removes the
   ~20 second row and 502 KB from the disk -- but only if *both* maps are
   generated, and the second one is the expensive one (see the colour note in
@@ -235,13 +235,35 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   section block**, so anything shared between routines in one file needs a
   plain name; and **BRA is an 8-bit branch**, so a long one has to be `jmp`.
   Both stop the build rather than miscompiling, which is the good kind.
-- **Stage one is 53.2 seconds**, which is 48.5 for the eight passes it had at
-  the optimisation pass (down from 66.6 -- rows moved by DMA, the blur's inner
-  loops in assembly, one scan taught to stop early, every checksum untouched)
-  plus `built` and its own setup. About six of those seconds are the
-  verification checksums themselves and go when the pipeline is trusted. More
-  to do: `rivers` is 11.8 and still C, `minima` 4.7 and still C, and the passes
-  that clear a 32 KB visited set three times could use `dma_fill`.
+- **Stage one is 42.4 seconds, down from 53.4**, every one of its nine
+  checksums unchanged. Two changes:
+
+  | | s | |
+  |---|---|---|
+  | the Fletcher checksum in assembly | 53.4 → 45.5 | seven passes call it |
+  | the horizontal blur in assembly | 45.5 → **42.4** | FLOW 7.8 to 3.6 |
+
+  **The checksum was the most expensive thing in stage one and it is not part
+  of generating a map.** Seven passes verify their work by summing the whole
+  512x512 field; in C that was around three hundred cycles an element, and
+  `lakes_fill` did it with a quarter of a million *far* reads, which alone was
+  3.6 seconds of its 4.7. One assembly row loop (`src/mapgen/fletcher_asm.s`,
+  about thirty cycles an element) serves all seven. The whole of it still goes
+  when the pipeline is trusted enough not to be checked on every boot.
+
+  The blur's vertical half had been assembly since it was written; the
+  horizontal half was the one left in C. **The row is padded rather than the
+  index masked** -- the window is seventeen wide and the row is a torus, so the
+  C masked both edges on every pixel; copying R entries in front and R + 1
+  behind is seventeen words against a thousand masks, and it makes all three
+  walks linear.
+- **What is left in stage one, in order:** `rivers` 11.2 (three full-map scans
+  in C -- the low/high pass, the count of dry cells above the cut, and the scan
+  that finds the picked ones; the river walk itself is only a few thousand
+  steps and costs nothing), `noise` 9.4 (already assembly), `mask` 4.7 (already
+  assembly), `minima` 4.6 (C), `built` 3.7, `flow` 3.6, `shape` 2.6. The three
+  river scans are the same shape as the Fletcher and should go the same way.
+  The passes that clear a 32 KB visited set three times could use `dma_fill`.
 - ~~Stage one is out of program space~~ **fixed, and the fix is the general
   one**: the 32 KB was `mega65-plain.scm`, not the machine. Stage one banks
   BASIC out and puts its BSS in the RAM underneath (`mega65-sar.scm`,
