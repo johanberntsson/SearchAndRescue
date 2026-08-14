@@ -43,9 +43,9 @@ almost all of the boot now:
 | MEGA65, SD card | 48 | 28 | 32 | 108 |
 | MEGA65, floppy | 52 | 29 | **67** | 148 |
 
-So a boot today is about **24 seconds in xemu, 34 on SD and 69 on floppy**: two
-of ROM boot and the game's own 27 KB, then the resources, then the benchmark
-report, which no longer waits -- `REPORT` defaults to 0 now and the 20 seconds
+So a boot today is about **10 seconds in xemu, 14 on SD and 27 on floppy**: two
+of ROM boot and the game's own 27 KB, then 186 KB of resources, then the
+benchmark report, which no longer waits -- `REPORT` defaults to 0 now and the 20 seconds
 it used to hold for were most of what was left. `make REPORT=120` to read the
 table at the machine. Two things follow:
 
@@ -57,12 +57,15 @@ table at the machine. Two things follow:
   7.6 KB a second, and 31 off SD at about 16. Everything else is a rounding
   error, now that the report no longer holds the boot up.
 
-**And there is 41 seconds of it available for a build flag.** `COL_SIZE=512`
-takes the disk from 502 KB to 186 and a floppy's loading from 66 seconds to
-24.5 -- at the cost of a visibly coarser colourmap, which is the one resolution
-increase CLAUDE.md records as free at runtime and plainly visible. Not taken;
-it is a quality decision, not an optimisation. Screenshots of both were flown
-before it was left alone.
+**`COL_SIZE` is 512 now**, taken on 14 Aug 2026 after playing both side by
+side: the difference is slight and the seconds are not. The disk went from 502
+KB to 186 and a floppy's loading from 66 seconds to 24.5, so a floppy boot is
+about **27 seconds** and SD about **14**. `make COL_SIZE=1024` still builds the
+finer one. Two things went with it: `tools/checkview.py`'s reference screenshot
+was retaken at 512, and `tools/convmap.py` now reads both map sizes out of the
+Makefile -- it had its own copy, so on the day the default changed checkview
+went on comparing 1024 against a 1024 reference and reported OK for a picture
+the machine was no longer drawing.
 
 Build knobs, all in the Makefile:
 
@@ -187,9 +190,9 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
 - **The resources are the boot, and 41 seconds of them are a build flag.** See
   the timings at the top: 502 KB is 66 seconds off a floppy and 31 off SD, and
   everything else in the boot is a rounding error. `COL_SIZE=512` takes that to
-  24.5 and 11.5 -- **a floppy boot of about 27 seconds** -- at the cost of a
-  coarser colourmap. Exomizing the game PRG is **not** worth doing: 27 KB off a
-  floppy is about a second, measured.
+  24.5 and 11.5, which is where they are now. **Exomizing the game PRG is
+  dropped** -- 27 KB off a floppy is about a second, measured, and there is
+  nothing there worth the decruncher.
 - **Procedural maps, stage three.** The generator and the previewer are both
   done, and the items that are terrain are built (see Done). Next is
   **`mission.bin`, and it is a different file from `map.bin`** — a mission has

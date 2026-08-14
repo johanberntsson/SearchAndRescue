@@ -22,7 +22,7 @@ mission if it goes down in the wrong place. The two fly over **different
 generated worlds, both on the one disk**.
 
 - 320x152 full-colour 3D view, double buffered, over a six-row 40-column text panel
-- 512x512 height and 1024x1024 colour maps, exomizer-crunched on the disk and
+- 512x512 height and colour maps, exomizer-crunched on the disk and
   unpacked into attic RAM at boot — two of them, one per mission, resident at
   once and switched between for 512 bytes of table
 - Front-to-back ray march with a y-buffer, fixed point throughout, inner loop in
@@ -79,8 +79,8 @@ four times the work at every pass: about 255 seconds a map, against 66 to load
 both maps off a floppy and 31 off SD. The code is on the `mega65-mapgen` branch
 and `documentation/on-device-maps-experiment.md` is the write-up, with the
 arithmetic at the top. The maps are generated on the PC, which is where they
-were always generated — and the boot is about 24 seconds in the emulator, 34
-off SD and 69 off a floppy, nearly all of it reading the two maps.
+were always generated — and the boot is about ten seconds in the emulator, 14
+off SD and 27 off a floppy.
 
 `tools/preview.py` flies one on the PC **with the game's own
 renderer** — the same march, projection, map sampling and flight model, at the

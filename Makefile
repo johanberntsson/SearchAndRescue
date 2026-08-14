@@ -32,8 +32,15 @@ CSTACK_GAME ?= 512
 # 256 the heightmap leaves chip RAM and the inner loop pays for it; the
 # colourmap is read once per span and is nearly free at any size. Both maps
 # are exomizer-crunched, which is what makes these fit a d81.
+#
+# **COL_SIZE is 512 and it used to be 1024**, which cost 316 KB of disk and,
+# because the resources are almost the whole boot, 41 seconds of every floppy
+# load. Flown side by side the difference is slight -- called on 14 Aug 2026
+# after playing both -- so the seconds win. `make COL_SIZE=1024` still builds
+# the finer one, and `tools/checkview.py`'s reference screenshot is of
+# whichever is the default.
 HGT_SIZE ?= 512
-COL_SIZE ?= 1024
+COL_SIZE ?= 512
 SIZEFLAGS = -DWIDE=$(WIDE) -DHGT_SIZE=$(HGT_SIZE) -DCOL_SIZE=$(COL_SIZE) \
             -DFLYNOW=$(FLYNOW) -DREPORT_SECONDS=$(REPORT)
 CFLAGS   = $(TARGET) -O2 --speed -DPROFILE_DETAIL=$(PROFILE) $(SIZEFLAGS)

@@ -53,7 +53,7 @@ import preview as P                                       # noqa: E402
 
 REFERENCE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "documentation", "reference", "island-x126-y123-a0-h126.png")
+    "documentation", "reference", "island-x143-y119-a0-h126.png")
 
 # A colour in the screenshot should land exactly on the palette entry that put
 # it there; xemu's rendering of the VIC-IV palette is a unit or so out, which

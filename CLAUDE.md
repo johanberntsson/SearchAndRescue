@@ -20,7 +20,7 @@ resident at once**, which one hand-drawn map pair could never be: two generated 
 costs 512 bytes of plane table. See Resources.
 
 Underneath is the voxel engine at about 12.5 fps — a 320x152 3D view over a
-six-row 40-column text panel, with 512x512 height and 1024x1024 colour maps
+six-row 40-column text panel, with 512x512 height and colour maps
 unpacked into attic RAM at boot, marching 160 rays and writing each to two
 neighbouring pixels; see Performance.
 
@@ -1079,9 +1079,10 @@ from 256 up to the source PNGs' 1024. Measured at 160 wide:
 
 | | disk | frame | |
 |---|---|---|---|
+| **h512 c512** | | | the default now: see below |
 | h256 c512 | 169 KB | 64.9 ms, 15.4 fps | |
 | h256 c1024 | 575 KB | 64.9 ms, 15.4 fps | colour is **free** |
-| **h512 c1024** | **661 KB** | **70.6 ms, 14.2 fps** | the default |
+| **h512 c1024** | **661 KB** | **70.6 ms, 14.2 fps** | was the default until 14 Aug 2026 |
 | h1024 c512 | 608 KB | 70.6 ms, 14.2 fps | |
 | h1024 c1024 | 1013 KB | — | will not fit a d81 |
 
@@ -1110,8 +1111,20 @@ The h512→h1024 diff is scattered one-pixel slivers at span edges — silhouett
 moving a row — with no terrain feature appearing anywhere; the two pictures are
 hard to tell apart even nose to the ground. h256→h512 is a real difference in
 kind: at low altitude h256 stair-steps the shoreline into rectangles and goes
-chunky in the foreground. So the default earns its place and the next step up
-does not. The residual h512→h1024 difference is lateral, not along the ray —
+chunky in the foreground. So h512 earns its place and the next step up does
+not.
+
+**c1024 was the default and is not any more, and that is a boot-time decision
+rather than a rendering one.** The finer colourmap costs nothing per frame --
+that is the whole point of the row above -- but it costs 316 KB of disk, and
+with the map generator gone the resources are almost the entire boot: 502 KB
+is 66 seconds off a floppy against 186 KB at 24.5. Flown side by side on the
+machine the difference is slight, called on 14 Aug 2026 after playing both, so
+the default moved to c512 and `make COL_SIZE=1024` still builds the other.
+**`tools/checkview.py`'s reference screenshot is of whichever is the
+default**, and `tools/convmap.py` reads both sizes out of the Makefile so the
+previewer cannot check a resolution the disk is not built at -- which it
+silently did once, on the day this changed. The residual h512→h1024 difference is lateral, not along the ray —
 near-field columns are packed closer together than the ray step — which is why
 the low-altitude figure beats the cruise one and why it is still only jitter.
 

@@ -34,6 +34,7 @@ all of them.  It costs nothing: those entries are spoken for anyway.
 """
 
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -58,8 +59,33 @@ CELLS = 256
 # the eye notices is the colour, not the silhouette. The heightmap above
 # CELLS also has to leave chip RAM, which costs the inner loop an attic read
 # and a plane lookup on every sample rather than once per span.
-DEFAULT_HGT_SIZE = 512
-DEFAULT_COL_SIZE = 1024
+def _makefile_size(name, fallback):
+    """The map resolution the disk is actually built at.
+
+    **Read from the Makefile, not written here.** These two numbers decide what
+    `preview.py` renders and therefore what `checkview.py` compares against,
+    and they used to be a copy: the day COL_SIZE went from 1024 to 512 in the
+    Makefile, checkview went on checking 1024 against a 1024 reference and
+    reported OK for a picture the machine was no longer drawing. A check that
+    cannot see the build is not a check.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        with open(os.path.join(here, "..", "Makefile")) as f:
+            text = f.read()
+    except OSError:
+        return fallback
+    m = re.search(r"^%s\s*\?=\s*(\d+)" % name, text, re.M)
+    if not m:
+        sys.exit("%s is no longer a plain `?= <number>` in the Makefile. "
+                 "tools/convmap.py reads it from there so that preview.py and "
+                 "checkview.py cannot check a resolution the disk is not built "
+                 "at -- teach _makefile_size about the new form." % name)
+    return int(m.group(1))
+
+
+DEFAULT_HGT_SIZE = _makefile_size("HGT_SIZE", 512)
+DEFAULT_COL_SIZE = _makefile_size("COL_SIZE", 512)
 
 # Reading a SEQ file through the Kernal comes up exactly 256 bytes short of the
 # end, whatever the file's size (measured across 16K-64K on xemu's ROM), so the
