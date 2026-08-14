@@ -23,6 +23,24 @@ WALK_Y:     .equ 0x00c5
             .section code,text
             .public bench_empty, bench_read_walk, bench_read_seq
             .public bench_write_span
+            .public profile_irq_off, profile_irq_on
+
+; Nothing may interrupt a measurement.
+;
+; The calibration times SIXTEEN RASTER LINES -- about a millisecond -- and an
+; interrupt landing inside that window scales every figure the profiler prints
+; for the rest of the run, including the frame rate on the panel. With the
+; title music playing at 50 Hz there is a real chance of it on any given boot,
+; and the ROM's own handler was always a smaller version of the same risk.
+; Cheap to rule out: the profiler owns CIA2 rather than any interrupt, so it
+; needs nothing from one.
+profile_irq_off:
+            sei
+            rts
+
+profile_irq_on:
+            cli
+            rts
 
 ; Loop overhead alone.
 bench_empty:

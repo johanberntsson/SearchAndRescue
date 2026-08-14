@@ -3,6 +3,7 @@
 #include "input.h"
 #include "loader.h"
 #include "mission.h"
+#include "music.h"
 #include "panel.h"
 #include "profile.h"
 #include "screens.h"
@@ -443,6 +444,13 @@ int main(void)
   // ROM's screen, dressed up to look like the title screen that follows it.
   screens_boot();
 
+  // The tune comes up with the loading screen and stays up through the title
+  // and the mission list. It rides the ROM's own interrupt, so it goes on
+  // playing through the load, the benchmarks and vic4_init without any of
+  // them knowing about it.
+  music_begin();
+  music_set(1);
+
   if (load_resources(screens_loading)) {
     screens_load_failed(loader_error(), loader_error_file());
     for (;;)
@@ -487,6 +495,9 @@ int main(void)
     flight_outcome how;
 
 #if !FLYNOW
+    // The title and the list are the musical part of the game. Coming back to
+    // them from a debrief starts the tune again; staying on them does not.
+    music_set(1);
     mission_no = choose_mission(mission_no);
     if (mission_no >= MISSION_COUNT) {  // backed out of the list
       screens_title();
@@ -495,11 +506,16 @@ int main(void)
       continue;
     }
 
+    // From here to the debrief there is no music. A search is meant to sound
+    // like the wind and the rain, and the briefing is where that starts.
+    music_set(0);
     screens_briefing(mission_no);
     // RUN/STOP reads the same on the briefing as it does in the air: this is
     // not the job, take me back.
     if (wait_for_key(KEY_SPACE | KEY_STOP) & KEY_STOP)
       continue;
+#else
+    music_set(0);  // FLYNOW goes straight to the flight
 #endif
 
     how = flight(mission_no, &seconds);

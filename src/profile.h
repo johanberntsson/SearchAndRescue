@@ -97,6 +97,13 @@ uint16_t profile_fps10(uint32_t frame_ticks);
 // Run the micro-benchmarks and record them in the bench slots.
 void profile_bench(void);
 
+// SEI and CLI, from src/bench_asm.s. A measurement that gets interrupted is
+// not a measurement: the calibration window is about a millisecond, and the
+// title music fires fifty times a second. Used only by the two routines
+// above, which want nothing from an interrupt.
+void profile_irq_off(void);
+void profile_irq_on(void);
+
 // Print the memory benchmarks to the text screen and wait for a key, or for
 // `seconds` to pass. For real hardware, which has no -dumpmem: it must be
 // called before vic4_init, while there is still a text screen to print on.

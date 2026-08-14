@@ -77,6 +77,7 @@ Build knobs, all in the Makefile:
 | `REPORT=n` | print the startup benchmark report and hold it n seconds. 0 by default, which no longer prints it at all — see the Done entry on the boot screen |
 | `HGT_SIZE`, `COL_SIZE` | map resolutions, powers of two from 256 to 1024 |
 | `make release` | not a knob but a target: the `PROFILE=0` disk, into `release/sar-latest.d81` |
+| `make checkmusic` | also a target: both assemblers over the tune, byte for byte. Needs `acme` |
 
 Where a frame goes (the older 160-pixel framebuffer, h256 c512, 64.7 ms; the
 shape is the same at other settings):
@@ -114,10 +115,10 @@ was measured, not guessed.
 all of it driven from the mission table rather than from branches. The shape
 is proven — a third mission is data plus a sprite sheet. Memory was the scarce
 thing here — about 800 bytes of the 32K — and **dropping `printf` on 15 Aug
-2026 gave 6.5 KB of it back**: the 32K is 77.5% used and there are 7363 bytes
-free from `$833D` up. The low free RAM at `$1600` is unchanged and still tight
-at 80 bytes spare. Read the Open note on `cstack` before starting anything
-large.
+2026 gave 6.5 KB of it back**, of which the title music spent 2652 the same
+day. The program area is **76.3% used with 7779 bytes free**; the low free RAM
+at `$1600` is unchanged and still tight at 80 bytes spare, and zero page has
+ten. Read the Open note on `cstack` before starting anything large.
 
 - **The keyboard controls are finished.** Called on 13 Aug 2026, flying them:
   WASD, RF, QE and the three speed modes are the drone's and they feel right.
@@ -135,12 +136,14 @@ large.
   march never learns about it. Keep the loaded palette to restore from, the way
   `weather_set` restores a clear sky rather than recomputing one. A key to arm
   it, and the panel should say so, as sport mode does.
-- **Sound.** There is none at all in `src/` today. Wanted at least a drone hum
-  under a flight — the MEGA65's two SIDs, a voice or two, pitch tracking the
+- **Sound in the air.** The menus have music now (see Done); the flight has
+  nothing. Wanted a drone hum under it — a voice or two, pitch tracking the
   speed mode so opening the throttle is audible. Cheap by construction: a
-  handful of register writes when something changes, nothing per frame. After
-  that, the moments worth hearing are the four endings, the cargo release and
-  the low battery.
+  handful of register writes when something changes, nothing per frame, and
+  the interrupt to hang it on is already there and already chaining. It is
+  **not** the tune turned back on: the flight is deliberately quiet, and a hum
+  is the opposite kind of sound. After that, the moments worth hearing are the
+  four endings, the cargo release and the low battery.
 - **Snow, as a third weather.** It should be the rain loop with different
   constants rather than a second system: `weather.c` already has 48 drops in
   four layers, their state in `LOW_FREE`, and speed/length/colour derived from
@@ -310,6 +313,33 @@ Do not re-litigate these without new measurements.
 
 ## Done
 
+- **Title music**, done 15 Aug 2026. A three voice SID tune over the loading
+  screen, the title and the mission list; off from the briefing to the
+  debrief, on again at the list. `music_begin()` once and `music_set(0|1)` per
+  screen is the whole of the game's side of it. Where it stops is taste rather
+  than cycles — the flight never calls the player — and the two calls in
+  `main.c` are where to change it. Four things worth knowing:
+  - **the tune is ACME and the build is Calypsi.** `music/` holds the player
+    and the tune; `tools/acme2calypsi.py` translates them into
+    `build/music_asm.s`, generated rather than checked in, so `music/` is the
+    only copy of the tune there is. The converter is Python only.
+  - **`make checkmusic` is what makes that trustworthy**: both assemblers over
+    the same source at the same origin, 2473 bytes, byte for byte identical.
+    Run it after touching either file. A translator between two assemblers is
+    either exactly right or quietly playing a different tune.
+  - **the interrupt chains** onto `$0314` and jumps to the ROM's handler
+    afterwards, so the raster compare, the keyboard scan and the jiffy clock
+    stay the ROM's. It sets the base page to 0 around the player, since the
+    player's pointers are in zero page and B is the ROM's business.
+  - **nothing may interrupt a measurement.** `profile_calibrate` times sixteen
+    raster lines, about a millisecond, and one interrupt inside that window
+    scales every figure the profiler prints. It and `profile_bench` now run
+    under `sei`. The ROM's own handler was always a smaller version of the
+    same risk.
+
+  Costs 2652 bytes of the 32K and nothing per frame. Both SIDs are written, so
+  it plays in stereo on a MEGA65 and still runs on a C64, where `$d420` is a
+  mirror of `$d400`.
 - **The loading screen is the title screen**, done 15 Aug 2026. Black border
   and background, `SEARCH AND RESCUE` centred in white with the subtitle under
   it, and `LOADING` with a progress bar on the row `PRESS SPACE` will occupy;

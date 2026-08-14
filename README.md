@@ -50,6 +50,10 @@ generated worlds, both on the one disk**.
   way a weather report does, by the direction it comes from
 - A battery that runs down as you fly, four minutes or so at normal speed and
   a quarter of that in sport. Run it flat and the mission is over
+- **A three voice SID tune** over the loading screen, the title and the
+  mission list, played from the ROM's own interrupt at 50 Hz and written in
+  both stereo SIDs. It stops at the briefing and stays off for the flight: a
+  search is meant to sound like the wind and the rain
 - Weather per mission: mission two flies under an overcast sky with rain drawn
   over the finished picture, leaning as it falls. It costs 0.68 ms a frame,
   because the sky is sixteen palette entries rather than any pixels at all

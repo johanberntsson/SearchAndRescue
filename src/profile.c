@@ -97,7 +97,15 @@ uint32_t profile_now32(void)
 
 void profile_calibrate(void)
 {
-  uint8_t last = VICII.rasterline;
+  uint8_t last;
+
+  // Nothing may interrupt this: the window below is sixteen raster lines,
+  // about a millisecond, and one interrupt inside it scales every figure the
+  // profiler prints for the rest of the run -- the frame rate on the panel
+  // included. The title music makes that a real chance on any given boot.
+  // See profile_irq_off in bench_asm.s.
+  profile_irq_off();
+  last = VICII.rasterline;
   uint8_t seen = 0;
   uint16_t t;
 
@@ -121,6 +129,7 @@ void profile_calibrate(void)
 
   ticks_per_second =
       (uint32_t)profile_results.cal_ticks * (LINES_PER_SEC / CAL_LINES);
+  profile_irq_on();
 }
 
 uint32_t profile_ticks_per_second(void)
@@ -209,6 +218,12 @@ void profile_bench(void)
   uint16_t i;
   uint32_t t;
 
+  // Same reason as the calibration: an interrupt inside a loop being timed
+  // lands on that loop's figure alone, which is exactly the kind of error
+  // that invents a difference between chip RAM and attic RAM. Nothing in
+  // here wants the Kernal, so there is nothing to lose by holding it off.
+  profile_irq_off();
+
   t = profile_now32();
   for (i = 0; i < BENCH_ITERATIONS; i++)
     sink16 = i;
@@ -296,6 +311,8 @@ void profile_bench(void)
   for (i = 0; i < DMA_ITERATIONS; i++)
     dma_fill(FB_A, 0, DMA_BYTES);
   profile_add32(P_DMA_FILL, t);
+
+  profile_irq_on();
 
   (void)sink16;
   (void)sink32;

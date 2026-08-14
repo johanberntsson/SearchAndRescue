@@ -54,6 +54,16 @@ ASRCS    = $(wildcard src/*.s)
 OBJS     = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS)) \
            $(patsubst src/%.s,$(BUILD)/%.o,$(ASRCS))
 
+# The SID player and its tune are written in ACME under music/, and
+# tools/acme2calypsi.py turns them into the assembler the rest of this build
+# speaks. Generated into build/ rather than checked into src/, so music/ holds
+# the only copy of the tune there is. The converter is Python and nothing
+# else; ACME itself is needed only by tools/checkmusic.py, which proves the
+# two assemblers agree byte for byte.
+MUSIC_SRC = music/player.asm music/music.asm
+MUSIC_ASM = $(BUILD)/music_asm.s
+OBJS     += $(BUILD)/music_asm.o
+
 ELF      = $(BUILD)/sar.elf
 # The MEGA65 ROM autoboots a file called autoboot.c65 and nothing else, so the
 # game is written to the disk under that name.
@@ -117,6 +127,20 @@ $(BUILD)/%.o: src/%.c $(wildcard src/*.h) $(CONFIG_STAMP) | $(BUILD)
 
 $(BUILD)/%.o: src/%.s $(wildcard src/*.h) $(CONFIG_STAMP) | $(BUILD)
 	as6502 $(ASFLAGS) -o $@ $<
+
+# The tune. --zp is the one thing the converter changes rather than
+# translates: the ACME player picks its two zero page pointers by hand, which
+# a program sharing zero page with a C compiler and a live Kernal may not.
+$(MUSIC_ASM): $(MUSIC_SRC) tools/acme2calypsi.py | $(BUILD)
+	python3 tools/acme2calypsi.py music/player.asm $@ --zp ZP_PTR:2,ZP_ARP:2
+
+$(BUILD)/music_asm.o: $(MUSIC_ASM) $(CONFIG_STAMP) | $(BUILD)
+	as6502 $(ASFLAGS) -o $@ $<
+
+# Both assemblers over the same tune, byte for byte. Needs acme on PATH.
+checkmusic:
+	python3 tools/checkmusic.py
+.PHONY: checkmusic
 
 $(ELF): $(OBJS)
 	ln6502 $(LDFLAGS) --cstack-size $(CSTACK_GAME) -o $@ $(LINKFILE) $(OBJS)
