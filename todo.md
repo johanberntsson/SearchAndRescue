@@ -35,11 +35,11 @@ machine to `SAR`. The game does not fly the result yet. See Done.
 sampling screenshots across a boot and then booting the game alone
 (`xemu -prg build/sar.prg -8 build/sar.d81`) to separate loading from
 generating. About 170 seconds to the title then; the two generator stages have
-since come down by 52 of those seconds between them, so about 118 now:
+since come down by 54 of those seconds between them, so about 116 now:
 
 | | s | |
 |---|---|---|
-| **map generation** | **66** | stage one 42.4 printed, stage two ~24 |
+| **map generation** | **64** | stage one 39.7 printed, stage two ~24 |
 | **deliberate holds** | **28** | 4 + 4 stage reports and the game's 20 s benchmark report |
 | loading both maps from the d81, the old way | ~20 | 502 KB |
 | loading the three PRGs | ~3 | 72 KB, and so nearly free |
@@ -52,7 +52,7 @@ Three things follow from it:
 - **28 seconds of it is on purpose**, so that the reports can be read.
   `make REPORT=0 HOLD=0` takes 16% off the boot today with no code change.
 - **The boot generates one map and then loads both maps from the disk anyway**,
-  because nothing reads what stage two writes yet. So the 66 seconds is
+  because nothing reads what stage two writes yet. So the 64 seconds is
   currently pure addition. Wiring the game to the generated planes removes the
   ~20 second row and 502 KB from the disk -- but only if *both* maps are
   generated, and the second one is the expensive one (see the colour note in
@@ -241,7 +241,8 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   | | s | |
   |---|---|---|
   | the Fletcher checksum in assembly | 53.4 → 45.5 | seven passes call it |
-  | the horizontal blur in assembly | 45.5 → **42.4** | FLOW 7.8 to 3.6 |
+  | the horizontal blur in assembly | 45.5 → 42.4 | FLOW 7.8 to 3.6 |
+  | the rivers' three scans | 42.4 → **39.7** | RIVERS 11.2 to 8.6 |
 
   **The checksum was the most expensive thing in stage one and it is not part
   of generating a map.** Seven passes verify their work by summing the whole
@@ -257,13 +258,17 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   C masked both edges on every pixel; copying R entries in front and R + 1
   behind is seventeen words against a thousand masks, and it makes all three
   walks linear.
-- **What is left in stage one, in order:** `rivers` 11.2 (three full-map scans
-  in C -- the low/high pass, the count of dry cells above the cut, and the scan
-  that finds the picked ones; the river walk itself is only a few thousand
-  steps and costs nothing), `noise` 9.4 (already assembly), `mask` 4.7 (already
-  assembly), `minima` 4.6 (C), `built` 3.7, `flow` 3.6, `shape` 2.6. The three
-  river scans are the same shape as the Fletcher and should go the same way.
-  The passes that clear a 32 KB visited set three times could use `dma_fill`.
+
+  The rivers read the whole field three times before a single river is walked.
+  Two of those are now assembly row loops beside the checksum, and the third
+  needed no assembly at all: **it is counted per row, and only the rows a pick
+  lands in are walked.** The picks are sorted and there are three of them, so
+  of 512 rows at most three take the slow path and the rest answer with one
+  count each. Same cells, same order, same answer.
+- **What is left in stage one, in order:** `noise` 9.4 (already assembly),
+  `rivers` 8.6, `mask` 4.7 (already assembly), `minima` 4.6 (C), `built` 3.7,
+  `flow` 3.6, `shape` 2.6. The passes that clear a 32 KB visited set three
+  times could use `dma_fill`.
 - ~~Stage one is out of program space~~ **fixed, and the fix is the general
   one**: the 32 KB was `mega65-plain.scm`, not the machine. Stage one banks
   BASIC out and puts its BSS in the RAM underneath (`mega65-sar.scm`,
@@ -275,6 +280,21 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
 - ~~`stretch` needs a decision before it can be ported~~ **settled**: it clips
   to 65535 now, so a field value fits the uint16 the device stores it in. See
   Done for what that cost.
+- **Exomizer the three PRGs.** Johan's suggestion, and the command is
+  `exomizer sfx sys input.prg,0x2001 -o output.prg` -- a self-extracting PRG
+  that decrunches and runs itself, so nothing in the boot chain has to learn
+  about it: the ROM still boots `AUTOBOOT.C65` and the queued `RUN"MG2"` and
+  `RUN"SAR"` still work. 72 KB of program across the three.
+  Two things to settle before doing it. **Measure on hardware first**: the
+  sampled boot above puts all three PRG loads at about 3 seconds of 116, which
+  makes this look pointless -- but that is xemu, whose drive is nearly instant,
+  and loading is the one place the real machine is markedly slower. The
+  hardware split is the one that decides whether this is worth anything. And
+  **the sfx stub is 6502 code that has to run under BASIC 65**, not a C64; the
+  project already has a decruncher for the raw `-P0` stream
+  (`src/exo_asm.s`, which unpacks the maps into attic RAM), so if the stock
+  stub does not come up in C65 mode there is a known-working fallback to
+  build on.
 - **Loading the game and its resources is the larger half of the boot now**,
   around 24 seconds of the 36, and it is the *only* place the machine is
   slower than the emulator

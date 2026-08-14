@@ -210,6 +210,8 @@ __zpage uint8_t nz_neg;
 // and nz_bot the rows, nz_recip the Q0.32 divisor.
 void blur_out(void);
 void blur_x_row(void);
+void fl_minmax(void);
+void fl_count(void);
 void blur_roll(void);
 
 void noise_blend(void);
@@ -1478,18 +1480,16 @@ uint32_t rivers_carve(uint32_t *level_sum)
 
   // A copy of the terrain before anything is cut, and the wander lattice --
   // whose salt is the next draw after the lakes'.
+  nz_sum_a = lo;
+  nz_sum_b = hi;
   for (y = 0; y < SIZE; y++) {
     row_in(rowbuf_a, NOISE_FIELD + (uint32_t)y * (SIZE * 2));
     row_out(SURFACE_FIELD + (uint32_t)y * (SIZE * 2), rowbuf_a);
-    for (x = 0; x < SIZE; x++) {
-      uint16_t v = rowbuf_a[x];
-
-      if (v < lo)
-        lo = v;
-      if (v > hi)
-        hi = v;
-    }
+    nz_top = rowbuf_a;
+    fl_minmax();
   }
+  lo = nz_sum_a;
+  hi = nz_sum_b;
 
   // The wander lattice: 64 x 64, in bank 1's safe span above the octaves'.
   // Its salt is the next draw after the lakes have finished with the stream.
@@ -1508,13 +1508,14 @@ uint32_t rivers_carve(uint32_t *level_sum)
   // How many dry cells stand above the cut, then which of them the stream
   // asks for. pick(n, 3) is three draws and a handful of collisions, so the
   // list is never built -- it is counted, drawn from, and then found.
+  nz_floor = cut;
   for (y = 0; y < SIZE; y++) {
     row_in(rowbuf_a, NOISE_FIELD + (uint32_t)y * (SIZE * 2));
     row_in(rowbuf_b, LEVEL_FIELD + (uint32_t)y * (SIZE * 2));
-    for (x = 0; x < SIZE; x++) {
-      if (rowbuf_b[x] == DRY && rowbuf_a[x] > cut)
-        n++;
-    }
+    nz_top = rowbuf_a;
+    nz_bot = rowbuf_b;
+    fl_count();
+    n = (uint16_t)(n + nz_sum_a);
   }
   if (!n)
     return 0;
@@ -1559,9 +1560,24 @@ uint32_t rivers_carve(uint32_t *level_sum)
       }
     }
 
+    // **Counted per row, and only the rows a pick lands in are walked.** The
+    // picks are sorted and there are three of them, so of 512 rows at most
+    // three ever need the slow scan; the rest answer with one count each.
+    // Same cells, same order, same answer.
+    nz_floor = cut;
     for (y = 0; y < SIZE && want < RIVER_COUNT; y++) {
+      uint16_t here;
+
       row_in(rowbuf_a, NOISE_FIELD + (uint32_t)y * (SIZE * 2));
       row_in(rowbuf_b, LEVEL_FIELD + (uint32_t)y * (SIZE * 2));
+      nz_top = rowbuf_a;
+      nz_bot = rowbuf_b;
+      fl_count();
+      here = nz_sum_a;
+      if (pick[ord[want]] >= (uint16_t)(seen + here)) {
+        seen = (uint16_t)(seen + here);
+        continue;
+      }
       for (x = 0; x < SIZE; x++) {
         if (rowbuf_b[x] != DRY || rowbuf_a[x] <= cut)
           continue;
