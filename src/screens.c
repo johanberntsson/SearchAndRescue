@@ -12,7 +12,13 @@
 
 // PETSCII 160 is a shifted space: a solid block, and a filled bar without
 // shipping a font to draw one with.
-#define BOOT_BLOCK 160
+// **Not 160.** The shifted space is a solid block on a CBM screen and is what
+// this was for its whole life, and it printed *nothing*: the loading bar drew
+// thirty invisible characters on every boot and nobody could tell the machine
+// was alive. Calypsi's output path drops it -- `#` and the rest of printable
+// ASCII come through both `putchar` and `printf("%c")`, 160 through neither,
+// which one probe on the boot screen settled after guessing had failed twice.
+#define BOOT_BLOCK '#'
 
 static uint8_t width_of(const char *s)
 {
@@ -88,10 +94,16 @@ void screens_loading(uint8_t percent)
     percent = 100;
   want = (uint8_t)((uint16_t)percent * BAR_WIDTH / 100);
 
+  if (bar_drawn >= want)
+    return;
   while (bar_drawn < want) {
     putchar(BOOT_BLOCK);
     bar_drawn++;
   }
+  // A progress bar is the one piece of output whose entire value is being
+  // seen *before* the thing it reports on has finished, and there is no
+  // newline in it to flush the buffer for us.
+  fflush(stdout);
 }
 
 void screens_load_failed(const char *why, const char *file)

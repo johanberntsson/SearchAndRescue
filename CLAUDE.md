@@ -49,7 +49,7 @@ stamp working, not waste.
 
 ```sh
 make FLYNOW=1
-xemu-xmega65 -besure -headless -sleepless \
+xemu-xmega65 -skipconfigfile -besure -headless -sleepless \
     -8 build/sar.d81 -screenshot out.png -dumpmem mem.bin &
 sleep 75; kill -INT $!          # xemu writes both files as it exits
 python3 tools/profread.py mem.bin
@@ -72,6 +72,14 @@ which looks exactly like a change that did not take.
 take several seconds to act on the signal, so a loop that starts the next run
 immediately ends up with two emulators writing screenshots over each other.
 Backgrounding it and waiting, as above, is what actually serialises.
+
+**`-skipconfigfile` must be the first argument, and it is there for a reason.**
+xemu rewrites its config template on exit; run several instances at once —
+which a timing sweep wants to do — and they race each other's rename and each
+one pops up *Cannot save config template* at whoever is sitting at the machine.
+Skipping the config file stops that. Better still, **do not run them in
+parallel**: the popups aside, contention moves the timings by several seconds
+between batches, which is enough to invent a boundary that is not there.
 
 `-sleepless` is fine here — see Performance for why it must never be used to time anything from the outside.
 
@@ -382,7 +390,18 @@ unable to open a file at all:
 So the sequence is: loading, then the benchmarks, then the display. That is
 why the loading bar is *printed* on the ROM's text screen rather than drawn on
 the game's own, and why it only ever grows one block at a time — printing is
-the only tool available on a screen there is no cursor addressing for. The
+the only tool available on a screen there is no cursor addressing for.
+
+**The bar's block is `#`, and it is not 160 because 160 prints nothing.** The
+shifted space is a solid block on a CBM screen and was the obvious choice; it
+went out through `putchar` for months and *nothing appeared*, so every boot
+drew thirty invisible characters and the machine looked dead for the whole
+load. Calypsi's output path passes printable ASCII through both `putchar` and
+`printf("%c")` and drops 160 through both. If something printed to the boot
+screen does not turn up, print a row of `#` next to it before suspecting
+anything else — one probe settled this after two wrong guesses. And **flush
+after it**: the bar has no newline in it, and its whole value is being seen
+before the thing it reports on has finished. The
 title screen proper comes after `vic4_init`, in the game's own font and
 palette. **Once the display is up, nothing may `printf`**: the Kernal's screen
 editor writes colour RAM, and the game is using it. `load_resources` reports
