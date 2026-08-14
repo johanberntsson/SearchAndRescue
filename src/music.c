@@ -1,39 +1,23 @@
 #include "music.h"
 
-// Both SIDs' volume registers. The MEGA65 has one per stereo channel and the
-// player writes both (see music/player.asm), so silence takes two writes.
-#define SID_VOLUME  (*(volatile uint8_t *)0xD418)
-#define SID2_VOLUME (*(volatile uint8_t *)0xD438)
+#include "audio.h"
+
+// Both SIDs' volume registers; the player writes both (music/player.asm), so
+// silence takes two writes.
+#define SID_VOLUME  (*(volatile uint8_t *)(SID_BASE + 0x18))
+#define SID2_VOLUME (*(volatile uint8_t *)(SID2_BASE + 0x18))
 
 // From the tune, via tools/acme2calypsi.py.
 void music_init(void);
 void music_play(void);
 
-// From src/music_irq.s: the two halves that have to be assembly, because one
-// is an interrupt handler and the other rewrites a vector under SEI.
-void music_hook(void);
-
 // Read by the interrupt every frame. Not static: the handler is assembly and
 // imports it by name.
 uint8_t music_enabled;
 
-// The handler music_hook displaced, jumped to at the end of ours.
-uint16_t music_chain;
-
-static uint8_t started;
-
-void music_begin(void)
-{
-  if (started)
-    return;
-  started = 1;
-  music_enabled = 0;
-  music_hook();
-}
-
 void music_set(uint8_t on)
 {
-  if (!started || (on != 0) == (music_enabled != 0))
+  if ((on != 0) == (music_enabled != 0))
     return;
 
   if (on) {

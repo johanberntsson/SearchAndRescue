@@ -52,8 +52,14 @@ generated worlds, both on the one disk**.
   a quarter of that in sport. Run it flat and the mission is over
 - **A three voice SID tune** over the loading screen, the title and the
   mission list, played from the ROM's own interrupt at 50 Hz and written in
-  both stereo SIDs. It stops at the briefing and stays off for the flight: a
-  search is meant to sound like the wind and the rain
+  both stereo SIDs. It stops at the briefing: from there on the flight has the
+  floor
+- **An engine note under the flight** — not a tune but three detuned voices
+  whose pitch follows what is being asked of the props. It spools up from cold
+  at launch, rises when you open the throttle, and sits higher in sport
+  whatever the sticks are doing, the same way the battery drains faster there.
+  It costs nothing measurable: the same flight with it armed and without runs
+  at the same frame rate
 - Weather per mission: mission two flies under an overcast sky with rain drawn
   over the finished picture, leaning as it falls. It costs 0.68 ms a frame,
   because the sky is sixteen palette entries rather than any pixels at all

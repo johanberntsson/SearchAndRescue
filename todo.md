@@ -116,7 +116,8 @@ all of it driven from the mission table rather than from branches. The shape
 is proven — a third mission is data plus a sprite sheet. Memory was the scarce
 thing here — about 800 bytes of the 32K — and **dropping `printf` on 15 Aug
 2026 gave 6.5 KB of it back**, of which the title music spent 2652 the same
-day. The program area is **76.3% used with 7779 bytes free**; the low free RAM
+day, and the engine note 583 more. The program area is **78.0% used with 7196
+bytes free**; the low free RAM
 at `$1600` is unchanged and still tight at 80 bytes spare, and zero page has
 ten. Read the Open note on `cstack` before starting anything large.
 
@@ -136,14 +137,14 @@ ten. Read the Open note on `cstack` before starting anything large.
   march never learns about it. Keep the loaded palette to restore from, the way
   `weather_set` restores a clear sky rather than recomputing one. A key to arm
   it, and the panel should say so, as sport mode does.
-- **Sound in the air.** The menus have music now (see Done); the flight has
-  nothing. Wanted a drone hum under it — a voice or two, pitch tracking the
-  speed mode so opening the throttle is audible. Cheap by construction: a
-  handful of register writes when something changes, nothing per frame, and
-  the interrupt to hang it on is already there and already chaining. It is
-  **not** the tune turned back on: the flight is deliberately quiet, and a hum
-  is the opposite kind of sound. After that, the moments worth hearing are the
-  four endings, the cargo release and the low battery.
+- **The moments worth hearing.** The menus have a tune and the flight has an
+  engine note (both in Done); what has no sound at all is anything that
+  *happens*. The four endings, the cargo release, the report filed, the low
+  battery warning, the hillside in sport mode. Each is one place in `main.c`
+  that already knows the moment has come, and the interrupt to hang a sound on
+  is there and chaining. The awkward part is that the engine owns all three
+  voices for the whole flight, so an effect has to borrow one and give it
+  back — voice 3, the octave-down body, is the one to take.
 - **Snow, as a third weather.** It should be the rain loop with different
   constants rather than a second system: `weather.c` already has 48 drops in
   four layers, their state in `LOW_FREE`, and speed/length/colour derived from
@@ -313,9 +314,32 @@ Do not re-litigate these without new measurements.
 
 ## Done
 
+- **The engine note**, done 15 Aug 2026. A flight is no longer silent: three
+  voices gated on at launch and never gated off, with the only thing changing
+  being their pitch. `src/engine.c` decides where the note should be and
+  `src/engine_asm.s` walks it there from the interrupt, so opening the
+  throttle spools the motors up over about two thirds of a second instead of
+  stepping, and a launch starts them cold. Four things:
+  - **the note follows what is asked of the props, not what the drone does.**
+    The speed mode moves it on its own, the way the battery drain does; the
+    wind moves the drone and not the note.
+  - **the tick is assembly because it runs in an interrupt.** A C function
+    called from one would use the same zero page scratch and software stack as
+    the renderer, which is mid-something for nearly the whole frame.
+  - **the detune is the trick.** A sawtooth, a pulse sixty units above it and
+    a triangle an octave down; the top two beat about four times a second and
+    that throb is what makes it rotors rather than an organ.
+  - **every number was chosen without hearing it**, so all of them are named
+    and gathered at the top of `engine.c`. That block is what to change if it
+    sounds wrong on the machine.
+
+  Costs 578 bytes and nothing per frame: flown twice over the same ground with
+  the wind seed pinned, armed and not, 11.7 fps both times. The interrupt
+  hook, which both the tune and the engine now hang off, moved into
+  `src/audio.c` and `src/audio_irq.s`.
 - **Title music**, done 15 Aug 2026. A three voice SID tune over the loading
   screen, the title and the mission list; off from the briefing to the
-  debrief, on again at the list. `music_begin()` once and `music_set(0|1)` per
+  debrief, on again at the list. `audio_begin()` once and `music_set(0|1)` per
   screen is the whole of the game's side of it. Where it stops is taste rather
   than cycles — the flight never calls the player — and the two calls in
   `main.c` are where to change it. Four things worth knowing:

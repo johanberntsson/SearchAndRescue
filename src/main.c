@@ -1,5 +1,7 @@
 #include <stdio.h>
 
+#include "audio.h"
+#include "engine.h"
 #include "input.h"
 #include "loader.h"
 #include "mission.h"
@@ -185,6 +187,13 @@ static uint8_t fly(camera *cam, uint16_t held)
     cam->horizon = TILT_MAX;
   if (cam->horizon < TILT_MIN)
     cam->horizon = TILT_MIN;
+
+  // What the props are being asked for, which is not the same as what the
+  // drone is doing: the speed mode moves the note on its own, and the wind
+  // below does not move it at all. The interrupt walks the note there; this
+  // only says where there is.
+  engine_throttle(speed_mode, speed != 0,
+                  (held & KEY_R) ? 1 : ((held & KEY_F) ? -1 : 0));
 
   // The wind, on top of wherever the pilot has got to, and before the ground
   // check so that being blown into a hillside counts exactly as flying into
@@ -447,8 +456,8 @@ int main(void)
   // The tune comes up with the loading screen and stays up through the title
   // and the mission list. It rides the ROM's own interrupt, so it goes on
   // playing through the load, the benchmarks and vic4_init without any of
-  // them knowing about it.
-  music_begin();
+  // them knowing about it. The same interrupt carries the engine note later.
+  audio_begin();
   music_set(1);
 
   if (load_resources(screens_loading)) {
@@ -518,7 +527,10 @@ int main(void)
     music_set(0);  // FLYNOW goes straight to the flight
 #endif
 
+    // The motors, for exactly as long as the drone is in the air.
+    engine_start();
     how = flight(mission_no, &seconds);
+    engine_stop();
 
     screens_debrief(mission_no, how, seconds);
     wait_for_space();

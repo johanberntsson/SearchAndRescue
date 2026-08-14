@@ -99,7 +99,7 @@ Calypsi 6502 C compiler 5.18, installed system-wide (`/usr/local/bin/cc6502`, `l
 The SID player and its tune under `music/` are written for it;
 `tools/acme2calypsi.py` translates them into the Calypsi assembler at build
 time and needs only Python. ACME itself is used by `make checkmusic`, which
-assembles the same source both ways and compares the bytes. See The music.
+assembles the same source both ways and compares the bytes. See Sound.
 
 Data above 64 K is reached with Calypsi's `__far` pointers. Their index type is `int16_t`, which cannot span a whole 64 K map; `src/voxel.c` biases the base pointer by 32 K and XORs the offset (`MAP_BIAS`) so a signed index covers the map.
 
@@ -193,8 +193,9 @@ room came from, in the order it was taken:
   and the program area from 88% used to 68.2%. See The game for what replaced
   it.
 
-**And the title music spent 2652 of it back**, taking the program area to
-76.3% with 7779 bytes free. That was the point of the reclaim.
+**And the sound spent 3235 of it back** — 2652 for the tune and 583 for the
+engine note — taking the program area to 78.0% with 7196 bytes free. That was
+the point of the reclaim.
 
 Next after that would be the 512-byte bounce buffer itself, or the sprite's
 1028.
@@ -573,14 +574,49 @@ drawn** and within ten map cells (`sprite_reportable`). On screen is half the
 test on purpose: a report should mean you looked at them, not that you flew
 past with the camera pointed somewhere else.
 
-## The music
+## Sound
+
+Two things make a noise and never at the same time: a **tune**, which belongs
+to the menus, and an **engine note**, which belongs to the flight. Both hang
+off one interrupt.
+
+**The interrupt chains rather than taking the vector.** `src/audio_irq.s`
+saves `$0314` and jumps to it when it is done, so the ROM's raster compare,
+keyboard scan and jiffy clock go on exactly as before and nothing here has to
+know which line the ROM asked for. Two things about that vector, both from the
+raster-split experiment written up under Full-colour display: the C65's
+dispatcher at `$FA23` has already pushed A, X, Y, Z **and the base page
+register** by the time it jumps through `$0314`, so a handler reached from
+there may use every register freely; and taking `$FFFE` instead means knowing
+that the ROM's exit pulls five bytes and not the C64's three. The handler sets
+the base page to 0 around both callees, because zero page is wherever B says
+it is and B is the ROM's business. `audio_begin()` installs it once, at boot.
+
+**Nothing may interrupt a measurement, and the sound is what made that
+matter.** `profile_calibrate` times sixteen raster lines — about a
+millisecond — and one interrupt inside that window scales every figure the
+profiler prints for the rest of the run, the frame rate on the panel included.
+At 50 Hz that is a real chance on any given boot. `profile_irq_off`/`_on` in
+`bench_asm.s` are an `sei`/`cli` pair, wrapped around the calibration and the
+benchmarks; neither wants anything from an interrupt. The ROM's own handler
+was always a smaller version of the same risk.
+
+**Both SIDs are written throughout.** The MEGA65 has one per stereo channel,
+`$D400` left and `$D420` right, so everything that makes a sound writes both.
+On a C64 `$D420` is a partly decoded mirror of `$D400` and the second write
+lands back on the same registers, which is what keeps `music/`'s standalone
+program working there. If it ever comes out of one speaker on real hardware,
+`SID2_BASE` in `audio.h` and `SID2` in `music/player.asm` are the two
+constants to move.
+
+### The tune
 
 A three voice SID tune plays over the loading screen, the title and the
 mission list, and stops at the briefing. `src/music.c` is the whole of the
-game's side of it: `music_begin()` once at boot and `music_set(0|1)` at each
-screen. Turning it on again rewinds rather than resumes — it is a title
-screen, not a radio — and `music_set` is idempotent, so a screen that is
-already musical can say so again.
+game's side of it: `music_set(0|1)` at each screen. Turning it on again
+rewinds rather than resumes — it is a title screen, not a radio — and
+`music_set` is idempotent, so a screen that is already musical can say so
+again.
 
 **Where the music stops is a decision about the game.** From the briefing to
 the debrief there is none: a search is meant to sound like the wind and the
@@ -611,46 +647,60 @@ else; **ACME is needed only to check it**.
 - it stops rather than guessing. Anything in the ACME source it does not
   recognise is an error, not a line passed through to be mis-assembled.
 
-**The interrupt chains rather than taking the vector.** `src/music_irq.s`
-saves `$0314` and jumps to it when it is done, so the ROM's raster compare,
-keyboard scan and jiffy clock go on exactly as before and nothing here has to
-know which line the ROM asked for. Two things about that vector, both from the
-raster-split experiment written up under Full-colour display: the C65's
-dispatcher at `$FA23` has already pushed A, X, Y, Z **and the base page
-register** by the time it jumps through `$0314`, so a handler reached from
-there may use every register freely; and taking `$FFFE` instead means knowing
-that the ROM's exit pulls five bytes and not the C64's three. The handler does
-set the base page to 0 around the player, because the player's pointers are in
-zero page and B is the ROM's business.
-
-**Nothing may interrupt a measurement, and the music is what made that
-matter.** `profile_calibrate` times sixteen raster lines — about a
-millisecond — and one interrupt inside that window scales every figure the
-profiler prints for the rest of the run, the frame rate on the panel included.
-At 50 Hz that is a real chance on any given boot. `profile_irq_off`/`_on` in
-`bench_asm.s` are an `sei`/`cli` pair, wrapped around the calibration and the
-benchmarks; neither wants anything from an interrupt. The ROM's own handler
-was always a smaller version of the same risk.
-
-**Both SIDs are written.** The MEGA65 has one per stereo channel, `$D400` left
-and `$D420` right, so `music/player.asm` mirrors every store to `SID2` and the
-tune comes out of both. On a C64 `$D420` is a partly decoded mirror of `$D400`
-and the second write lands back on the same registers, so the ACME program
-still runs there. If it ever comes out of one speaker on real hardware,
-`SID2` is the one constant to move.
-
 **It costs 2652 bytes of the 32 K** — player, tune and all — which is what the
-`printf` reclaim was for: the program area went from 68.2% used to 76.3%, with
-7779 bytes still free. Per frame it costs nothing the game can see: the tune
-runs on the ROM's interrupt at 50 Hz, and during a flight the handler does a
-byte compare and chains.
+`printf` reclaim was for. With the engine note's 583 beside it the program
+area is 78.0% used, with 7196 bytes still free.
 
 **The music is running while the resources load**, which is the one place it
 touches something timing-sensitive. It is fine in the emulator and should be
 fine on the machine — the D81 comes off the SD card through the F011
 controller rather than the serial bus — but if a load ever fails on hardware
-and nothing else explains it, moving `music_begin()` below `load_resources` is
+and nothing else explains it, moving `audio_begin()` below `load_resources` is
 the thing to try first.
+
+### The engine note
+
+**There is no player, no patterns and no rhythm.** Three voices are gated on
+at launch and never gated off until the flight ends; the only thing that ever
+changes is their pitch. `src/engine.c` decides what the pitch should be and
+`src/engine_asm.s` walks it there from the interrupt, twenty-four frequency
+units at a time, fifty times a second — so opening the throttle spools the
+motors up over about two thirds of a second instead of stepping. A launch
+starts the motors cold at 30 Hz and they are heard to come up.
+
+- **it is written in assembly because it runs in an interrupt.** A C function
+  called from one would use the same zero page scratch and software stack as
+  whatever the main program was in the middle of, and the renderer is in the
+  middle of something for nearly the whole frame. The player gets away with it
+  by being assembly with its own state; the engine's tick is assembly for the
+  same reason, and the decisions stay in C where they read.
+- **the note follows what is being asked of the props, not what the drone is
+  doing.** The speed mode moves it on its own, the way the battery drain does:
+  sport works the motors harder whatever the sticks are doing. The wind moves
+  the drone and does not move the note at all.
+- **three voices: a sawtooth, a pulse sixty units above it, and a triangle an
+  octave down.** The detune is the whole trick — the two beat against each
+  other about four times a second, and that throb is most of what makes it
+  read as rotors rather than as an organ. Sustain is the only per-voice volume
+  a SID has, so the balance between the three is three numbers in
+  `engine_start`.
+- **the numbers were never listened to while they were written**, which is
+  why every one of them is named and gathered at the top of `engine.c`:
+  `idle_hz`, `move_hz`, `CLIMB_HZ`, `DESCEND_HZ`, `DETUNE` and `RATE` are the
+  whole of what a flight sounds like. `RATE` and `DETUNE` are spelled twice,
+  in the C and in the assembly; keep them in step.
+- `engine_target` is written in two halves by the flight loop while the
+  interrupt may be reading it. A torn read costs one tick of walking the wrong
+  way — a fifth of a semitone — and the next tick corrects it. An `SEI` every
+  frame to prevent that would cost more than the fault.
+
+**Measured cost: none.** Flown twice over the same ground with the wind seed
+pinned, once with the engine armed and once without: 11.7 fps both times, and
+the panel readouts identical. The arithmetic agrees — the tick is about 300
+cycles fifty times a second, four hundredths of one per cent of the CPU.
+(Frame rates between *unpinned* runs differ by a couple of tenths because the
+wind blows the camera somewhere else; that is the noise floor, and it is what
+made pinning the seed necessary to say anything at all.)
 
 ## The billboards
 
