@@ -14,8 +14,8 @@ plains at 46.658N 8.149E. A flight also carries a wind that blows the drone
 about, a battery that runs it out, and per-mission weather; it can end four
 ways, all of them the same debrief page with different words on it.
 
-**Both maps are generated from a paragraph of YAML and both are resident at
-once**, which one hand-drawn map pair could never be: two generated maps are
+**Both maps are generated from a paragraph of YAML on the PC and both are
+resident at once**, which one hand-drawn map pair could never be: two generated maps are
 487 KB crunched against 661 KB for one drawn one, and switching between them
 costs 512 bytes of plane table. See Resources.
 
@@ -26,13 +26,9 @@ neighbouring pixels; see Performance.
 
 ## Build and run
 
-**The disk carries two programs now.** `AUTOBOOT.C65` is *stage one*
-(`src/mapgen/`), which prepares attic RAM and then hands the machine to `SAR`,
-the game. See The two-stage boot.
-
 ```sh
 make run          # build build/sar.d81 and boot it in xemu
-make prg          # skip the disk and stage one, run the game PRG directly
+make prg          # skip the disk, run the game PRG directly
 make PROFILE=0    # without the per-column instrumentation; use this for timing
 make FLYNOW=1     # skip the title and menus, launch straight into mission 1
 make FLYNOW=2     # ... or mission 2, the only headless way to reach its map
@@ -117,8 +113,8 @@ Only banks 1, 4 and 5 are free: `$20000-$3FFFF` holds the C65 ROM, and **colour 
 **The 32 KB is `mega65-plain.scm`'s choice, not the machine's.** The stock
 linker script gives `program` `$2001-$9FFF` because that is what is safe with
 every ROM mapped in. **Bank BASIC out — `$D030` bit 4 — and `$A000-$BFFF` is
-ordinary RAM**, which is what `mega65-sar.scm` gives stage one: its `program`
-section went from overflowing to 66% used. Three things make it low risk, and
+ordinary RAM**. The map generator did this and its `program` section went from
+overflowing to 66% used; the script is on the `mega65-mapgen` branch. Three things make it low risk, and
 they are the reasons to copy the arrangement rather than invent another:
 
 - **only BSS goes up there.** A PRG is loaded by the ROM with BASIC still
@@ -139,9 +135,9 @@ to RAM but the read back would come from ROM.
 **The trap in copying it is `(type any)`.** A PRG cannot have two *content*
 areas, and a second memory declared `(type any)` becomes one the moment the
 linker puts anything initialised there — `zdata`'s data half or `cstack`, both
-of which the rules make eligible. Stage one never hit it only because its
-`highbss` fills `$A000-$CFFF` to the byte; stage two left a kilobyte spare and
-failed at once with *multiple program areas not allowed in prg output*. The fix
+of which the rules make eligible. The generator's stage one never hit it only
+because its `highbss` filled `$A000-$CFFF` to the byte; stage two left a
+kilobyte spare and failed at once with *multiple program areas not allowed in prg output*. The fix
 is to declare the window the way the stock script declares `freeSpace` — a
 name and a section and **no `(type …)` at all** — which takes the named section
 and never becomes a content area. `(type ram)` does not work.
@@ -591,105 +587,27 @@ That is the obvious next optimisation and has not been done: at any distance
 you would actually search from it is a fraction of a millisecond, and only
 flying right up to somebody makes it visible in the frame time.
 
-## The two-stage boot
+## The map generator that is not here
 
-The disk holds two programs. `AUTOBOOT.C65` is **stage one**, `src/mapgen/`,
-which the ROM boots; it prepares attic RAM and then chains to `SAR`, the game.
-They share nothing but the disk and `src/handover.h`, which is the contract for
-the block stage one leaves behind.
+**Generating the maps on the MEGA65 was built, measured and removed.** It
+worked: the whole of `tools/genmap.py` ran on the machine, all eleven passes
+bit-exact against the PC, the per-pixel work in 45GS02 assembly, 64 seconds a
+map. But that is a 512² pipeline, and the game ships a 1024² colourmap
+computed from a 1024² field — four times the work at every pass, so **~255
+seconds a map** against 66 to load both off a floppy and 31 off SD.
 
-**Why two programs.** The game already fills the 32 KB at `$2001` — 97.6%, about
-790 bytes free — and a map generator is several times the code a *loader* is.
-The two are never live at the same moment and **attic RAM survives a program
-load**, so stage one can fill the attic and vanish. It pays twice: stage one
-owns the whole 32 KB and banks 1, 4 and 5, because no framebuffer or screen
-table exists yet, and the game eventually loses the loader and the exomizer
-decruncher. `documentation/on-device-maps.md` has the costing.
+The code is on the **`mega65-mapgen`** branch and
+`documentation/on-device-maps-experiment.md` is the write-up, with the verdict
+at the top. Read that before proposing it again. What it leaves behind here is
+the toolchain and hardware knowledge under Performance and Gotchas, all of
+which was learned doing it and none of which is about maps.
 
-**The chain is ozmoo's restart trick**: the command goes in the keyboard queue,
-`main` returns, BASIC prints `READY` and the screen editor reads the queue as
-though somebody had typed `RUN"SAR"`. Four things about it:
-
-- the C65's queue is **`$02B0` with the count at `$D0`**, not the C64's
-  `$0277`/`$C6`. ozmoo's own MEGA65 build uses the C64 pair because it runs the
-  machine in C64 mode; this game runs under BASIC 65.
-- `RUN"SAR"` is nine bytes, so the whole line fits the sixteen-byte queue.
-  ozmoo prints its command to the screen and queues only the RETURN, because
-  its line is longer than that.
-- the screen does **not** have to be cleared first. The editor executes the
-  logical line the cursor is on and `READY` leaves it at the start of a fresh
-  one, so stage one's report scrolls out of the way by itself — worth keeping,
-  since it is all there is to look at if the handover fails.
-- **a pure-BASIC stage one would need a `NEW` before the `RUN`.** A PRG chained
-  this way does not: `RUN"file"` resets the pointers itself.
-
-The two routes not taken are written up in `on-device-maps.md`, both of which
-fight Calypsi rather than the machine: a second BASIC line cannot be squeezed
-past the fixed `SYS 8206` stub (`mega65-plain.scm` pins `startup` at `$200E`
-and the library's stub section is `root`), and a loader of our own has nowhere
-to stand while 32 KB is loaded over it.
-
-**The name on disk is the contract.** `GAME_NAME` in `src/mapgen/mapgen.c` has
-to match the Makefile's `$(PRG)` basename, because `diskutil.rb` names a file
-on disk after its host file.
-
-**Zero page is the hard part of handing the machine back**, and there are two
-separate problems in it. The linker is allowed `$02-$7F` and BASIC lives there
-too.
-
-- **The queued line needs a `NEW`.** Calypsi's pseudo registers sit at the
-  bottom of that range, on top of BASIC's own pointers, so a C program of any
-  size leaves them wrong: `RUN"SAR"` comes back `?FORMULA TOO COMPLEX ERROR`,
-  its temporary string stack pointer left past its end. NEW runs a CLR and puts
-  those back. It also has to be **its own queued line** — NEW resets the
-  interpreter's text pointer, so `NEW:RUN"SAR"` runs the NEW and silently drops
-  the rest. Two RETURNs in the queue, which is what ozmoo does.
-- **`NEW` is not enough on its own**, because it only resets the pointers a
-  program is expected to move. Variables declared `__zpage` are placed *above*
-  the pseudo registers and are saved by nobody: stage one's went to `$3A-$5A`
-  when the generator's assembly got its parameter block, and with those held
-  BASIC never reached READY at all — `main` returned, the queue was full, and
-  the machine simply stopped. `zp_preserve`/`zp_restore` in
-  `src/mapgen/kernal.s` copy the whole `zzpage` span out at the start of the
-  run and put it back beside the CIA timers. **Any program that means to return
-  to BASIC needs this**, and the symptom is a machine that dies silently after
-  a working program finishes.
-
-Two more things about running stage one under xemu. **Assembly called from C
-must leave Z at zero** — Calypsi reaches through pointers with `lda (zp),z` and
-keeps Z there, so a routine that leaves it at 128 offsets every later pointer
-read. And **xemu headless quits itself about ten seconds into a run** on this
-disk, on an `FDC SWAP bit emulation is experimental` dialog that `-besure` does
-not cover, so a long boot cannot be watched to the end in one go; shortening
-the field is how the handover gets tested.
-
-**Stage one shares `src/profile.c`**, so its figures and the renderer's mean
-the same thing, and it hands CIA2's timers back with Kernal IOINIT (`$FF84`,
-`src/mapgen/kernal.s`) before the chain — the handover is a disk load, and
-`profile_init` is exactly what stops the Kernal doing one.
-
-**Its clock is right under `-sleepless`**, because it is calibrated against the
-raster inside the emulator: the same run reports 54.38 seconds either way, and
-a real-speed run brackets it from outside. That makes these experiments cheap.
-What is *not* constant is the speedup, so a screenshot timed for one build will
-miss on another — a loop that only polls the raster runs far faster than one
-doing work. `make REPORT=200` holds the report up long enough to catch.
-
-What stage one writes today is a proof block and one generated field, not a
-map: a raster-drawn seed
-and 16 KB of xorshift, which the game compares byte for byte and reports on its
-boot screen (`STAGE ONE <seed>`, `NO STAGE ONE`, or `CORRUPT`) — and, since
-step 2b of the port, `maps/island.yaml`'s 512x512 terrain noise, which stage
-one reports a checksum and a time for. **`python3 tools/fbmcheck.py
-maps/island.yaml` prints the same checksum from the PC** (`17DFF8E6`), and that
-comparison is the only way to check a field at all, because `-dumpmem` writes
-chip RAM only and cannot see attic RAM. Two details
-that are not decoration, because **attic RAM is not cleared by a reset**: the
-seed is drawn rather than fixed, so the block cannot pass its own test forever,
-and the game clears the magic once it has read it, so a stale block reads as
-absent. Note xemu is deterministic and hands out seed 27756 every boot, so the
-freshness only really means something on hardware. `src/handover.c` is
-scaffolding and goes when a real map proves the handover by being flyable.
+**Two capabilities went with it, and both are written up on the branch** if
+they are ever wanted: chaining from one program to the next by typing into the
+C65's keyboard queue (`$02B0`, count at `$D0`), which works because attic RAM
+survives a program load; and banking BASIC out to put a program's BSS at
+`$A000-$CFFF`. The second is what the game still has not done — see the Memory
+map notes.
 
 ## Resources
 
@@ -723,8 +641,10 @@ and a histogram stands in for every percentile, median and sort — all of it in
 `tools/fixed.py`, whose self-test prices each routine against the float it
 replaced (worst 0.007 of a height unit). numpy is there to do a megapixel at a
 time and nothing else: read `>>` as a shift and `np.where` as a branch and it
-is the C. That is not tidiness, it is the on-device port
-(`documentation/on-device-maps.md`) done in the place where a mistake is cheap;
+is the C. It was written that way for a port to the machine that has since
+been measured and abandoned (`documentation/on-device-maps-experiment.md`),
+and it stays: integers are what makes a map reproducible byte for byte, which
+is what `tools/checkview.py` leans on;
 the float version it replaced agreed with it to 0.03 of a height unit and one
 ramp step, which is less than the dither the ramp already carries. `maps/palette.yaml` is the shared index ramp:
 water at 16..23 by depth, then a land ramp at 24..149 that is **21 elevation
@@ -766,8 +686,8 @@ sun was measured against and the pyramid copied from.
 seed, its shape and the things built into its terrain. What is flown over it is
 a *mission*, which has a map and is not one: two rescues could be flown over
 the same island. The game holds its missions as a C table in `src/mission.c`;
-neither `map.bin` (that table's map-side counterpart, and what an on-device
-generator would read) nor `mission.bin` is written yet.
+neither `map.bin` (that table's map-side counterpart) nor `mission.bin` is
+written yet.
 
 **Several maps fit only because they are generated.** Two of them are 487 KB
 crunched against 661 KB for the one hand-drawn pair, so a disk that used to
@@ -959,7 +879,7 @@ which is the same story the CPU figures tell, where a posted write costs +3
 and a read +15. Anything that produces a lot of data once and reads it back
 rarely is therefore much cheaper than the attic-to-chip figure suggests, which
 is exactly the shape of a map generator (see
-`documentation/on-device-maps.md`). Two consequences worth carrying:
+`documentation/on-device-maps-experiment.md`). Two consequences worth carrying:
 
 - **a DMA out of a chip RAM row buffer is not the cheap way to fill attic
   RAM.** 9.54 cycles a byte is more than the +3 a posted CPU write costs in a
@@ -991,8 +911,8 @@ three measurements now bracket it:
 
 The last row is a stopwatch comparison of whole boots and only says the gap is
 inside a few seconds; the 19.5% is safe from that doubt, being ten seconds wide.
-Stage one prints its own time from the profiler's clock, so reading it off a
-real machine would settle the last row properly.
+(Those figures are the generator's, measured before it was removed; the middle
+two rows are the reason the last one matters.)
 
 So **xemu models tight zero-page assembly accurately and the compiler's output
 badly** — what it gets wrong is software-stack indirection and heavy `$D770`
@@ -1040,8 +960,8 @@ eight calls spelled out, the same logic works. Suspect this shape before
 suspecting the hardware.
 
 **A call with no prototype in scope returns `int`, and `int` is sixteen bits.**
-`rnd_state()` returns a `uint32_t`; `src/mapgen/mapgen.c` did not include
-`fixed.h`, so the caller took the low half and left garbage above it — and the
+`rnd_state()` returned a `uint32_t`; its caller in the map generator did not
+include the header that declared it, so it took the low half and left garbage above it — and the
 map generator handed its second stage the wrong random state, which changed
 every colour on a map that still looked entirely plausible. **This is the one
 in the family that the compiler does warn about**, as `implicit declaration of
@@ -1063,16 +983,17 @@ renderer**: `--no-cross-call` and `--strong-inline` (615 ms a frame against
 533 ms), and using the 45GS02's 32-bit `ADCQ` to step the ray position in one
 instruction instead of two 16-bit adds (68.5 ms against 64.7).
 
-**Both of those flags are per-directory decisions, not global ones**, and the
-map generator's stage two wants the opposite answer on one of them:
+**Both of those flags are per-directory decisions, not global ones.** The map
+generator wanted the opposite answer on one of them, and the measurements are
+worth keeping because the next hot loop written in C will too:
 
-- **`--no-cross-call` is worth 16% there** (43.0 seconds of colour to 36.2).
+- **`--no-cross-call` was worth 16%** (43.0 seconds of colour to 36.2).
   Calypsi shares common instruction runs between functions by turning them
   into `jsr` fragments, and `mulhi32` came out as a chain of *six* of them with
   `pha/phx/phy/phz` around each. That is a good trade where the hot loop is
   already assembly and a bad one where it is still C. It cannot change what is
   computed — it is a speed-for-size flag and nothing else.
-- **`--strong-inline` produces the wrong answer.** It is worth 9% and it
+- **`--strong-inline` produces the wrong answer.** It was worth 9% and it
   generated a different map: colour came out `C24E6E26` against the PC's
   `D69C51D9`. `MATH` is volatile, so the write-write-read of one multiplier
   wrapper is safe; but three `lerp16`s in one expression are three *calls*,
@@ -1087,9 +1008,9 @@ product's eight bytes at `$D778` are consecutive and the 45GS02 has 32-bit
 loads, so `(a * b) >> 16` is one `ldq` from `$D77A` — but written as
 `multout[2] | (multout[3] << 8) | …` it compiles to four loads, three shifts
 and three ors, about twenty instructions. `fixed.h` names the four useful
-windows (`MATH_OUT16`, `MATH_OUT_H16`, `MATH_OUT_H32`, `MATH_OUT_T16`); using
-them took the colour pass from 47.2 seconds to 43.0 and changed no checksum
-anywhere, stage one included.
+windows as words and longwords of their own is the whole difference; doing so
+took the generator's colour pass from 47.2 seconds to 43.0 and changed no
+checksum anywhere.
 
 **The Q pseudo-register *is* A/X/Y/Z**, which is why: the march keeps its step
 index in Y across the whole column, so any Q operation destroys it. Moving

@@ -67,30 +67,19 @@ because there is nothing there but ground. Switching worlds between missions
 costs 512 bytes of table: a map's whole location lives in the renderer's plane
 lookups, so pointing the march at another one is rebuilding those and nothing
 else. And the arithmetic is the MEGA65's own — Q0.16 integers, reciprocals,
-tables, histograms instead of sorts — because the next step is to generate the
-maps on the machine itself; `documentation/on-device-maps.md` costs that out.
+tables, histograms instead of sorts, which is what makes a seed reproduce a map
+byte for byte — and what let `tools/checkview.py` prove the PC previewer and
+the MEGA65 draw the same picture pixel for pixel.
 
-**And the whole of that generator now runs on the MEGA65.** The disk boots in
-three stages: `AUTOBOOT.C65` builds the terrain, the water and the pyramid,
-`MG2` paints the colour map and writes the planes the renderer reads, and then
-the machine is handed to `SAR`, the game. Three programs rather than one
-because the game already fills the 32 KB it is given and a generator is far
-more code than the *loader* it would replace — and it works because attic RAM
-survives a program load, so each stage can fill it and vanish. Handing over is
-done the way [ozmoo](https://github.com/johanberntsson/ozmoo) restarts itself:
-put `RUN"SAR"` in the keyboard queue and let the screen editor type it once
-BASIC is back.
-
-**Every one of the eleven passes is byte-identical to what `tools/genmap.py`
-computes on the PC** — each stage prints a checksum and `tools/fbmcheck.py`
-prints the same one from Python, which is how the port was built and what makes
-it safe to optimise — the colour pass has come down from 176 seconds to under
-19 with it unchanged at every step, and stage one from 53 to 40, most of both
-by moving the per-pixel work into 45GS02 assembly. A whole world costs about
-sixty-four seconds to build; the game does not fly the result yet. Measured at
-the machine, a whole boot is 1:48 off SD and 2:28 off a floppy, and the second
-of those is almost entirely the 502 KB of map files the generator exists to
-replace.
+**Running that generator on the MEGA65 itself was tried, and it is not worth
+it.** The whole pipeline was ported — eleven passes, every one byte-identical
+to the Python, the per-pixel work in 45GS02 assembly, 64 seconds a map. But
+that is a 512x512 pipeline and the game ships a 1024x1024 colourmap, which is
+four times the work at every pass: about 255 seconds a map, against 66 to load
+both maps off a floppy and 31 off SD. The code is on the `mega65-mapgen` branch
+and `documentation/on-device-maps-experiment.md` is the write-up, with the
+arithmetic at the top. The maps are generated on the PC, which is where they
+were always generated.
 
 `tools/preview.py` flies one on the PC **with the game's own
 renderer** — the same march, projection, map sampling and flight model, at the

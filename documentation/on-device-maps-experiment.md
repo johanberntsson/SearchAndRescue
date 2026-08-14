@@ -1,20 +1,65 @@
-# Generating maps on the MEGA65 — is it feasible?
+# Generating maps on the MEGA65 — an experiment, and its answer
 
-**Short answer: yes, it will work — but do it for the disk, not for the
-clock.** The arithmetic below puts a full 1024x1024 colour map and 512x512
-heightmap at **roughly 20-30 seconds** of generation. Every figure is an
-estimate built from this project's own measured per-operation costs (see
-Performance in `CLAUDE.md`), not a measurement of a generator that exists —
-call it good to a factor of two, which is enough to answer "feasible", not
-enough to promise a number.
+**It works, it is bit-exact, and it was not worth keeping. Closed 14 Aug
+2026.** The whole generator was ported to the machine, all eleven passes
+verified byte for byte against the PC, and the per-pixel work taken to 45GS02
+assembly. It generates a map in **64 seconds**. Then the arithmetic that
+actually matters:
 
-> **Read the estimate as an assembly estimate.** The first pass to be built,
-> the terrain noise, was 20x slower than the figure below when it was written
-> in C — 1m05s on a real MEGA65 — and is **9.26 seconds** now that its two
-> per-pixel loops are assembly, measured identically in xemu and on the machine.
-> See steps 2b and 3 at the end. Nothing here was ever wrong about the
-> *machine*: the numbers assume an inner loop of the kind `src/voxel_asm.s` is,
-> and the C compiler is a factor of 7 or 8 away from that.
+| | |
+|---|---|
+| a map at the resolution the game *ships* (1024² colour) | **~255 s** |
+| both maps | **~8.5 minutes** |
+| loading both off a floppy | **66 s** |
+| loading both off SD | **31 s** |
+
+The 64-second figure is a 512² pipeline throughout. The shipping colourmap is
+1024², computed from a 1024² field, and every pass scales with the pixel count
+— so matching the quality is four times the work at every stage. There is no
+optimisation road from 64 to 255 that does not go through the pixel count
+itself, and the per-pixel loops are already assembly.
+
+**So the maps are generated on the PC, and the code that generated them on the
+machine is gone from `main`.** It is preserved on the `mega65-mapgen` branch,
+at the commit `The hardware timings, and what they say to do next`, with every
+checksum passing and a disk that boots end to end.
+
+## What to read this for
+
+Three things in here outlived the experiment and are the reason the document
+was kept rather than deleted:
+
+- **The measured cost of the machine**, per operation and per pass — the table
+  under "What it has to beat" and the timings throughout. Anyone costing a
+  large computation on this hardware should start here rather than guessing,
+  which is what the original version of this document did (and it was right
+  about the machine and wrong about the compiler by a factor of eight).
+- **The two-stage boot**, written up under "Handing over". Attic RAM survives
+  a program load, and a program can chain to the next by typing into the
+  keyboard queue. That is a general capability and it worked perfectly; it is
+  simply not needed if there is nothing big to compute before the game starts.
+- **What the port cost to get right**, which is the list of traps at the end
+  and in `CLAUDE.md`: five mixed-width miscompiles, a missing prototype that
+  silently halved a 32-bit return, an inliner that produces the wrong answer,
+  and a linker script that turns a second RAM window into a second program
+  area. None of those are about maps.
+
+**And the method is the part worth copying.** Every pass was written in C
+first, checked against `tools/fbmcheck.py` for a bit-exact match with the
+Python, and only then optimised — so an optimisation that changed the output
+announced itself immediately. Ten rounds of optimisation on the colour pass
+took it from 175.9 seconds to 18.8 and the checksum never moved once. Three of
+those rounds were assembly rewrites and all three were right first try, because
+they were transcribed from a correct C version sitting beside them rather than
+reasoned about. `fbmcheck.py` and the device's checksum printing are on the
+branch.
+
+---
+
+*What follows is the original document, unchanged apart from this preface: the
+costing, the design, the build log pass by pass, and the traps found on the
+way. It is written in the present tense of an experiment that was still
+running.*
 
 ## What it has to beat — measured, and not what this document first assumed
 

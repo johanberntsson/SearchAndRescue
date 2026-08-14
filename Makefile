@@ -19,19 +19,8 @@ FLYNOW  ?= 0
 # of 20. For a session at the real MEGA65, where that report is the only way to
 # read the attic RAM figures: `make REPORT=120`.
 REPORT  ?= 20
-# HOLD=n is the same for *stage one's* report, and it is a separate knob
-# because it is a separate pause in a separate program -- and because it is on
-# the critical path of every boot, where the game's is not. Four seconds is
-# long enough to see that the checksum is right and short enough not to be
-# mistaken for generator time, which is exactly what happened when it was
-# eight: `make HOLD=60` to actually read it at the machine.
-HOLD    ?= 4
-# The C stack. The toolchain defaults to 4096 and neither program comes close:
-# stage one measures its own high-water mark with a canary and prints it. Set
-# per program below, because they are not the same program.
-CSTACK_GEN ?= 512
-# The game's, measured the same way: src/bank.s fills it with a canary and
-# main prints how much survived.
+# The C stack. The toolchain defaults to 4096 and the game comes nowhere near:
+# src/bank.s fills it with a canary and main prints how much survived.
 # 144 bytes is the measured high-water mark, at the boot rather than in the
 # flight. 512 is three and a half times that, and it hands 3.5 KB back to a
 # program that had 44 bytes free.
@@ -43,14 +32,11 @@ CSTACK_GAME ?= 512
 HGT_SIZE ?= 512
 COL_SIZE ?= 1024
 SIZEFLAGS = -DWIDE=$(WIDE) -DHGT_SIZE=$(HGT_SIZE) -DCOL_SIZE=$(COL_SIZE) \
-            -DFLYNOW=$(FLYNOW) -DREPORT_SECONDS=$(REPORT) -DSTAGE1_HOLD=$(HOLD)
+            -DFLYNOW=$(FLYNOW) -DREPORT_SECONDS=$(REPORT)
 CFLAGS   = $(TARGET) -O2 --speed -DPROFILE_DETAIL=$(PROFILE) $(SIZEFLAGS)
 ASFLAGS  = $(TARGET) -DPROFILE_DETAIL=$(PROFILE) $(SIZEFLAGS)
 LDFLAGS  = $(TARGET) --output-format=prg
 LINKFILE = mega65-plain.scm
-# Stage one gets 8 KB more: the RAM under the BASIC ROM, which it banks out for
-# its whole run. See mega65-sar.scm and src/mapgen/kernal.s.
-GEN_LINKFILE = mega65-sar.scm
 
 BUILD    = build
 SRCS     = $(wildcard src/*.c)
@@ -59,41 +45,11 @@ OBJS     = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS)) \
            $(patsubst src/%.s,$(BUILD)/%.o,$(ASRCS))
 
 ELF      = $(BUILD)/sar.elf
-# The game is no longer what the ROM boots. **Stage one is**, and it chains to
-# this by name -- see GAME_NAME in src/mapgen/mapgen.c, which has to agree with
-# the basename here, since diskutil.rb names a file on disk after its host
-# file. `SAR` on disk.
-PRG      = $(BUILD)/sar
+# The MEGA65 ROM autoboots a file called autoboot.c65 and nothing else, so the
+# game is written to the disk under that name.
+PRG      = $(BUILD)/autoboot.c65
 D81      = $(BUILD)/sar.d81
 
-# Stage one: the program that prepares attic RAM and then hands the machine to
-# the game. It is a separate program because the game already fills the 32 KB
-# at $2001, and because attic RAM survives a program load, which is the whole
-# mechanism. src/mapgen/ is deliberately outside the src/*.c glob above so the
-# two never link into each other. See documentation/on-device-maps.md.
-GEN_SRCS = $(wildcard src/mapgen/*.c)
-GEN_ASRCS = $(wildcard src/mapgen/*.s)
-# src/profile.c is shared with the game rather than copied: stage one times
-# itself with the same raster-calibrated clock the renderer is measured with,
-# so the two sets of figures mean the same thing.
-GEN_OBJS = $(patsubst src/mapgen/%.c,$(BUILD)/mapgen/%.o,$(GEN_SRCS)) \
-           $(patsubst src/mapgen/%.s,$(BUILD)/mapgen/%.o,$(GEN_ASRCS)) \
-           $(BUILD)/profile.o $(BUILD)/dma.o
-GEN_ELF  = $(BUILD)/mapgen.elf
-GEN_PRG  = $(BUILD)/autoboot.c65
-
-# Stage two: colour and the planes. A second generator program because stage
-# one's 32 KB is full -- see src/mapgen2/main.c. It shares the random stream,
-# the banking and the clock with stage one and nothing else; attic RAM carries
-# the fields between them.
-GEN2_SRCS = $(wildcard src/mapgen2/*.c)
-GEN2_ASRCS = $(wildcard src/mapgen2/*.s)
-GEN2_OBJS = $(patsubst src/mapgen2/%.c,$(BUILD)/mapgen2/%.o,$(GEN2_SRCS)) \
-            $(patsubst src/mapgen2/%.s,$(BUILD)/mapgen2/%.o,$(GEN2_ASRCS)) \
-            $(BUILD)/mapgen/rnd.o $(BUILD)/mapgen/kernal.o \
-            $(BUILD)/profile.o $(BUILD)/dma.o
-GEN2_ELF = $(BUILD)/mg2.elf
-GEN2_PRG = $(BUILD)/mg2
 # One sprite sheet per figure the game can stand in the world, in the order
 # src/sprite.c numbers them: 0 the lost hiker, 1 the pair by the lake. They are
 # converted together because they share the one on-screen palette.
@@ -133,7 +89,7 @@ $(BUILD):
 # rebuild. Without it, `make PROFILE=0` and then `make` leaves every object
 # built against the wrong flag and the counters silently stay off -- and a
 # half-rebuilt WIDE change is a memory map that disagrees with itself.
-CONFIG_STAMP = $(BUILD)/config-$(PROFILE)-$(WIDE)-$(HGT_SIZE)-$(COL_SIZE)-$(FLYNOW)-$(REPORT)-$(HOLD)-$(CSTACK_GEN)-$(CSTACK_GAME).stamp
+CONFIG_STAMP = $(BUILD)/config-$(PROFILE)-$(WIDE)-$(HGT_SIZE)-$(COL_SIZE)-$(FLYNOW)-$(REPORT)-$(CSTACK_GAME).stamp
 
 # **Depends on this file.** Adding a per-directory compiler flag below and
 # rebuilding changed nothing at all, because no object lists the Makefile as a
@@ -160,71 +116,6 @@ $(ELF): $(OBJS)
 # copied to the basename they should carry there.
 $(PRG): $(ELF)
 	cp $(BUILD)/sar.prg $@
-
-$(BUILD)/mapgen:
-	mkdir -p $@
-
-# The colour pass's gamma and tanh tables, generated from tools/fixed.py so
-# they cannot drift from the arithmetic the PC checks against.
-src/mapgen/tables.h: tools/mktables.py tools/fixed.py tools/genmap.py
-	python3 tools/mktables.py $@
-
-# Stage one does *not* get --no-cross-call: it overflows its 32 KB with it, and
-# the RAM under BASIC is already full to the byte with its work buffers. Its
-# hot loops are assembly anyway, which is where cross-calling stops mattering.
-$(BUILD)/mapgen/%.o: src/mapgen/%.c src/mapgen/tables.h $(wildcard src/*.h) $(wildcard src/mapgen/*.h) \
-                     $(CONFIG_STAMP) | $(BUILD)/mapgen
-	cc6502 $(CFLAGS) -c -o $@ $<
-
-$(BUILD)/mapgen/%.o: src/mapgen/%.s $(wildcard src/*.h) $(wildcard src/mapgen/*.h) \
-                     $(CONFIG_STAMP) | $(BUILD)/mapgen
-	as6502 $(ASFLAGS) -o $@ $<
-
-$(BUILD)/mapgen2:
-	mkdir -p $@
-
-# **Do not add --strong-inline here.** It was tried, it is worth 9%, and it
-# produces the *wrong map*: colour came out C24E6E26 against the PC's
-# D69C51D9. `fixed.h`'s wrappers each write MULTINA/MULTINB and then read
-# MULTOUT, and `MATH` is volatile, so within one of them the order is safe --
-# but three `lerp16`s in one expression are three separate calls, and C only
-# promises they are *indeterminately sequenced*, not that their bodies cannot
-# be interleaved once inlined. Merged into one basic block they trample each
-# other's operands. The jsr per multiply is the price of the multiplier being a
-# single piece of shared hardware addressed through memory; the way out is
-# assembly, not an inliner.
-#
-# **--no-cross-call, on the other hand, belongs here.** Calypsi shares common
-# instruction runs between functions by turning them into `jsr` fragments, and
-# `mulhi32` came out as a chain of six of them with `pha/phx/phy/phz` around
-# each. That is a good trade for code the size of the game and a bad one for a
-# loop that runs a quarter of a million times. It is a speed/size flag only --
-# it cannot change what is computed. CLAUDE.md records it measuring *slower*
-# for the renderer, which is the same story as --strong-inline: that hot loop
-# is already assembly.
-$(BUILD)/mapgen2/%.o: src/mapgen2/%.c $(wildcard src/*.h) \
-                      $(wildcard src/mapgen/*.h) $(wildcard src/mapgen2/*.h) \
-                      src/mapgen/tables.h $(CONFIG_STAMP) | $(BUILD)/mapgen2
-	cc6502 $(CFLAGS) --no-cross-call -c -o $@ $<
-
-$(BUILD)/mapgen2/%.o: src/mapgen2/%.s $(wildcard src/*.h) \
-                      $(wildcard src/mapgen/*.h) $(wildcard src/mapgen2/*.h) \
-                      $(CONFIG_STAMP) | $(BUILD)/mapgen2
-	as6502 $(ASFLAGS) -o $@ $<
-
-$(GEN2_ELF): $(GEN2_OBJS)
-	ln6502 $(LDFLAGS) --cstack-size $(CSTACK_GEN) -o $@ $(GEN_LINKFILE) $(GEN2_OBJS)
-
-$(GEN2_PRG): $(GEN2_ELF)
-	cp $(BUILD)/mg2.prg $@
-
-$(GEN_ELF): $(GEN_OBJS)
-	ln6502 $(LDFLAGS) --cstack-size $(CSTACK_GEN) -o $@ $(GEN_LINKFILE) $(GEN_OBJS)
-
-# The MEGA65 ROM only autoboots a file called autoboot.c65, and that is stage
-# one now.
-$(GEN_PRG): $(GEN_ELF)
-	cp $(BUILD)/mapgen.prg $@
 
 comma := ,
 empty :=
@@ -261,10 +152,10 @@ $(RES) &: $(GEN_MAPS) $(SPRITES) tools/convmap.py maps/palette.yaml \
 
 # tools/diskutil.rb refuses to overwrite a file that already exists on the image,
 # so the image is always built from scratch.
-$(D81): $(GEN_PRG) $(GEN2_PRG) $(PRG) $(RES)
+$(D81): $(PRG) $(RES)
 	rm -f $@
 	ruby tools/diskutil.rb $@ -name "search and rescue" -id sr \
-	    -writeprg -copyf1 $(GEN_PRG) $(GEN2_PRG) $(PRG) \
+	    -writeprg -copyf1 $(PRG) \
 	    -writeseq -copyf1 $(RES)
 
 # The disk to hand out. PROFILE=0 drops the per-column instrumentation, which
