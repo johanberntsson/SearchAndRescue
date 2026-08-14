@@ -31,38 +31,46 @@ terrain, water, items, colour and the planes, eleven passes, every one of them
 byte-identical to what `tools/genmap.py` computes on the PC. Then they hand the
 machine to `SAR`. The game does not fly the result yet. See Done.
 
-**Where the boot goes**, measured 14 Aug 2026 in xemu at real speed, by
-sampling screenshots across a boot and then booting the game alone
-(`xemu -prg build/sar.prg -8 build/sar.d81`) to separate loading from
-generating. About 170 seconds to the title then; the two generator stages have
-since come down by 54 of those seconds between them, so about 116 now:
+**Where the boot goes**, measured on 14 Aug 2026 by stopwatch at the machine,
+three marks per run -- the end of stage one, the end of stage two, and the
+game's benchmark report, which is the moment the resources have finished
+loading. Times in seconds:
 
-| | s | |
-|---|---|---|
-| **map generation** | **64** | stage one 39.7 printed, stage two ~24 |
-| **deliberate holds** | **28** | 4 + 4 stage reports and the game's 20 s benchmark report |
-| loading both maps from the d81, the old way | ~20 | 502 KB |
-| loading the three PRGs | ~3 | 72 KB, and so nearly free |
-| MEGA65 ROM boot | ~2 | |
+| | stage one | stage two | game + resources | total |
+|---|---|---|---|---|
+| xemu | 43 | 27 | 22 | 92 |
+| MEGA65, SD card | 48 | 28 | 32 | 108 |
+| MEGA65, floppy | 52 | 29 | **67** | 148 |
 
-Three things follow from it:
+Against xemu the hardware is +5/+1/+10 on SD and **+9/+2/+45** on floppy, and
+that is the whole story of the boot:
 
-- **The PRG loading is noise.** Exomizing the game (below) would save perhaps
-  two seconds of this. It is worth doing for other reasons, not for the boot.
-- **28 seconds of it is on purpose**, so that the reports can be read.
-  `make REPORT=0 HOLD=0` takes 16% off the boot today with no code change.
-- **The boot generates one map and then loads both maps from the disk anyway**,
-  because nothing reads what stage two writes yet. So the 64 seconds is
-  currently pure addition. Wiring the game to the generated planes removes the
-  ~20 second row and 502 KB from the disk -- but only if *both* maps are
-  generated, and the second one is the expensive one (see the colour note in
-  Open: the plains are 99.5% land, so its colour pass costs far more than the
-  island's -- most of the win below was skipping water).
+- **The PRG loads are free, and exomizing them is withdrawn.** Stage two is
+  one or two seconds slower on hardware than in the emulator, and nearly all
+  of that pass is assembly -- so `MG2`'s 17 KB costs almost nothing even off a
+  floppy. Stage one's +9 is not its PRG either: 39.7 seconds of mostly-C
+  compute at the 19.5% the machine runs C slower is 7.7 of it on its own.
+- **The resources are the boot.** 502 KB off a floppy is 66 seconds, about
+  7.6 KB a second; off SD it is 31, about 16 KB a second. Everything else in
+  the third column is a rounding error.
 
-This is xemu, whose drive is far faster than a real one, so the map-loading row
-is bigger on hardware. The two generation figures are off the calibrated clock
-and mean the same on both machines; stage one and stage two print their own, so
-a stopwatch to the title on the MEGA65 gives the hardware split exactly.
+Which sets the next piece of work, and the arithmetic is worth having in front
+of you before starting it:
+
+- **The generator already builds map 0 and throws it away.** Its four files are
+  162 KB, 32% of the resource load -- about **21 seconds on floppy and 10 on
+  SD, for no extra generation at all**, because that work is being done on
+  every boot already. This is the free one and it should be done first.
+- **Map 1 is the other 337 KB**, about 44 seconds on floppy. Generating it
+  instead costs stage one again (~40 s) plus a colour pass that will be well
+  over the island's 24, because the plains are 99.5% land and most of the
+  colour win so far was skipping water. So it is probably 70-90 seconds to
+  replace 44 -- **worse on floppy today, and much worse on SD**, where the
+  whole 502 KB loads in 31 seconds and generating one map takes 64.
+- So: **on SD the generator does not pay for itself in boot time and may never**.
+  What it buys is disk space and variety -- worlds that were never drawn -- and
+  that is the reason to have it. Boot time is a floppy argument, and only for
+  the map that is being generated anyway.
 
 Build knobs, all in the Makefile:
 
@@ -280,21 +288,11 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
 - ~~`stretch` needs a decision before it can be ported~~ **settled**: it clips
   to 65535 now, so a field value fits the uint16 the device stores it in. See
   Done for what that cost.
-- **Exomizer the three PRGs.** Johan's suggestion, and the command is
-  `exomizer sfx sys input.prg,0x2001 -o output.prg` -- a self-extracting PRG
-  that decrunches and runs itself, so nothing in the boot chain has to learn
-  about it: the ROM still boots `AUTOBOOT.C65` and the queued `RUN"MG2"` and
-  `RUN"SAR"` still work. 72 KB of program across the three.
-  Two things to settle before doing it. **Measure on hardware first**: the
-  sampled boot above puts all three PRG loads at about 3 seconds of 116, which
-  makes this look pointless -- but that is xemu, whose drive is nearly instant,
-  and loading is the one place the real machine is markedly slower. The
-  hardware split is the one that decides whether this is worth anything. And
-  **the sfx stub is 6502 code that has to run under BASIC 65**, not a C64; the
-  project already has a decruncher for the raw `-P0` stream
-  (`src/exo_asm.s`, which unpacks the maps into attic RAM), so if the stock
-  stub does not come up in C65 mode there is a known-working fallback to
-  build on.
+- ~~Exomizer the three PRGs~~ **withdrawn, and measured rather than argued.**
+  `exomizer sfx sys input.prg,0x2001 -o output.prg` would have done it, but the
+  hardware timings above show all three PRG loads costing one or two seconds
+  even off a floppy. There is nothing there to win. The maps are the load, and
+  the answer to those is to generate them, not to crunch them harder.
 - **Loading the game and its resources is the larger half of the boot now**,
   around 24 seconds of the 36, and it is the *only* place the machine is
   slower than the emulator

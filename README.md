@@ -87,7 +87,10 @@ prints the same one from Python, which is how the port was built and what makes
 it safe to optimise — the colour pass has come down from 176 seconds to under
 19 with it unchanged at every step, and stage one from 53 to 40, most of both
 by moving the per-pixel work into 45GS02 assembly. A whole world costs about
-sixty-four seconds to build; the game does not fly the result yet.
+sixty-four seconds to build; the game does not fly the result yet. Measured at
+the machine, a whole boot is 1:48 off SD and 2:28 off a floppy, and the second
+of those is almost entirely the 502 KB of map files the generator exists to
+replace.
 
 `tools/preview.py` flies one on the PC **with the game's own
 renderer** — the same march, projection, map sampling and flight model, at the
