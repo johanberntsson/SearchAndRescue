@@ -11,14 +11,29 @@
 
 
 // Loading, on the ROM's own text screen, because the disk cannot be read once
-// vic4_init has run -- a Kernal open fails outright afterwards. So these
-// three print rather than draw, and they are the only screens that do.
+// vic4_init has run -- a Kernal open fails outright afterwards.
 //
-// The bar only ever grows, one character at a time, so it needs no cursor
-// control: printing is enough.
+// They are made to look like screens_title all the same: the display is put
+// into forty columns and the same two lines are written white on black, with
+// LOADING and a bar where PRESS SPACE will be. So the boot is one picture
+// throughout, and finishing the load takes the bar away rather than scrolling
+// a new screen up under it.
+//
+// None of them print. The ROM's screen editor cannot address a row, cannot
+// erase one, and lays a line out eighty bytes wide whatever the display is
+// showing -- so these write screen RAM directly.
 void screens_boot(void);
 void screens_loading(uint8_t percent);
+
+// Loading is done: take the LOADING line and its bar away, leaving the title.
+void screens_loaded(void);
+
 void screens_load_failed(const char *why, const char *file);
+
+// Give the ROM back the eighty-column display it thinks it has. Only the
+// startup benchmark report needs this -- it is the one thing left that prints,
+// and only when REPORT_SECONDS asks for it.
+void screens_boot_restore(void);
 
 // The title, on the game's own display once there is a palette for it.
 void screens_title(void);

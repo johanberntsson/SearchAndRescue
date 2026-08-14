@@ -54,8 +54,11 @@ generated worlds, both on the one disk**.
   over the finished picture, leaning as it falls. It costs 0.68 ms a frame,
   because the sky is sixteen palette entries rather than any pixels at all
 - **Boots in about ten seconds** in the emulator, twelve off SD and 25 off a
-  floppy, nearly all of it reading the two maps. A progress bar grows across
-  the load so the machine can be seen to be alive
+  floppy, nearly all of it reading the two maps. The loading screen is the
+  title screen — same black, same white, same words in the same place — with
+  LOADING and a progress bar where PRESS SPACE will be, so the machine can be
+  seen to be alive and the boot is one picture from the first second to the
+  menu
 
 **The maps are generated rather than drawn, and that is what puts two of them
 on the disk.** `tools/genmap.py` turns a short YAML description — island or mountains

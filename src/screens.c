@@ -1,6 +1,6 @@
 #include "screens.h"
 
-#include <stdio.h>
+#include <mega65.h>
 
 #include "mission.h"
 #include "panel.h"
@@ -8,17 +8,11 @@
 
 #define TITLE_ROW   8
 #define PROMPT_ROW  22
-#define BAR_WIDTH   30
 
-// PETSCII 160 is a shifted space: a solid block, and a filled bar without
-// shipping a font to draw one with.
-// **Not 160.** The shifted space is a solid block on a CBM screen and is what
-// this was for its whole life, and it printed *nothing*: the loading bar drew
-// thirty invisible characters on every boot and nobody could tell the machine
-// was alive. Calypsi's output path drops it -- `#` and the rest of printable
-// ASCII come through both `putchar` and `printf("%c")`, 160 through neither,
-// which one probe on the boot screen settled after guessing had failed twice.
-#define BOOT_BLOCK '#'
+// The two lines the title screen and the boot screen both carry, written once
+// so the boot screen cannot say something the title screen does not.
+#define TITLE_TEXT  "SEARCH AND RESCUE"
+#define TITLE_SUB   "A MEGA65 DRONE SIMULATOR"
 
 static uint8_t width_of(const char *s)
 {
@@ -72,17 +66,106 @@ static void put_position(uint8_t col, uint8_t row, const mission *m,
   put_fix((uint8_t)(col + 1), row, m->lon, 3, 'E', colour);
 }
 
-// How many blocks of the loading bar have been printed. The bar grows and is
-// never redrawn, which is what lets it live on a screen we only have a
-// character stream to.
+// ---------------------------------------------------------------------------
+// The boot screen.
+//
+// Loading has to happen before vic4_init -- a Kernal open fails outright
+// afterwards -- so this is the ROM's own text display and not the game's. It
+// is dressed to look like screens_title anyway: same forty columns, same rows,
+// same words, white on black. The pilot sees one picture that gains a progress
+// bar and then loses it again, rather than a BASIC screen followed by a title.
+//
+// **Nothing here prints.** printf goes through the ROM's screen editor, which
+// lays a row out eighty bytes wide whatever the display is doing, offers no
+// cursor addressing to put a word at row 8 with, and can only ever add to the
+// bottom of the screen -- so the LOADING line could never be taken away again.
+// Writing screen RAM directly answers all three, and it is not a hard thing to
+// do: the C65's screen is 1000 bytes at $0800 with the colour for each cell at
+// the same index into colour RAM.
+//
+// It also settles the old business of the invisible bar. The solid block is
+// screen code 160 and printing it produced *nothing* for months -- Calypsi's
+// output path drops that byte -- while storing 160 into screen RAM is just a
+// byte, and draws the block it always should have.
+#define BOOT_SCREEN ((uint8_t *)0x0800)  // the ROM's; ours starts at $2001
+#define BOOT_CRAM   0xFF80000UL
+#define BOOT_COLS   40
+#define BOOT_ROWS   25
+#define BOOT_BLOCK  160  // reverse space: the solid block, as a screen code
+
+// The C65's default palette is still up here -- the game's own arrives with
+// the first map -- so these are C64 colour numbers rather than the panel's.
+// 15 is the nearest light grey to the (150,160,170) tools/convmap.py gives
+// PANEL_LABEL, so the subtitle stays the quieter of the two lines.
+#define BOOT_WHITE  1
+#define BOOT_GREY   15
+
+// The bar sits under the word, on the row the title screen puts PRESS SPACE
+// on, so that finishing the load simply swaps one for the other in place.
+#define BAR_ROW    (PROMPT_ROW + 1)
+#define BAR_WIDTH  30
+#define BAR_COL    ((BOOT_COLS - BAR_WIDTH) / 2)
+
+static void boot_cell(uint8_t col, uint8_t row, uint8_t code, uint8_t colour)
+{
+  uint16_t cell = (uint16_t)row * BOOT_COLS + col;
+
+  BOOT_SCREEN[cell] = code;
+  ((uint8_t __far *)BOOT_CRAM)[(int16_t)cell] = colour;
+}
+
+static void boot_puts(uint8_t col, uint8_t row, const char *s, uint8_t colour)
+{
+  while (*s && col < BOOT_COLS) {
+    boot_cell(col, row, vic4_screen_code(*s), colour);
+    col++;
+    s++;
+  }
+}
+
+static void boot_centre(uint8_t row, const char *s, uint8_t colour)
+{
+  uint8_t w = width_of(s);
+
+  boot_puts(w >= BOOT_COLS ? 0 : (uint8_t)((BOOT_COLS - w) / 2), row, s,
+            colour);
+}
+
+static void boot_clear_row(uint8_t row)
+{
+  uint8_t col;
+
+  for (col = 0; col < BOOT_COLS; col++)
+    boot_cell(col, row, ' ', BOOT_WHITE);
+}
+
+// How many blocks of the loading bar are up. The bar only ever grows, so a
+// count is all the state it needs.
 static uint8_t bar_drawn;
 
 void screens_boot(void)
 {
-  putchar(147);  // clear
-  printf("\n\n     SEARCH AND RESCUE\n");
-  printf("     A MEGA65 DRONE SIMULATOR\n\n\n");
-  printf("     LOADING\n\n     ");
+  uint8_t row;
+
+  // Forty columns, so the boot screen is the shape the title screen is. This
+  // is a VIC-III register the ROM has already unlocked and the only display
+  // register touched before loading: the whole of vic4_init has to wait until
+  // the last file is read, and something in it leaves the Kernal unable to
+  // open one at all.
+  //
+  // The editor goes on believing the display is eighty wide, which costs
+  // nothing while nothing prints -- see screens_boot_restore for the one
+  // thing that still does.
+  VICIV.ctrlb &= (uint8_t)~0x80;  // H320
+  VICIV.bordercol = 0;
+  VICIV.screencol = 0;
+
+  for (row = 0; row < BOOT_ROWS; row++)
+    boot_clear_row(row);
+
+  boot_centre(TITLE_ROW, TITLE_TEXT, BOOT_WHITE);
+  boot_centre(TITLE_ROW + 2, TITLE_SUB, BOOT_GREY);
+  boot_centre(PROMPT_ROW, "LOADING", BOOT_WHITE);
   bar_drawn = 0;
 }
 
@@ -94,28 +177,36 @@ void screens_loading(uint8_t percent)
     percent = 100;
   want = (uint8_t)((uint16_t)percent * BAR_WIDTH / 100);
 
-  if (bar_drawn >= want)
-    return;
   while (bar_drawn < want) {
-    putchar(BOOT_BLOCK);
+    boot_cell((uint8_t)(BAR_COL + bar_drawn), BAR_ROW, BOOT_BLOCK, BOOT_WHITE);
     bar_drawn++;
   }
-  // A progress bar is the one piece of output whose entire value is being
-  // seen *before* the thing it reports on has finished, and there is no
-  // newline in it to flush the buffer for us.
-  fflush(stdout);
+}
+
+void screens_loaded(void)
+{
+  boot_clear_row(PROMPT_ROW);
+  boot_clear_row(BAR_ROW);
 }
 
 void screens_load_failed(const char *why, const char *file)
 {
-  printf("\n\n     %s %s\n", why ? why : "CANNOT READ", file ? file : "");
+  boot_clear_row(PROMPT_ROW);
+  boot_clear_row(BAR_ROW);
+  boot_centre(PROMPT_ROW, why ? why : "CANNOT READ", BOOT_WHITE);
+  boot_centre(BAR_ROW, file ? file : "", BOOT_WHITE);
+}
+
+void screens_boot_restore(void)
+{
+  VICIV.ctrlb |= 0x80;  // H640, which is what the ROM's editor writes for
 }
 
 void screens_title(void)
 {
   vic4_text_mode();
-  centre(TITLE_ROW, "SEARCH AND RESCUE", PANEL_INK);
-  centre(TITLE_ROW + 2, "A MEGA65 DRONE SIMULATOR", PANEL_LABEL);
+  centre(TITLE_ROW, TITLE_TEXT, PANEL_INK);
+  centre(TITLE_ROW + 2, TITLE_SUB, PANEL_LABEL);
   centre(PROMPT_ROW, "PRESS SPACE", PANEL_INK);
 }
 

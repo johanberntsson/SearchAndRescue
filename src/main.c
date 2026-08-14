@@ -439,8 +439,8 @@ int main(void)
   //     open at all.
   //   - vic4_init leaves the Kernal unable to open a file either.
   //
-  // So the only place a resource can be read is here, before both, which is
-  // why the loading bar is printed rather than drawn.
+  // So the only place a resource can be read is here, before both -- on the
+  // ROM's screen, dressed up to look like the title screen that follows it.
   screens_boot();
 
   if (load_resources(screens_loading)) {
@@ -448,14 +448,22 @@ int main(void)
     for (;;)
       ;
   }
+  screens_loaded();
 
-  // The benchmarks and their report while the text screen is still up:
-  // vic4_init takes it away, and real hardware has no -dumpmem to read the
-  // results out of afterwards.
+  // The benchmarks while the text screen is still up: vic4_init takes it away,
+  // and real hardware has no -dumpmem to read the results out of afterwards.
   profile_init();
   profile_calibrate();
   profile_bench();
+
+  // The report is the one thing left that prints, and printing scribbles over
+  // a screen that is now worth looking at -- so it happens only when somebody
+  // has asked to read it. The results are in memory either way, which is where
+  // tools/profread.py takes them from.
+#if REPORT_SECONDS
+  screens_boot_restore();
   profile_report(REPORT_SECONDS);
+#endif
 
   vic4_init();
   voxel_init();

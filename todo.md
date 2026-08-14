@@ -44,10 +44,11 @@ almost all of the boot now:
 | MEGA65, floppy | 52 | 29 | **67** | 148 |
 
 So a boot today is about **10 seconds in xemu, 14 on SD and 27 on floppy**: two
-of ROM boot and the game's own 27 KB, then 186 KB of resources, then the
-benchmark report, which no longer waits -- `REPORT` defaults to 0 now and the 20 seconds
-it used to hold for were most of what was left. `make REPORT=120` to read the
-table at the machine. Two things follow:
+of ROM boot and the game's own 20 KB (27 until `printf` left it), then 186 KB
+of resources, then the benchmark report, which no longer waits -- `REPORT`
+defaults to 0 now and the 20 seconds it used to hold for were most of what was
+left, and at 0 it does not print either. `make REPORT=120` to read the table at
+the machine. Two things follow:
 
 - **The PRG load is free and exomizing it would buy nothing.** Stage two above
   is one second slower on hardware than in the emulator and nearly all of that
@@ -73,7 +74,7 @@ Build knobs, all in the Makefile:
 |---|---|
 | `PROFILE=0` | no per-column instrumentation; use it for timing |
 | `FLYNOW=n` | skip the menus and fly mission n; a headless run needs it to render anything at all, since it cannot press a key, and `FLYNOW=2` is the only way one reaches the second map |
-| `REPORT=n` | hold the startup benchmark report n seconds instead of 20 |
+| `REPORT=n` | print the startup benchmark report and hold it n seconds. 0 by default, which no longer prints it at all — see the Done entry on the boot screen |
 | `HGT_SIZE`, `COL_SIZE` | map resolutions, powers of two from 256 to 1024 |
 | `make release` | not a knob but a target: the `PROFILE=0` disk, into `release/sar-latest.d81` |
 
@@ -111,10 +112,12 @@ was measured, not guessed.
 **And the game layer is at a natural stopping point too**, called on 12 Aug
 2026: two missions, four ways for a flight to end, wind, battery and weather,
 all of it driven from the mission table rather than from branches. The shape
-is proven — a third mission is data plus a sprite sheet. What is actually
-scarce now is not ideas but *memory*: about 800 bytes of the 32K and 80 of the
-low free RAM, with the easy reclaims already spent. Read the Open note on
-`cstack` before starting anything large.
+is proven — a third mission is data plus a sprite sheet. Memory was the scarce
+thing here — about 800 bytes of the 32K — and **dropping `printf` on 15 Aug
+2026 gave 6.5 KB of it back**: the 32K is 77.5% used and there are 7363 bytes
+free from `$833D` up. The low free RAM at `$1600` is unchanged and still tight
+at 80 bytes spare. Read the Open note on `cstack` before starting anything
+large.
 
 - **The keyboard controls are finished.** Called on 13 Aug 2026, flying them:
   WASD, RF, QE and the three speed modes are the drone's and they feel right.
@@ -307,6 +310,36 @@ Do not re-litigate these without new measurements.
 
 ## Done
 
+- **The loading screen is the title screen**, done 15 Aug 2026. Black border
+  and background, `SEARCH AND RESCUE` centred in white with the subtitle under
+  it, and `LOADING` with a progress bar on the row `PRESS SPACE` will occupy;
+  the load finishing takes those two rows away and the game's own display puts
+  the prompt in their place. The title lands on the same pixels either side of
+  the handover — checked by diffing screenshots, which differ only in the two
+  colours, the C65's default white and grey against the map palette's.
+  Three things made it possible, none of them about the words:
+  - **forty columns before the disk is read.** `VICIV.ctrlb &= ~0x80` is a
+    VIC-III register the ROM has already unlocked, and it is the only display
+    register that may be touched before loading — the rest of `vic4_init`
+    leaves the Kernal unable to open a file. Verified by booting: both maps
+    load and the title comes up.
+  - **nothing prints.** The ROM's screen editor can only add to the bottom of
+    the screen, so it can neither centre a line nor take one away. The boot
+    screen writes the C65's 1000 bytes of screen RAM at `$0800` directly, with
+    the colour at the same index into colour RAM. That also retired the
+    invisible-block bug for good: 160 stored is the solid block that 160
+    printed never was.
+  - **the benchmark report only prints when asked.** `REPORT=0` used to print
+    the table and let it scroll past; it would now be scribbled over a title
+    screen, so `main` calls `profile_report` under `#if REPORT_SECONDS` and
+    hands the ROM its eighty columns back first. `profread` reads the same
+    figures out of memory.
+
+  And it paid for itself: nothing in a default build references `printf` any
+  more, the whole formatting machinery drops out at link time, and the PRG went
+  from 26728 bytes to 20219. `vic4_init` now leaves the display in text mode
+  rather than on an unwritten framebuffer, so there is no flash of garbage
+  between the two screens either.
 - **The generator's ceiling is 65535, not 65536** -- `stretch` clipped to ONE,
   which is seventeen bits and wraps in the uint16 the device stores a field
   value in. Clipping a step lower costs a sixth of a hundredth of a height unit

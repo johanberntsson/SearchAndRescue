@@ -62,9 +62,9 @@ nothing headless can press one; without it the dump has no frames in it and
 way a headless run ever reaches the second map.
 
 Budget about ten seconds before the title in xemu: two of ROM boot and the
-game's own 27 KB, then both maps at 186 KB crunched. The startup benchmark
-report no longer holds the boot up -- `REPORT_SECONDS` is 0; `make REPORT=120`
-to read it at the machine.
+game's own 20 KB, then both maps at 186 KB crunched. The startup benchmark
+report no longer holds the boot up -- `REPORT_SECONDS` is 0, which now means
+it does not print either; `make REPORT=120` to read it at the machine.
 **Kill the run by PID and wait for it**, not with a bare `sleep` in the same
 command: a wait that races the emulator reads the *previous* run's screenshot,
 which looks exactly like a change that did not take.
@@ -178,6 +178,12 @@ room came from, in the order it was taken:
   costs a kilobyte of bank 1 and nothing of the 32K.
 - **the renderer's three per-ray tables to `$1600-$1EFF`** (800 bytes at 160
   rays, 1600 at 320). See the free space note below.
+- **`printf` itself, 6.5 KB**, which dwarfs every line above it. The boot
+  screen was the last thing calling it; now that the loading bar is written
+  into screen RAM and the benchmark report only prints when `REPORT_SECONDS`
+  asks for it, a default build has no reference to `printf` at all and the
+  linker drops the whole formatting machinery. 26728 bytes of PRG to 20219.
+  See The game for what replaced it.
 
 Next after that would be the 512-byte bounce buffer itself, or the sprite's
 1028.
@@ -388,25 +394,59 @@ unable to open a file at all:
   `CPU_PORTDDR`, `VFAST` and the sprite enable were each ruled out on their
   own run — because loading has to come first for the timer reason anyway.
 
-So the sequence is: loading, then the benchmarks, then the display. That is
-why the loading bar is *printed* on the ROM's text screen rather than drawn on
-the game's own, and why it only ever grows one block at a time — printing is
-the only tool available on a screen there is no cursor addressing for.
+So the sequence is: loading, then the benchmarks, then the display. The
+loading screen is therefore the ROM's text display and not the game's — but
+it is dressed to look exactly like the title screen that follows it, and that
+took giving up on printing.
 
-**The bar's block is `#`, and it is not 160 because 160 prints nothing.** The
-shifted space is a solid block on a CBM screen and was the obvious choice; it
-went out through `putchar` for months and *nothing appeared*, so every boot
-drew thirty invisible characters and the machine looked dead for the whole
-load. Calypsi's output path passes printable ASCII through both `putchar` and
-`printf("%c")` and drops 160 through both. If something printed to the boot
-screen does not turn up, print a row of `#` next to it before suspecting
-anything else — one probe settled this after two wrong guesses. And **flush
-after it**: the bar has no newline in it, and its whole value is being seen
-before the thing it reports on has finished. The
-title screen proper comes after `vic4_init`, in the game's own font and
-palette. **Once the display is up, nothing may `printf`**: the Kernal's screen
-editor writes colour RAM, and the game is using it. `load_resources` reports
-failures through `loader_error()` instead.
+**The boot screen writes screen RAM directly, and nothing in it prints.**
+`printf` goes through the ROM's screen editor, which can only add to the
+bottom of the screen: it cannot put a word on row 8, cannot centre one, and
+cannot take a line away again — so a bar it had drawn could never be cleared.
+Writing the screen is not a hard thing to do instead. The C65's is **1000
+bytes at `$0800`**, one screen code a cell, with that cell's colour at the
+same index into colour RAM (`$FF80000`, which is the `$1F800` alias the game
+uses later). `screens.c`'s `boot_cell` is those two stores.
+
+**`VICIV.ctrlb &= ~0x80` puts the boot screen in forty columns**, which is
+what makes it the same shape as the title screen: same rows, same columns,
+same two lines of text, so `SEARCH AND RESCUE` does not move by a pixel when
+the game's own display takes over. It is a VIC-III register the ROM has
+already unlocked and it is the **only** display register touched before
+loading — the rest of `vic4_init` still has to wait, because something in it
+leaves the Kernal unable to open a file. Verified by booting: both maps load
+and the title comes up.
+
+The editor goes on believing the display is eighty wide, which costs nothing
+while nothing prints. The one thing that still does is the startup benchmark
+report, so `screens_boot_restore()` hands the eighty columns back before it
+(`main.c`, under `#if REPORT_SECONDS`) — and **the report is not printed at
+all when `REPORT_SECONDS` is 0**, because scribbling a table over a title
+screen nobody asked to read is worse than not printing it. `profread` takes
+the same figures out of memory either way.
+
+That also **freed 6.5 KB of the 32 K**: with nothing in the default build
+calling `printf`, the whole formatting machinery drops out at link time and
+the PRG went from 26728 bytes to 20219. A `REPORT=120` build pulls it back in
+and still fits.
+
+The old note here said the bar's block had to be `#` because *160 prints
+nothing* — the shifted space went out through `putchar` for months and drew
+thirty invisible characters on every boot. That is still true of Calypsi's
+output path, and worth knowing if anything is ever printed again. It stopped
+mattering the moment the bar became a store: **160 written into screen RAM is
+the solid block it always should have been.**
+
+**Once the game's display is up, nothing may `printf`** whatever the boot did:
+the Kernal's screen editor writes colour RAM, and the game is using it.
+`load_resources` reports failures through `loader_error()`, and
+`screens_load_failed` writes them onto the boot screen where the bar was.
+
+**`vic4_init` leaves the display in text mode, not on the framebuffer.** Bank
+1 has never been written when it runs, so showing the 3D view there would put
+a screenful of uninitialised RAM between the boot screen and the title.
+Everything that wants the view asks for it with `vic4_view_mode`, which
+`flight()` already did.
 
 Controls, which follow a real drone's (see `documentation/real-drones/`):
 `W`/`S` forward and back, `A`/`D` yaw, `R`/`F` climb and descend, `Q`/`E`
@@ -949,14 +989,15 @@ longer on hardware than under xemu -- a real drive against an instant one.
 
 Real hardware has no `-dumpmem`, so `profile_report` prints the same memory
 table to the Kernal's text screen at startup and waits for a key. **The wait is
-`REPORT_SECONDS` and it defaults to 0**, because with the map generator gone
-the boot is 24 seconds in xemu and a twenty-second pause was most of it — the
-table still prints, it just scrolls past. `make REPORT=120` at the machine,
-where that table is the only way to read the attic RAM figures. It is boxed in on
-both sides: after the resources, because `profile_init` takes the timers the
-Kernal reads a disk with, and before `vic4_init`, which takes the text screen
-away. The figures come out identical to `profread`'s, so either route can be
-trusted.
+`REPORT_SECONDS` and it defaults to 0 — and at 0 the report is not printed at
+all now**, because the boot screen is a title screen a table would be scribbled
+over, and because not calling it is what lets `printf` drop out of the link
+entirely (6.5 KB; see the 32 KB note). `make REPORT=120` at the machine, where
+that table is the only way to read the attic RAM figures: it restores the ROM's
+eighty columns first, prints, and waits. It is boxed in on both sides: after
+the resources, because `profile_init` takes the timers the Kernal reads a disk
+with, and before `vic4_init`, which takes the text screen away. The figures
+come out identical to `profread`'s, so either route can be trusted.
 
 **`int` is 16 bits, and a constant expression will overflow it silently.**
 `(uint16_t)heading * 360 / 256` in the panel read 192 degrees as 14, and

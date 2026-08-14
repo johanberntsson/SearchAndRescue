@@ -226,7 +226,11 @@ void vic4_init(void)
   for (i = 0; i < SCREEN_ROWS * FB_COLS * 2; i++)
     cram[i] = 0;
 
-  build_screen_tables();
+  // Text, not the framebuffer tiles: bank 1 has never been written at this
+  // point, so showing the 3D view here would put a screenful of whatever was
+  // in RAM between the boot screen and the title. Every caller that wants the
+  // view asks for it with vic4_view_mode.
+  vic4_text_mode();
   vic4_show(0);
 }
 
