@@ -16,7 +16,7 @@ ways, all of them the same debrief page with different words on it.
 
 **Both maps are generated from a paragraph of YAML on the PC and both are
 resident at once**, which one hand-drawn map pair could never be: two generated maps are
-487 KB crunched against 661 KB for one drawn one, and switching between them
+186 KB crunched against 661 KB for one drawn one, and switching between them
 costs 512 bytes of plane table. See Resources.
 
 Underneath is the voxel engine at about 12.5 fps — a 320x152 3D view over a
@@ -33,7 +33,7 @@ make PROFILE=0    # without the per-column instrumentation; use this for timing
 make FLYNOW=1     # skip the title and menus, launch straight into mission 1
 make FLYNOW=2     # ... or mission 2, the only headless way to reach its map
 make REPORT=n     # hold the startup benchmark report n seconds; 0 by default
-make HGT_SIZE=1024 COL_SIZE=512     # map resolutions, 256..1024
+make COL_SIZE=1024                  # the finer colourmap; sizes are 256..1024
 make release      # PROFILE=0 disk, copied to release/sar-latest.d81
 make clean
 ```
@@ -61,9 +61,10 @@ nothing headless can press one; without it the dump has no frames in it and
 `profread` says so. **`FLYNOW=2` is the same for mission two**, and the only
 way a headless run ever reaches the second map.
 
-Budget about 50 seconds before the first frame: roughly twenty of loading —
-both maps, 487 KB crunched — and then the startup benchmark report, which
-holds for `REPORT_SECONDS` (20 by default, `make REPORT=n` to change it).
+Budget about ten seconds before the title in xemu: two of ROM boot and the
+game's own 27 KB, then both maps at 186 KB crunched. The startup benchmark
+report no longer holds the boot up -- `REPORT_SECONDS` is 0; `make REPORT=120`
+to read it at the machine.
 **Kill the run by PID and wait for it**, not with a bare `sleep` in the same
 command: a wait that races the emulator reads the *previous* run's screenshot,
 which looks exactly like a change that did not take.
@@ -708,10 +709,12 @@ the same island. The game holds its missions as a C table in `src/mission.c`;
 neither `map.bin` (that table's map-side counterpart) nor `mission.bin` is
 written yet.
 
-**Several maps fit only because they are generated.** Two of them are 487 KB
+**Several maps fit only because they are generated.** Two of them are 186 KB
 crunched against 661 KB for the one hand-drawn pair, so a disk that used to
-hold one world now holds two with 270 KB spare, and loading both takes about
-twenty seconds — less than the single drawn map took.
+hold one world now holds two with **2314 blocks free** — room for several more
+at about 90 KB each — and loading both takes about eight seconds in xemu and
+25 off a floppy. Two thirds of that reduction is `COL_SIZE`: see the note under
+Performance about why 512 is the default.
 
 **Switching between them is 512 bytes of table.** A map's whole location lives
 in the renderer's plane lookups: the march reads a bank byte out of

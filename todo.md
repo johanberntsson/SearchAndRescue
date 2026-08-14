@@ -101,6 +101,13 @@ it started. The optimisation ideas left in Open below are there so they are
 not rediscovered from scratch, **not** as a queue to work through — the next
 work is the game, not another few percent.
 
+**The boot is a ten-second boot now**, called on 14 Aug 2026: the on-device
+map generator was built, measured and removed (see the closed item below), the
+benchmark report no longer holds, and `COL_SIZE` is 512. What is left of the
+boot is 186 KB of maps -- about 25 seconds off a floppy, 12 off SD, 8 in xemu.
+There is no obvious next second to win: the PRG load is about one second and
+was measured, not guessed.
+
 **And the game layer is at a natural stopping point too**, called on 12 Aug
 2026: two missions, four ways for a flight to end, wind, battery and weather,
 all of it driven from the mission table rather than from branches. The shape
@@ -166,7 +173,7 @@ low free RAM, with the easy reclaims already spent. Read the Open note on
   buffer. Sorting them and snapshotting at the nearest is probably enough.
 - **A third map, or a third mission.** Both are cheap now: a map is a YAML
   file, a line in the Makefile's `MAP_YAMLS` and `MAP_COUNT` in `loader.h`
-  (there is a spare 2 MB attic slot and 270 KB spare on the disk), and a
+  (there is a spare 2 MB attic slot and 2314 blocks free on the disk), and a
   mission is a table entry naming one. What is *not* cheap is a third figure —
   see the palette budget in Resources.
 - ~~On-device map generation~~ **closed on 14 Aug 2026: built, verified,
@@ -351,8 +358,9 @@ still true of the machine.
 - **Two maps on one disk, one per mission.** Mission one is flown over
   `maps/island.yaml` and mission two over `maps/plains.yaml`, both generated,
   both resident in attic RAM at once. **This was impossible with a drawn map**:
-  the hand-drawn pair is 661 KB crunched and two generated maps are 487 KB, so
-  a disk that held one world now holds two with 270 KB spare — and loading
+  the hand-drawn pair is 661 KB crunched and two generated maps are 186 KB at
+  the shipping resolution, so a disk that held one world now holds two with
+  2314 blocks free — and loading
   both takes about twenty seconds, less than the one drawn map took. Switching
   is 512 bytes of plane table, because that is where a map's location lives;
   `map_use()` adds the palette its climate wants and the panel's overview.

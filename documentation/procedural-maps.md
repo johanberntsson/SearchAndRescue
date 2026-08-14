@@ -5,13 +5,18 @@ height/colour map pair, `tools/preview.py` flies it on the PC with the game's
 own renderer, and **the disk carries two of them** — mission one over
 `maps/island.yaml` and mission two over `maps/plains.yaml`, both resident in
 attic RAM at once. That is the thing the whole exercise was for: two generated
-maps are 487 KB crunched against 661 KB for the one hand-drawn pair, so a disk
+maps are 186 KB crunched at the shipping resolution against 661 KB for the one
+hand-drawn pair, so a disk
 that held one world now holds two with room to spare. `mission.bin` is still
 not written; the hand-drawn pair in `resources/` is no longer built into
 anything. See "As built" at the end for what the tools do and what was learned
 making them.
 
-This covers **build-time map generation only**. Runtime (on-device) generation
+This covers **build-time map generation**, which is how the maps are made.
+Runtime (on-device) generation was built and measured and is not used -- see
+`documentation/on-device-maps-experiment.md` for the arithmetic that ended it.
+The forward-looking notes about it further down are left as they were written.
+Runtime generation
 is an explicit future possibility, not part of this phase — see "Out of scope"
 below.
 
@@ -250,7 +255,7 @@ That is exactly what `maps/*.yaml` holds today, and nothing else: the files in
 is also precisely the input an on-device generator needs, and the reason the
 interface is worth having: **if generation moves onto the MEGA65, only what
 *writes* the maps changes.** A stage-one generator reads `map.bin` and never
-needs to know that missions exist. See `documentation/on-device-maps.md`.
+needs to know that missions exist. See `documentation/on-device-maps-experiment.md`.
 
 ### `mission.bin` — what is flown, and where
 
@@ -282,7 +287,7 @@ doesn't foreclose it:
 portable in principle now — it is written in the machine's own arithmetic:
 Q0.16 integers, reciprocals instead of divides, tables instead of
 transcendentals, histograms instead of sorts, and a xorshift where numpy's
-PCG64 was. See `documentation/on-device-maps.md`. What follows is the note that
+PCG64 was. See `documentation/on-device-maps-experiment.md`. What follows is the note that
 asked for it, kept because the reasoning is still what governs anything added
 to the generator from here.
 
@@ -319,7 +324,7 @@ to the generator from here.
   if the build-time tool proves out and terrain variety turns out to
   matter for the game — deferred, not designed yet, but see above for
   what to keep in mind now so it stays feasible later. **Costed since:
-  `documentation/on-device-maps.md` puts it at 20-30 seconds against the
+  `documentation/on-device-maps-experiment.md` estimated 20-30 seconds against the
   minute the game currently spends loading a map off the disk, and says
   which four parts are actually hard.**
 - Live/interactive map editing inside the Python previewer.

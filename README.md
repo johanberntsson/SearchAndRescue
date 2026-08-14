@@ -35,8 +35,9 @@ generated worlds, both on the one disk**.
 - **Two missions over two different worlds, both on the one disk** — the first
   over a temperate island, the second over hot plains in the rain. Both are
   generated from a paragraph of YAML and resident in attic RAM at once, which
-  a hand-drawn map pair could never be: two generated maps come to 487 KB
-  crunched against 661 KB for one drawn one
+  a hand-drawn map pair could never be: two generated maps come to 186 KB
+  crunched against 661 KB for one drawn one, leaving room on the disk for
+  several more
 - Two software billboards — a lost hiker waving from the step pyramid on the
   island's northern headland at 46.687N 8.106E, and a casualty and their
   friend on the lake shore at 46.658N 8.149E — drawn over the finished terrain: scaled by distance, and clipped
@@ -52,6 +53,9 @@ generated worlds, both on the one disk**.
 - Weather per mission: mission two flies under an overcast sky with rain drawn
   over the finished picture, leaning as it falls. It costs 0.68 ms a frame,
   because the sky is sixteen palette entries rather than any pixels at all
+- **Boots in about ten seconds** in the emulator, twelve off SD and 25 off a
+  floppy, nearly all of it reading the two maps. A progress bar grows across
+  the load so the machine can be seen to be alive
 
 **The maps are generated rather than drawn, and that is what puts two of them
 on the disk.** `tools/genmap.py` turns a short YAML description — island or mountains
@@ -121,7 +125,8 @@ You will need:
 make run                         # build build/sar.d81 and boot it in the emulator
 make PROFILE=0                   # without the instrumentation; use this for timing
 make FLYNOW=1                    # skip the menus and fly mission 1 (or FLYNOW=2)
-make HGT_SIZE=1024 COL_SIZE=512  # map resolutions, powers of two from 256 to 1024
+make COL_SIZE=1024               # the finer colourmap: better, and 40 s more to load
+make REPORT=120                  # hold the startup benchmark report, to read it
 make release                     # the disk to hand out, into release/sar-latest.d81
 make clean
 ```
