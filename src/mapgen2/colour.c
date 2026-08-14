@@ -214,6 +214,7 @@ __zpage uint32_t recip_slope, recip_sun, recip_top;
 // the scratch it works in. Declared here because zero page is allocated by the
 // C compiler and the assembler only externs what it is given.
 extern void cl_dither(void);
+extern void cl_sun(void);
 
 __zpage uint8_t cl_ox0, cl_ox1;
 __zpage uint16_t cl_wx;
@@ -222,6 +223,16 @@ __zpage uint32_t cl_v;
 
 uint32_t cl_amps[2];
 int32_t cl_dith[2];
+
+// The sun's half of the same contract. Its scratch is the dither's -- zero
+// page is 91% full and the two are never live at once.
+__zpage uint16_t cl_hl, cl_hr;
+__zpage uint8_t cl_neg;
+
+uint32_t cl_sunref;
+uint16_t cl_sunsat;
+const uint16_t *cl_tanhp;
+int32_t cl_sunv;
 
 // The C version it replaces, kept for reference and no longer called: it is
 // what dither_asm.s was written from, and the thing to read first if the
@@ -285,6 +296,7 @@ static uint32_t lookup32(const uint32_t *tab, uint32_t x)
   return lo + mulhi32(hi - lo, w);
 }
 
+#if 0
 static uint16_t lookup16(const uint16_t *tab, uint32_t x)
 {
   uint16_t i, w;
@@ -296,6 +308,7 @@ static uint16_t lookup16(const uint16_t *tab, uint32_t x)
   w <<= 8;                                  // up in a word rather than in four
   return lerp16(tab[i], tab[i < 256 ? i + 1 : 256], w);
 }
+#endif
 
 // fixed.sqrt in C: the same normalised table read the mask's assembly does,
 // for the one caller that is not in a per-pixel loop tight enough to need it
@@ -324,6 +337,9 @@ static uint32_t sqrt16(uint32_t x32)
   return (uint32_t)(sqrt_tab[i] + mulhi(sqrt_delta[i], w)) >> k;
 }
 
+// Retired to assembly with the dither, and kept for the same reason: this is
+// what src/mapgen2/colour_asm.s was written from.
+#if 0
 // tanh of a Q16.16 value as a signed Q0.16, odd about zero -- fixed.tanh.
 static int32_t tanh16(int32_t x)
 {
@@ -389,6 +405,7 @@ static uint16_t sunlight_at(int32_t dx)
     return (uint16_t)(t >> 1);              // // 2, and t is never negative
   }
 }
+#endif
 
 uint32_t colour_build(void)
 {
@@ -438,6 +455,9 @@ uint32_t colour_build(void)
   recip_sun = recip32(SUN_REF);
   cl_amps[0] = MOTTLE;
   cl_amps[1] = SUN_MOTTLE;
+  cl_sunref = SUN_REF;
+  cl_sunsat = 4 * SUN_REF;
+  cl_tanhp = tanh_tab;
 
   // The two dither lattices, in genmap.py's draw order: the ramp's, then the
   // sun's. Over the histogram, which has just been read for the last time.
@@ -512,9 +532,12 @@ uint32_t colour_build(void)
       } else {
         uint16_t xl = (uint16_t)(x - 1) & SIZE_MASK;
         uint16_t xr = (uint16_t)(x + 1) & SIZE_MASK;
-        int32_t ddx = (int32_t)cl_mid[xr] - cl_mid[xl];
-        uint32_t lit = sunlight_at(ddx);
-        int32_t sun = (int32_t)mul32(lit, (uint32_t)SHADES);
+        int32_t sun;
+
+        cl_hl = cl_mid[xl];
+        cl_hr = cl_mid[xr];
+        cl_sun();
+        sun = cl_sunv;
 
         if (cl_bt[x] != DRY) {
           uint16_t dressed = (uint16_t)(sun >> FRACBITS);
@@ -525,6 +548,7 @@ uint32_t colour_build(void)
           idx = (uint16_t)(STONE_BASE + (course << 2) + (course << 1)
                            + dressed);
         } else {
+          int32_t ddx = (int32_t)cl_hr - cl_hl;   // the two the sun just read
           int32_t ddy = (int32_t)cl_dn[x] - cl_up[x];
           uint16_t hh = cl_mid[x];
           uint16_t ix0 = x >> DITHER_SH;
