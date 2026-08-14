@@ -668,6 +668,29 @@ units at a time, fifty times a second — so opening the throttle spools the
 motors up over about two thirds of a second instead of stepping. A launch
 starts the motors cold at 30 Hz and they are heard to come up.
 
+- **it starts by pulling the gates down, and that is not a formality.** The
+  first version of this made exactly one click at launch and then no sound at
+  all for the whole flight. Two SID rules were behind it, either of which is
+  enough on its own:
+  - **an envelope only triggers on a 0 → 1 edge of the gate bit.** The tune
+    leaves all three of its voices gated on — read straight out of the
+    player's own record of what it last wrote — and `music_set(0)` took only
+    the master volume away. So the gates were already high, and writing a
+    waveform with the gate bit set changes the tone without ever starting a
+    note.
+  - **raising the sustain level during the sustain phase drains the envelope
+    to zero.** That phase holds only while the counter *equals* the sustain
+    register; anything else keeps it falling. The tune's bass and lead sit at
+    sustain 10 and 11, the engine asks for 14 and 12, and with no gate edge to
+    start a fresh attack both voices simply drained away. The click was the
+    master volume coming back up over envelopes on their way to nothing.
+
+  `gate_low()` clears every register on both SIDs and holds them low for a
+  frame — the same hard restart the tune's own player does before every note —
+  which also puts `$D417` back, where a voice routed into a filter with no
+  filter mode selected in `$D418` is a third way to write a note and hear
+  nothing. `music_set(0)` drops its gates now too; the engine does not rely on
+  that, but leaving them up was the wrong thing for *stop* to mean.
 - **it is written in assembly because it runs in an interrupt.** A C function
   called from one would use the same zero page scratch and software stack as
   whatever the main program was in the middle of, and the renderer is in the
@@ -701,6 +724,17 @@ cycles fifty times a second, four hundredths of one per cent of the CPU.
 (Frame rates between *unpinned* runs differ by a couple of tenths because the
 wind blows the camera somewhere else; that is the noise floor, and it is what
 made pinning the seed necessary to say anything at all.)
+
+**Nothing here can be heard from a headless run, and one readback that looks
+like it would help does not.** `$D41B` and `$D41C` are the only SID registers
+that read back — the voice 3 oscillator and its envelope — and **xemu returns
+garbage for both**: three reads a few microseconds apart came back `1d 7b 8a`,
+which no oscillator at 50 Hz can do. An hour went into an A/B test built on
+those numbers before that showed up. What *is* trustworthy is ordinary RAM:
+`engine_freq` walking to its target proves the interrupt half is running, and
+the tune's `v_wave` proves what state it left the gates in. Reason from those
+and from the SID's documented behaviour; do not trust a register readback in
+the emulator.
 
 ## The billboards
 
@@ -1395,6 +1429,15 @@ unable to open a file; and nothing may `printf` once the display is up,
 because the ROM's screen editor writes the colour RAM the game is using. Both
 are written up under The game, and both look like a corrupt disk rather than
 an ordering mistake.
+
+**A SID that is silent has usually not been gated.** An envelope triggers only
+on a 0 → 1 edge of the gate bit, and raising the sustain level while a voice
+is already in its sustain phase drains that voice to zero rather than lifting
+it. Anything that takes the SID over has to pull the gates down and hold them
+there for a frame first, whatever the last owner left behind — see the engine
+note under Sound, where getting this wrong cost a flight's worth of silence
+and a click. `$D41B`/`$D41C` look like the way to check and are not: xemu
+returns garbage for both.
 
 **A measurement that gets interrupted is not a measurement.**
 `profile_calibrate` times sixteen raster lines and `profile_bench` times tight

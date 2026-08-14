@@ -2,10 +2,13 @@
 
 #include "audio.h"
 
-// Both SIDs' volume registers; the player writes both (music/player.asm), so
-// silence takes two writes.
-#define SID_VOLUME  (*(volatile uint8_t *)(SID_BASE + 0x18))
-#define SID2_VOLUME (*(volatile uint8_t *)(SID2_BASE + 0x18))
+// Everything goes to both SIDs, one per stereo channel; the player does the
+// same (music/player.asm).
+static void sid_put(uint8_t reg, uint8_t value)
+{
+  ((volatile uint8_t *)SID_BASE)[reg] = value;
+  ((volatile uint8_t *)SID2_BASE)[reg] = value;
+}
 
 // From the tune, via tools/acme2calypsi.py.
 void music_init(void);
@@ -32,6 +35,18 @@ void music_set(uint8_t on)
   // Stop the interrupt writing the SID before taking the volume away, or the
   // frame in between would leave a note ringing under a silent mixer.
   music_enabled = 0;
-  SID_VOLUME = 0;
-  SID2_VOLUME = 0;
+
+  // Gates down, not just the volume. A silent SID with its gates still up is
+  // a trap for whatever plays next: an envelope only triggers on a 0 -> 1
+  // edge, so the next thing to write a waveform with the gate bit set gets no
+  // note at all. That is exactly how the engine came out silent. engine.c
+  // does not rely on this -- it pulls the gates down itself -- but leaving
+  // them up was the wrong thing for `stop` to mean.
+  {
+    uint8_t v;
+
+    for (v = 0; v < 3; v++)
+      sid_put((uint8_t)(v * 7 + 4), 0);
+  }
+  sid_put(0x18, 0);
 }

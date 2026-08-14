@@ -332,6 +332,14 @@ Do not re-litigate these without new measurements.
   - **every number was chosen without hearing it**, so all of them are named
     and gathered at the top of `engine.c`. That block is what to change if it
     sounds wrong on the machine.
+  - **it was silent at first, and the cause is worth keeping.** A SID envelope
+    triggers only on a 0 → 1 gate edge, and the tune leaves its voices gated
+    on; on top of that, raising the sustain level during the sustain phase
+    drains a voice to zero instead of lifting it. So the engine wrote its
+    voices over the top of the tune's and got one click and nothing else.
+    `gate_low()` pulls both SIDs down for a frame first. The readback that
+    looks like it would have caught this, `$D41B`/`$D41C`, returns garbage in
+    xemu — an A/B test built on it wasted an hour.
 
   Costs 578 bytes and nothing per frame: flown twice over the same ground with
   the wind seed pinned, armed and not, 11.7 fps both times. The interrupt

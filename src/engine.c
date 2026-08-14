@@ -1,5 +1,7 @@
 #include "engine.h"
 
+#include <mega65.h>
+
 #include "audio.h"
 
 // A SID frequency register value for a pitch in Hz on a PAL machine, where
@@ -36,11 +38,69 @@ uint8_t engine_on;       // whether the interrupt does anything
 uint16_t engine_freq;    // where the note is now; the interrupt owns it
 uint16_t engine_target;  // where it should be; set below, once a frame
 
+// From src/engine_asm.s. Called once here as well as from the interrupt, to
+// get a frequency into the voices before their gates open.
+void engine_tick(void);
+
 // Every write goes to both SIDs: one per stereo channel. See audio.h.
 static void sid_put(uint8_t reg, uint8_t value)
 {
   ((volatile uint8_t *)SID_BASE)[reg] = value;
   ((volatile uint8_t *)SID2_BASE)[reg] = value;
+}
+
+// Clear both SIDs and hold the gates low for about a frame.
+//
+// **This is what makes the engine audible at all**, and the first version
+// without it produced exactly one click at launch and then silence for the
+// whole flight. Two SID rules meet here, and either one alone is enough to
+// kill the note:
+//
+//   - **an envelope only triggers on a 0 -> 1 edge of the gate bit.** The
+//     tune leaves all three of its voices gated ON -- read out of the
+//     player's own record of what it last wrote -- and music_set(0) used to
+//     take only the master volume away. So the gates were still high, and
+//     writing a waveform with the gate bit set changes the tone without ever
+//     starting a note.
+//   - **raising the sustain level during the sustain phase drains the
+//     envelope to zero.** The phase holds only while the counter EQUALS the
+//     sustain register; anything else keeps it falling. The tune's bass and
+//     lead sit at sustain 10 and 11, the engine asks for 14 and 12, and with
+//     no gate edge to start a fresh attack both voices simply drained away.
+//     That is the click: the volume coming back up over envelopes on their
+//     way to nothing.
+//
+// Clearing the whole block rather than just the gates also puts $D417 back,
+// which routes voices into the filter. A voice filtered with no filter mode
+// selected in $D418 is a third way to write a note and hear nothing.
+//
+// The wait is the hard restart the tune's own player does before every note.
+// With SR zeroed the release is at its fastest, so a frame is far more than
+// the envelopes need to reach zero before they are asked to attack.
+static void gate_low(void)
+{
+  uint8_t r;
+  uint16_t lines = 320;  // a PAL frame is 312
+  uint8_t last;
+
+  for (r = 0; r <= 0x18; r++)
+    sid_put(r, 0);
+
+  last = VICII.rasterline;
+  while (lines) {
+    uint8_t now;
+    uint16_t guard = 0;
+
+    // Bounded on purpose. A raster that never moves would otherwise hang the
+    // game on the launch of every flight, which is a far worse fault than a
+    // missing engine note; the guard wraps and gives up on the line instead.
+    do {
+      now = VICII.rasterline;
+    } while (now == last && ++guard);
+
+    last = now;
+    lines--;
+  }
 }
 
 // Waveform and gate. Sawtooth for the note, a narrow pulse beside it for the
@@ -62,6 +122,17 @@ void engine_start(void)
 
   engine_freq = COLD_HZ;
   engine_target = idle_hz[1];
+
+  // Whoever had the SID before this leaves its voices gated on, so the gates
+  // have to fall before they can rise. See gate_low: without it the envelopes
+  // never trigger and a flight is silent.
+  gate_low();
+
+  // A pitch in the voices before their gates open, or the first twentieth of
+  // a second of the note is at frequency zero. This is the same routine the
+  // interrupt runs, and it is safe to call from here: leaf assembly with no
+  // stack or zero page of its own.
+  engine_tick();
 
   for (v = 0; v < 3; v++) {
     uint8_t base = (uint8_t)(v * 7);
