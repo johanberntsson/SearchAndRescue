@@ -60,6 +60,8 @@ generated worlds, both on the one disk**.
   whatever the sticks are doing, the same way the battery drains faster there.
   It costs nothing measurable: the same flight with it armed and without runs
   at the same frame rate
+- **`M` mutes whatever you are listening to** — the tune on a page, the motors
+  in the air. Two settings rather than one, both remembered for the session
 - Weather per mission: mission two flies under an overcast sky with rain drawn
   over the finished picture, leaning as it falls. It costs 0.68 ms a frame,
   because the sky is sixteen palette entries rather than any pixels at all
@@ -165,6 +167,7 @@ After the title screen and the briefing, `SPACE` launches the flight.
 | `SPACE` | file a report, and go on from any screen |
 | `RETURN` | release the cargo |
 | `RUN/STOP` | abandon the mission, and back out of the list or a briefing |
+| `M` | mute: the engine in the air, the music on every other screen. Two settings, both remembered |
 
 **Sport mode has no terrain following.** In the two slower modes the drone
 refuses to fly closer to the ground than it should, exactly as before; in sport

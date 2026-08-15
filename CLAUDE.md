@@ -194,7 +194,7 @@ room came from, in the order it was taken:
   it.
 
 **And the sound spent 3235 of it back** — 2652 for the tune and 583 for the
-engine note — taking the program area to 78.0% with 7196 bytes free. That was
+engine note — taking the program area to 79.4% with 6746 bytes free. That was
 the point of the reclaim.
 
 Next after that would be the 512-byte bounce buffer itself, or the sprite's
@@ -464,7 +464,8 @@ Controls, which follow a real drone's (see `documentation/real-drones/`):
 `W`/`S` forward and back, `A`/`D` yaw, `R`/`F` climb and descend, `Q`/`E`
 gimbal up and down, `1`/`2`/`3` the speed limiter (cinematic, normal, sport),
 `SPACE` to file a report, `RETURN` to release the cargo, `RUN/STOP` to abandon
-the mission.
+the mission, and `M` to mute the engine — see Sound, where the same key mutes
+the tune on every screen that is not a flight.
 
 **Sport mode has no terrain following, and that is the third way to fail.**
 `fly` has always clamped the camera to `GROUND_GAP` above the ground; now the
@@ -580,6 +581,15 @@ Two things make a noise and never at the same time: a **tune**, which belongs
 to the menus, and an **engine note**, which belongs to the flight. Both hang
 off one interrupt.
 
+**`M` mutes whatever the place you are in sounds like** — the tune on a page,
+the motors in the air. Two settings and not one, because wanting a quiet
+flight and wanting quiet menus are different wants; both live in `main.c` and
+are kept for the whole session, so muting once is enough. The menus carry the
+state on a line under the prompt (`screens_music`); the flight has no room for
+one and says it on the panel's message row at the moment the key is pressed,
+the way arming sport does. `M` is why `input.c` scans a fifth matrix row —
+row 4, `$EF`, bit 4.
+
 **The interrupt chains rather than taking the vector.** `src/audio_irq.s`
 saves `$0314` and jumps to it when it is done, so the ROM's raster compare,
 keyboard scan and jiffy clock go on exactly as before and nothing here has to
@@ -649,7 +659,7 @@ else; **ACME is needed only to check it**.
 
 **It costs 2652 bytes of the 32 K** — player, tune and all — which is what the
 `printf` reclaim was for. With the engine note's 583 beside it the program
-area is 78.0% used, with 7196 bytes still free.
+area is 79.4% used, with 6746 bytes still free.
 
 **The music is running while the resources load**, which is the one place it
 touches something timing-sensitive. It is fine in the emulator and should be
@@ -711,7 +721,14 @@ starts the motors cold at 30 Hz and they are heard to come up.
   why every one of them is named and gathered at the top of `engine.c`:
   `idle_hz`, `move_hz`, `CLIMB_HZ`, `DESCEND_HZ`, `DETUNE` and `RATE` are the
   whole of what a flight sounds like. `RATE` and `DETUNE` are spelled twice,
-  in the C and in the assembly; keep them in step.
+  in the C and in the assembly; keep them in step. **`ENGINE_VOLUME` is 7 of
+  the SID's 15**, halved on 15 Aug 2026 after hearing the first version: full
+  was too loud to fly under. The tune keeps its own level, since the two never
+  sound at once and each sets what it wants as it starts.
+- **muting mid-flight resumes where the throttle left it**, not from cold.
+  `engine_start(heard)` is the launch, and a muted one never touches the SID
+  at all rather than making a click and falling silent; `engine_set` is the
+  key.
 - `engine_target` is written in two halves by the flight loop while the
   interrupt may be reading it. A torn read costs one tick of walking the wrong
   way — a fifth of a semitone — and the next tick corrects it. An `SEI` every

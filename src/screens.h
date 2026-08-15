@@ -38,6 +38,12 @@ void screens_boot_restore(void);
 // The title, on the game's own display once there is a palette for it.
 void screens_title(void);
 
+// The mute setting, on the line under every page's prompt. Every page draws
+// it as it stands; call this when it changes. `M` mutes whatever the place
+// you are in sounds like, so this line is about the music and the flight says
+// its own on the panel.
+void screens_music(uint8_t on);
+
 // The mission list, with `selected` highlighted.
 void screens_missions(uint8_t selected);
 

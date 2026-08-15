@@ -8,6 +8,7 @@
 
 #define TITLE_ROW   8
 #define PROMPT_ROW  22
+#define SOUND_ROW   (PROMPT_ROW + 2)  // a blank row under the prompt
 
 // The two lines the title screen and the boot screen both carry, written once
 // so the boot screen cannot say something the title screen does not.
@@ -29,6 +30,29 @@ static void centre(uint8_t row, const char *s, uint8_t colour)
 
   vic4_puts(w >= PANEL_COLS ? 0 : (uint8_t)((PANEL_COLS - w) / 2), row, s,
             colour);
+}
+
+// The mute key and what it has done, under every page's prompt.
+//
+// The rule is that M mutes whatever the place you are in sounds like: the
+// tune on a page, the motors in the air. So this line says MUSIC -- the
+// flight has no room for a line and says it on the panel's message row
+// instead, at the moment the key is pressed.
+//
+// Kept here rather than passed to each page, because every page ends by
+// drawing it and only main knows when it changes.
+static uint8_t music_state = 1;
+
+static void music_line(void)
+{
+  centre(SOUND_ROW, music_state ? "M   MUSIC ON " : "M   MUSIC OFF",
+         PANEL_LABEL);
+}
+
+void screens_music(uint8_t on)
+{
+  music_state = on;
+  music_line();
 }
 
 // Right-aligned digits, zero padded, which is what both a percentage and a
@@ -208,6 +232,7 @@ void screens_title(void)
   centre(TITLE_ROW, TITLE_TEXT, PANEL_INK);
   centre(TITLE_ROW + 2, TITLE_SUB, PANEL_LABEL);
   centre(PROMPT_ROW, "PRESS SPACE", PANEL_INK);
+  music_line();
 }
 
 void screens_missions(uint8_t selected)
@@ -227,6 +252,7 @@ void screens_missions(uint8_t selected)
   }
 
   centre(PROMPT_ROW, "W S   CHOOSE      SPACE   BRIEF", PANEL_LABEL);
+  music_line();
 }
 
 void screens_briefing(uint8_t mission_no)
@@ -272,6 +298,7 @@ void screens_briefing(uint8_t mission_no)
   vic4_puts(13, 21, "ABANDON MISSION", PANEL_INK);
 
   centre(PROMPT_ROW, "SPACE   LAUNCH", PANEL_LABEL);
+  music_line();
 }
 
 void screens_debrief(uint8_t mission_no, flight_outcome how, uint16_t seconds)
@@ -307,4 +334,5 @@ void screens_debrief(uint8_t mission_no, flight_outcome how, uint16_t seconds)
   put_digits(27, 13, seconds % 60, 2, PANEL_INK);
 
   centre(PROMPT_ROW, "SPACE   RETURN TO MISSIONS", PANEL_LABEL);
+  music_line();
 }

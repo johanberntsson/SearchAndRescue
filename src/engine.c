@@ -109,7 +109,12 @@ static void gate_low(void)
 #define WAVE_2 0x41  // pulse
 #define WAVE_3 0x11  // triangle
 
-void engine_start(void)
+// Master volume, out of the SID's fifteen. Half, because the first version at
+// full was too loud to fly under. The tune keeps its own -- the two never
+// sound at the same time, so each sets the level it wants when it starts.
+#define ENGINE_VOLUME 7
+
+static void engine_arm(void)
 {
   uint8_t v;
 
@@ -119,9 +124,6 @@ void engine_start(void)
   // from starting with a click.
   static const uint8_t sustain[3] = {0xE4, 0xC4, 0xA4};
   static const uint8_t wave[3] = {WAVE_1, WAVE_2, WAVE_3};
-
-  engine_freq = COLD_HZ;
-  engine_target = idle_hz[1];
 
   // Whoever had the SID before this leaves its voices gated on, so the gates
   // have to fall before they can rise. See gate_low: without it the envelopes
@@ -144,11 +146,11 @@ void engine_start(void)
     sid_put((uint8_t)(base + 4), wave[v]);  // and the gate opens
   }
 
-  sid_put(0x18, 0x0F);
+  sid_put(0x18, ENGINE_VOLUME);
   engine_on = 1;
 }
 
-void engine_stop(void)
+static void engine_silence(void)
 {
   uint8_t v;
 
@@ -158,6 +160,26 @@ void engine_stop(void)
   for (v = 0; v < 3; v++)
     sid_put((uint8_t)(v * 7 + 4), 0x00);  // gate off
   sid_put(0x18, 0x00);
+}
+
+void engine_start(uint8_t heard)
+{
+  engine_freq = COLD_HZ;
+  engine_target = idle_hz[1];
+
+  if (heard)
+    engine_arm();
+}
+
+void engine_set(uint8_t on)
+{
+  if ((on != 0) == (engine_on != 0))
+    return;
+
+  if (on)
+    engine_arm();  // from wherever the throttle has got to, not from cold
+  else
+    engine_silence();
 }
 
 void engine_throttle(uint8_t mode, uint8_t moving, int8_t climb)

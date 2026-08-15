@@ -58,6 +58,24 @@ static const int16_t speed_limit[SPEED_MODES] = {40, 96, 176};
 uint16_t cstack_unused;
 static uint8_t speed_mode = SPEED_DEFAULT;
 
+// `M` mutes whatever the place you are in sounds like: the tune on a page,
+// the motors in the air. Two settings rather than one, because wanting a
+// quiet flight and wanting a quiet menu are different wants -- and both are
+// kept for the whole session, so muting once is enough.
+static uint8_t music_wanted = 1;
+static uint8_t engine_wanted = 1;
+
+// The mute key on every screen that is not a flight. The flight has its own,
+// two lines of it, down in the loop.
+static void music_key(uint16_t pressed)
+{
+  if (!(pressed & KEY_M))
+    return;
+  music_wanted = !music_wanted;
+  music_set(music_wanted);
+  screens_music(music_wanted);
+}
+
 // The battery, in 8.8 percent -- so the figure the panel shows is simply the
 // high byte and there is no divide anywhere in the drain.
 #define BATTERY_FULL (100 << 8)
@@ -268,6 +286,7 @@ static uint16_t wait_for_key(uint16_t keys)
   input_flush();
   do {
     input_scan(0, &pressed);
+    music_key(pressed);
   } while (!(pressed & keys));
   return pressed & keys;
 }
@@ -289,6 +308,7 @@ static uint8_t choose_mission(uint8_t selected)
     uint8_t moved = selected;
 
     input_scan(0, &pressed);
+    music_key(pressed);
     if (pressed & KEY_SPACE)
       return selected;
     if (pressed & KEY_STOP)
@@ -364,6 +384,15 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
     hit = fly(&cam, held);
     if (set_speed(held)) {
       panel_message("SPORT: NO TERRAIN FOLLOWING");
+      message_left = MESSAGE_FRAMES;
+    }
+    // The same key as the menus', on the other of the two settings. The panel
+    // says which, since a flight has no room for a line about it and nothing
+    // else would tell the pilot the key had been noticed.
+    if (pressed & KEY_M) {
+      engine_wanted = !engine_wanted;
+      engine_set(engine_wanted);
+      panel_message(engine_wanted ? "ENGINE SOUND ON" : "ENGINE SOUND OFF");
       message_left = MESSAGE_FRAMES;
     }
     PROF_ADD(P_OTHER, t0);
@@ -458,7 +487,7 @@ int main(void)
   // playing through the load, the benchmarks and vic4_init without any of
   // them knowing about it. The same interrupt carries the engine note later.
   audio_begin();
-  music_set(1);
+  music_set(music_wanted);
 
   if (load_resources(screens_loading)) {
     screens_load_failed(loader_error(), loader_error_file());
@@ -506,7 +535,7 @@ int main(void)
 #if !FLYNOW
     // The title and the list are the musical part of the game. Coming back to
     // them from a debrief starts the tune again; staying on them does not.
-    music_set(1);
+    music_set(music_wanted);
     mission_no = choose_mission(mission_no);
     if (mission_no >= MISSION_COUNT) {  // backed out of the list
       screens_title();
@@ -527,10 +556,11 @@ int main(void)
     music_set(0);  // FLYNOW goes straight to the flight
 #endif
 
-    // The motors, for exactly as long as the drone is in the air.
-    engine_start();
+    // The motors, for exactly as long as the drone is in the air, and only
+    // if the pilot wants to hear them.
+    engine_start(engine_wanted);
     how = flight(mission_no, &seconds);
-    engine_stop();
+    engine_set(0);
 
     screens_debrief(mission_no, how, seconds);
     wait_for_space();

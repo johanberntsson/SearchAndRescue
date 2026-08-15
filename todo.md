@@ -116,9 +116,8 @@ all of it driven from the mission table rather than from branches. The shape
 is proven — a third mission is data plus a sprite sheet. Memory was the scarce
 thing here — about 800 bytes of the 32K — and **dropping `printf` on 15 Aug
 2026 gave 6.5 KB of it back**, of which the title music spent 2652 the same
-day, and the engine note 583 more. The program area is **78.0% used with 7196
-bytes free**; the low free RAM
-at `$1600` is unchanged and still tight at 80 bytes spare, and zero page has
+day, and the engine note 583 more. The program area is **79.4% used with 6746 bytes free**;
+the low free RAM at `$1600` is unchanged and still tight at 80 bytes spare, and zero page has
 ten. Read the Open note on `cstack` before starting anything large.
 
 - **The keyboard controls are finished.** Called on 13 Aug 2026, flying them:
@@ -314,6 +313,13 @@ Do not re-litigate these without new measurements.
 
 ## Done
 
+- **`M` mutes**, done 15 Aug 2026, and the engine note came down to half
+  volume with it (7 of the SID's 15; full was too loud to fly under). The key
+  mutes whatever the place you are in sounds like -- the tune on a page, the
+  motors in the air -- and the two settings are separate and kept for the
+  session. The menus show the state on a line under the prompt; the flight has
+  no room for one and says it on the panel's message row, the way arming sport
+  does. It cost a fifth matrix row in `input.c` (row 4, `$EF`, bit 4).
 - **The engine note**, done 15 Aug 2026. A flight is no longer silent: three
   voices gated on at launch and never gated off, with the only thing changing
   being their pitch. `src/engine.c` decides where the note should be and

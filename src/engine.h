@@ -16,10 +16,15 @@
 
 #include <stdint.h>
 
-// Arm the voices and start the motors from cold, so a launch is heard to
-// spool up. Silence and gate them off again at the end of the flight.
-void engine_start(void);
-void engine_stop(void);
+// A flight begins: the motors from cold, so a launch is heard to spool up.
+// `heard` is the pilot's mute setting, which the caller keeps between
+// missions -- a muted launch never touches the SID at all, rather than making
+// a click and then falling silent.
+void engine_start(uint8_t heard);
+
+// The mute key, and the end of a flight. Coming back on picks the note up
+// where the throttle left it rather than spooling from cold again.
+void engine_set(uint8_t on);
 
 // Once a frame. `mode` is the speed limiter, 0 to 2; `moving` is whether the
 // pilot is asking for any forward or back at all; `climb` is 1, 0 or -1.

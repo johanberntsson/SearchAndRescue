@@ -18,6 +18,7 @@
 #define KEY_SPACE  0x0800  // file a report, and "go on" on every screen
 #define KEY_RETURN 0x1000  // release the cargo
 #define KEY_STOP   0x2000  // RUN/STOP: give up and fly home
+#define KEY_M      0x4000  // mute: the music on a page, the engine in the air
 
 // Scan the matrix once. `held` gets every key down now, which is what flight
 // wants; `pressed` gets the ones that went down since the last scan, which is
