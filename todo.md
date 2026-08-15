@@ -117,13 +117,41 @@ boot is 186 KB of maps -- about 25 seconds off a floppy, 12 off SD, 8 in xemu.
 There is no obvious next second to win: the PRG load is about one second and
 was measured, not guessed.
 
-**The panel is where the work is now.** Its background artwork landed on 15
-Aug 2026 (see Done) and the two things left are an artwork redrawn on the
-8-pixel grid and then the Raster Rewrite Buffer, which is what would take the
-text off the character grid altogether -- pixel-precise columns, and
-transparency so a readout can sit on the compass face. **RRB is the mechanism
-the raster split could not be**: nothing has to change part way down the
-frame, because the repositioning lives in the row data.
+**The panel is where the work is now**, and the next step is **a sprite
+plane over it**, decided 15 Aug 2026 after `make sprtest` came back yes.
+
+The artwork landed the same day (see Done) and immediately ran into the thing
+it cannot live with: the text is on the 8-pixel character grid and the picture
+is not. That is not fixable with a shifted font -- a glyph moved down 4 spills
+into the row below, so each line would need two cells, and five lines in six
+rows means one cell would have to hold two halves at once. It needs a plane
+that does not consume character cells.
+
+**Hardware sprites are that plane, and they work.** `src/sprtest.c` proved
+16-bit sprite pointers, 64-pixel widths, 48-pixel heights and priority over
+full-colour characters, all in the game's own display -- see The panel in
+CLAUDE.md for the table. Five 64x48 sprites cover the whole 320-pixel panel
+for 1920 bytes, a glyph is about sixteen writes, and **nothing has to be
+restored**, which is what makes it cheaper than painting into the panel's own
+pixels. What is left to do:
+
+- **confirm it on the real machine.** The note this replaced came from
+  hardware behaving differently from the emulator, and it would be a poor joke
+  to make the same mistake in the other direction. `make sprtest` boots a PRG
+  and needs no disk.
+- three sprites are still spare afterwards, and the crosshair could be one.
+- the two fallbacks, if hardware says no: **paint the glyphs into the panel's
+  full-colour pixels** (works everywhere, about 1% of a frame, and wants a
+  15 KB pristine copy in bank 4 to restore from), or **buy the panel a
+  seventh row** by taking 8 pixels off the 3D view, which gains a little speed
+  and needs `checkview`'s reference screenshot regenerating.
+
+**RRB is the third way and is not needed for this.** It can do vertical too --
+`fcm_yoffs`, screen byte 1 bits 5-7 with a direction bit at bit 4, offsetting
+the character data address by 8 bytes a pixel -- but it wants full-colour
+glyphs at 64 bytes each, xemu has had a bug report against exactly those bits,
+and the older core docs give them as "trim pixels from right" instead. Sprites
+answer the same question with no unknowns left in the emulator.
 
 **And the game layer is at a natural stopping point too**, called on 12 Aug
 2026: two missions, four ways for a flight to end, wind, battery and weather,

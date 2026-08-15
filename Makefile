@@ -49,7 +49,9 @@ LDFLAGS  = $(TARGET) --output-format=prg
 LINKFILE = mega65-plain.scm
 
 BUILD    = build
-SRCS     = $(wildcard src/*.c)
+# src/sprtest.c is a standalone program with a main of its own -- see the
+# sprtest target below -- so it must not be swept into the game.
+SRCS     = $(filter-out src/sprtest.c,$(wildcard src/*.c))
 ASRCS    = $(wildcard src/*.s)
 OBJS     = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS)) \
            $(patsubst src/%.s,$(BUILD)/%.o,$(ASRCS))
@@ -139,6 +141,24 @@ $(MUSIC_ASM): $(MUSIC_SRC) tools/acme2calypsi.py | $(BUILD)
 
 $(BUILD)/music_asm.o: $(MUSIC_ASM) $(CONFIG_STAMP) | $(BUILD)
 	as6502 $(ASFLAGS) -o $@ $<
+
+# Does the VIC-IV's hardware sprites work in this display layout? A program
+# of its own, linking the game's vic4.c so that the display it asks the
+# question about is the game's -- see the header of src/sprtest.c for what it
+# is asking and why the answer is not already known. It needs no disk: `make
+# runsprtest` boots the PRG directly.
+SPRTEST_OBJS = $(BUILD)/sprtest.o $(BUILD)/vic4.o $(BUILD)/dma.o $(BUILD)/bank.o
+
+$(BUILD)/sprtest.prg: $(SPRTEST_OBJS)
+	ln6502 $(LDFLAGS) --cstack-size $(CSTACK_GAME) \
+	    --list-file $(BUILD)/sprtest.lst -o $(BUILD)/sprtest.elf \
+	    $(LINKFILE) $(SPRTEST_OBJS)
+
+sprtest: $(BUILD)/sprtest.prg
+
+runsprtest: $(BUILD)/sprtest.prg
+	xemu-xmega65 -besure -prg $(BUILD)/sprtest.prg
+.PHONY: sprtest runsprtest
 
 # Both assemblers over the same tune, byte for byte. Needs acme on PATH.
 checkmusic:

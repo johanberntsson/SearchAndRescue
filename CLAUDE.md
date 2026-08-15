@@ -383,14 +383,34 @@ copy at `$1D800`, about 60 microseconds, rather than remembering what each
 pixel used to be. Restoring from saved pixels was tried and corrupted the
 whole map within a few hundred frames.
 
-**A hardware sprite for the crosshair does not work here.** The VIC-IV's
-`SPRPTRADR` (`$D06C`-`$D06E`) is ignored by xemu with 8-bit pointers and
-*segfaults* it outright with `SPR_PTR16`, so the sprite pointer still comes
-from the legacy screen+`$3F8` — which in this screen layout is row 12 column
-28, in the middle of the 3D view, where the character number is a framebuffer
-tile and cannot be given a useful value. Confirmed by dumping memory: the
-bitmap was where we put it and the VIC was fetching from somewhere else. The
-sprite itself displays fine, so this is worth retrying on real hardware.
+**Hardware sprites work here, and the note that said they did not is
+retired.** In this layout the legacy sprite pointer comes from
+screen+`$3F8` — row 12 column 28, in the middle of the 3D view, where the
+character number is a framebuffer tile and cannot be given a useful value — so
+for months the crosshair could not be a sprite. `SPRPTRADR`
+(`$D06C`-`$D06E`) is the way out and used to be ignored by xemu, with
+`SPR_PTR16` *segfaulting* it outright.
+
+**`make sprtest` is the retest**, and on 15 Aug 2026 it came back yes to all
+of it. `src/sprtest.c` is a standalone PRG that sets the display up with the
+game's own `vic4_init` — the layout being the whole question — and puts four
+sprites over the panel's rows. Measured off the screenshot, in display pixels:
+
+| | asked for | measured |
+|---|---|---|
+| 16-bit pointers (`SPRPTRADR` + `SPR_PTR16`) | any 64-byte boundary in chip RAM | sprite data read from `$44100` in bank 4 |
+| `SPRX64EN` (`$D057`) | 64 pixels wide | 64 x 21 |
+| `SPRHGTEN`/`SPRHGHT` (`$D055`/`$D056`) | 48 pixels tall | 24 x 48, and 64 x 48 with both |
+| priority over full-colour characters | sprites in front | in front, over an opaque FCM tile |
+| the C65 ROM font at `$2D000`, read by the CPU | glyphs | legible text, placed 3 pixels down |
+
+So **five 64x48 sprites cover the whole 320-pixel panel** for 1920 bytes of
+1bpp bitmap, and a glyph shifted into one is about sixteen writes against
+sixty-four for painting it into full-colour pixels — with nothing to restore
+afterwards, the plane being transparent where it is not drawn. That is the
+route out of the 8-pixel character grid the artwork cannot live with; see
+todo.md. **Still to confirm on real hardware**, where the original note came
+from.
 
 Latitude and longitude come out of the position for free, because **one map
 cell is defined as one millidegree**: the world is 256 cells square, so it

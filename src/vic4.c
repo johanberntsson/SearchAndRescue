@@ -123,14 +123,20 @@ void vic4_view_mode(void)
 
 // The crosshair over the overview map.
 //
-// A hardware sprite was the obvious way and does not work here. The VIC-IV's
-// SPRPTRADR is ignored -- 8-bit pointers had no effect and SPR_PTR16
-// segfaults xemu outright -- so the sprite pointer still comes from the
-// legacy screen+$3F8, which in this screen layout falls at row 12 column 28,
-// in the middle of the 3D view, where the character number is a framebuffer
-// tile and cannot be given a useful value. Verified by dumping memory: the
-// bitmap was where we put it and the VIC was reading somewhere else entirely.
-// Worth retrying on real hardware, where SPRPTRADR most likely does work.
+// A hardware sprite was the obvious way, and for months it did not work here:
+// the pointer comes from the legacy screen+$3F8, which in this layout falls
+// at row 12 column 28, in the middle of the 3D view, where the character
+// number is a framebuffer tile and cannot be given a useful value. SPRPTRADR
+// is the way out of that, and it was ignored by xemu with SPR_PTR16
+// segfaulting it outright.
+//
+// **That is no longer true.** Retested 15 Aug 2026 with src/sprtest.c
+// (`make sprtest`): 16-bit pointers work, and so do 64-pixel widths and
+// extended heights, over full-colour characters, in this exact display. So
+// the crosshair could be a sprite now. It stays drawn into the map's own
+// pixels because that works and costs 60 microseconds of a 77 millisecond
+// frame -- and because the eight sprites are worth more to the panel, which
+// is what todo.md wants them for.
 //
 // Drawing into the map's own pixels costs eight byte writes and a restore of
 // the eight before them, and works everywhere. Palette 240 is reserved by
