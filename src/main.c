@@ -383,7 +383,7 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
     flat = battery_step();
     hit = fly(&cam, held);
     if (set_speed(held)) {
-      panel_message("SPORT: NO TERRAIN FOLLOWING");
+      panel_message("SPORT: NO TERRAIN FOLLOW");
       message_left = MESSAGE_FRAMES;
     }
     // The same key as the menus', on the other of the two settings. The panel

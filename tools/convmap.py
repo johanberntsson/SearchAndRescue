@@ -3,11 +3,15 @@
 
     convmap.py <height.png> <colour.png> <sprite.png>[,<sprite.png>...]
                <out-prefix> [hgt-size] [col-size] [--shared maps/palette.yaml]
+               [--panel resources/panel.png]
 
 writes <out-prefix>.hgt, <out-prefix>.col, <out-prefix>.pal,
 <out-prefix>.ovr (the panel's overview map) and one billboard file per sprite
 sheet: <out-prefix>.spr for the first and <out-prefix>.sp2, .sp3 ... for the
-rest, which is the order src/sprite.c numbers its figures in.  The two
+rest, which is the order src/sprite.c numbers its figures in.  `--panel` adds
+<out-prefix>.pnl, the information panel's background artwork as full-colour
+characters; it is the same file for every map, since its palette entries are
+fixed ones the terrain cannot reach, but every map has to reserve them.  The two
 sizes default to 512 and 1024 and must be powers of two from 256 up to the
 source resolution; they have to match HGT_SIZE and COL_SIZE in the build (the
 Makefile passes both).
@@ -158,6 +162,86 @@ HUD_PAPER = 241
 PANEL_INK = 1
 PANEL_LABEL = 2
 PANEL_COLOURS = ((PANEL_INK, (255, 255, 255)), (PANEL_LABEL, (150, 160, 170)))
+
+# The panel's background artwork: 320x48 pixels of full-colour characters
+# under the readouts, in the entries the sky and the HUD pair leave over at
+# the top of the range.  **It costs the figures nothing**: the free pool the
+# sprite sheets draw from stops at SKY_BASE and has never offered these.
+#
+# Fourteen entries is not a compromise.  Quantised to 14, 16 and 32 the
+# artwork's mean error after the VIC-IV's four-bit channels is the same
+# 8.36/255 in every case -- four bits per channel is what limits this picture,
+# not how many entries it is given.
+#
+# The first of the entries is PANEL_PAPER in src/panel.h -- see to_panel.
+PANEL_ART_BASE = HUD_PAPER + 1
+PANEL_ART_COLOURS = 256 - PANEL_ART_BASE
+PANEL_ART_COLS = 40  # keep in sync with PANEL_ART_COLS in src/loader.h
+PANEL_ART_ROWS = 6
+PANEL_ART_W = PANEL_ART_COLS * 8
+PANEL_ART_H = PANEL_ART_ROWS * 8
+
+
+def to_panel(path, rgb):
+    """The panel background, as PANEL_ART_ROWS x PANEL_ART_COLS characters.
+
+    Reading order, each character eight rows of eight palette indices, which
+    is the layout a full-colour character wants and the same one to_overview
+    writes -- so the loader reads the file straight into character memory and
+    src/panel.c does nothing but name the numbers.
+
+    Nothing is deduplicated.  209 of the 240 characters are unique, this
+    being a render rather than pixel art, so a tile table would save 13% and
+    cost the loader a second file to read.
+    """
+    im = Image.open(path).convert("RGB")
+    w, h = im.size
+    if (w % PANEL_ART_W or h % PANEL_ART_H
+            or w // PANEL_ART_W != h // PANEL_ART_H):
+        sys.exit(f"{path}: {w}x{h} is not a whole multiple of "
+                 f"{PANEL_ART_W}x{PANEL_ART_H}")
+    if (w, h) != (PANEL_ART_W, PANEL_ART_H):
+        # Box averaged rather than point sampled, like the heightmap and for
+        # the same reason: the source is a render, so every flat area of it is
+        # a cloud of near-identical colours and point sampling samples the
+        # noise in it.
+        im = im.resize((PANEL_ART_W, PANEL_ART_H), Image.BOX)
+
+    # Rounded to the palette's four bits per channel BEFORE the median cut.
+    # The first version spent two of its fourteen entries on box greens that
+    # differ by a few units of 255 and are the SAME colour on the machine --
+    # quantising in the colour space the VIC-IV actually has stops it buying
+    # differences the hardware cannot show.
+    im = Image.fromarray(((np.asarray(im) >> 4) * 17).astype(np.uint8))
+
+    q = im.quantize(colors=PANEL_ART_COLOURS, method=Image.MEDIANCUT,
+                    dither=Image.NONE)
+    a = np.asarray(q)
+    quantised = q.getpalette()
+    got = len(quantised) // 3
+
+    # **The commonest colour goes first, at PANEL_PAPER.** It is the flat
+    # green the readout boxes are painted in, and the game makes it the screen
+    # colour for the duration of a flight -- an ordinary text character takes
+    # its background from there and nowhere else, so this is what lets the
+    # readouts sit in those boxes instead of punching black holes in the
+    # picture. Which entry it is has to be known to the C, so it is placed
+    # rather than reported.
+    counts = np.bincount(a.ravel(), minlength=got)
+    order = [int(np.argmax(counts))]
+    order += [i for i in range(got) if i != order[0]]
+    remap = np.empty(got, np.uint8)
+    entries = []
+    for new, old in enumerate(order):
+        remap[old] = new
+        entries.append(PANEL_ART_BASE + new)
+        rgb[PANEL_ART_BASE + new] = tuple(quantised[old * 3:old * 3 + 3])
+
+    # 0 is never one of them: a full-colour character draws the screen colour
+    # wherever a pixel is 0, and the artwork is meant to be opaque.
+    a = remap[a] + np.uint8(PANEL_ART_BASE)
+    chars = a.reshape(PANEL_ART_ROWS, 8, PANEL_ART_COLS, 8).transpose(0, 2, 1, 3)
+    return chars.tobytes(), entries
 
 
 # The overview map in the panel: the colourmap scaled right down and laid out
@@ -428,10 +512,14 @@ def shared_indices(path):
 
 def main():
     argv = list(sys.argv[1:])
-    shared = None
+    shared = panel_png = None
     if "--shared" in argv:
         i = argv.index("--shared")
         shared = argv[i + 1]
+        del argv[i:i + 2]
+    if "--panel" in argv:
+        i = argv.index("--panel")
+        panel_png = argv[i + 1]
         del argv[i:i + 2]
     if not 4 <= len(argv) <= 6:
         sys.exit(__doc__)
@@ -455,8 +543,16 @@ def main():
             sys.exit(f"colourmap uses HUD palette index {entry}")
         rgb[entry] = colour
 
+    panel_art = None
+    if panel_png:
+        clash = sorted(used & set(range(PANEL_ART_BASE, 256)))
+        if clash:
+            sys.exit(f"colourmap uses panel artwork palette indices {clash}")
+        panel_art = to_panel(panel_png, rgb)
+
     reserved = ({0, HUD_INK, HUD_PAPER}
                 | set(range(SKY_BASE, SKY_BASE + SKY_SHADES))
+                | set(range(PANEL_ART_BASE, 256))
                 | {entry for entry, _ in PANEL_COLOURS})
     if shared:
         # Everything the shared ramp claims, plus the system's low sixteen.
@@ -489,12 +585,12 @@ def main():
         (".col", to_planes(indices)),
         (".pal", palette),
         (".ovr", to_overview(indices)),
-    ] + sprite_files:
+    ] + sprite_files + ([(".pnl", panel_art[0])] if panel_art else []):
         raw_sizes[suffix] = len(payload)
         # The palette is 768 bytes and is read straight into a buffer before
         # the display is up; crunching it would buy nothing and cost a special
         # case in the loader.
-        if suffix in (".hgt", ".col"):
+        if suffix in (".hgt", ".col", ".pnl"):
             payload = crunch(exomizer, payload)
         with open(prefix + suffix, "wb") as f:
             f.write(payload)
@@ -514,6 +610,10 @@ def main():
     print("  " + report(".col", "col"))
     print(f"  overview: {OVERVIEW_PX}x{OVERVIEW_PX} in "
           f"{OVERVIEW_CHARS ** 2} characters, {raw_sizes['.ovr']} bytes")
+    if panel_art:
+        print(f"  panel: {PANEL_ART_COLS}x{PANEL_ART_ROWS} characters, "
+              + report(".pnl", "art") + ", palette "
+              f"{panel_art[1][0]}..{panel_art[1][-1]}")
     for n, (_, w, h, entries) in enumerate(sprites):
         print(f"  sprite {n} ({os.path.basename(sprite_pngs[n])}): {w}x{h}, "
               f"{raw_sizes[sprite_suffix(n)]} bytes, palette "

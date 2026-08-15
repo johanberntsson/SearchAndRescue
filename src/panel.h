@@ -8,10 +8,21 @@
 // A text character takes its colour from colour RAM, which in 16-bit
 // character mode is a four-bit field -- so these have to be among the first
 // sixteen palette entries, and tools/convmap.py moves the terrain colours
-// that were there out of the way. The paper is palette 0, which is the screen
-// colour and is already black.
+// that were there out of the way.
 #define PANEL_INK   1
 #define PANEL_LABEL 2
+
+// The paper, and the one thing about the panel that is not per character: a
+// text character's background is the screen colour, full stop. It used to be
+// palette 0 and black, which was fine over nothing and punches a hole in the
+// background artwork.
+//
+// tools/convmap.py puts the artwork's commonest colour -- the flat green its
+// readout boxes are painted in -- in the first of the artwork's own entries
+// for exactly this, so a readout drawn inside a box disappears into it. The
+// screen colour is switched to it while the view is up and back to 0 for the
+// full-screen text pages, which want a black page.
+#define PANEL_PAPER 242  // PANEL_ART_BASE in tools/convmap.py
 
 // The world is 256 cells square and each cell is exactly one millidegree, so
 // the map spans 0.256 degrees -- roughly 28 km, a plausible search area. The

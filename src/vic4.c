@@ -103,12 +103,21 @@ void vic4_text_mode(void)
 {
   uint16_t cell;
 
+  // Black paper for a page of text. The screen colour is the background of
+  // every text character there is and cannot be set per cell, so it belongs
+  // to whichever of the two displays is up -- see PANEL_PAPER.
+  VICIV.screencol = 0;
   for (cell = 0; cell < SCREEN_ROWS * FB_COLS; cell++)
     put_cell(cell, ' ', ' ', PANEL_INK);
 }
 
 void vic4_view_mode(void)
 {
+  // The panel's own paper: the flat green of the artwork's readout boxes, so
+  // that a text character drawn in one sits in it rather than cutting a hole
+  // through to the screen colour. The 3D view above is full-colour characters
+  // and never draws a pixel of 0, so nothing up there notices.
+  VICIV.screencol = PANEL_PAPER;
   build_screen_tables();
 }
 

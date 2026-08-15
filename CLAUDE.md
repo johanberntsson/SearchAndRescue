@@ -118,7 +118,8 @@ Only banks 1, 4 and 5 are free: `$20000-$3FFFF` holds the C65 ROM, and **colour 
 | `$1DC00` | 1028 each | Every billboard, one 32x32 slot per figure |
 | `$1E800` | 1024 each | Every map's overview tile set; the flight's is DMAd to `$1D000` |
 | `$1F800-$1FFFF` | 2 KB | Colour RAM alias — **do not write** |
-| `$40000-$4FFFF` | 64 KB | Heightmap, only when it is 256x256 |
+| `$40000` | 15360 | The panel's background artwork, 40x6 full-colour characters |
+| `$40000-$4FFFF` | 64 KB | Heightmap, only when it is 256x256 — **which no longer builds**, see The panel |
 | `$8000000-$81FFFFF` | 2 MB | Map slot 0: colourmap planes, then heightmap |
 | `$8200000-$83FFFFF` | 2 MB | Map slot 1 — mission two's world |
 | `$8400000-$85FFFFF` | 2 MB | Map slot 2, spare |
@@ -289,15 +290,80 @@ wants one. Two things learned on the way:
 ## The panel
 
 The display is 25 character rows; the framebuffer covers the top 19 and the
-bottom six are the information panel: a message line, ALT/HDG, LAT/LON,
-FPS/SPD, and the cargo bay on the last row, with the overview map filling the
-right-hand four columns of rows 1 to 4. The cargo line reads `CARGO EMPTY` for
-the whole of a mission flown with the camera alone. That split is free, because full colour
+bottom six are the information panel. That split is free, because full colour
 is per character *number*: `FCLRHI` is set and `FCLRLO` is not, so numbers
 above `$FF` are 64-byte full-colour characters (the framebuffer) and numbers
 below are ordinary 8x8 text from `CHARPTR`. The panel costs 480 bytes of
 screen RAM, no pixel writes, and is not double buffered — `vic4_panel_char`
 writes the same cell in both screen tables.
+
+### The background artwork
+
+**The panel is a picture with text in it**, not six rows of text. 40x6
+full-colour characters — 15360 bytes at `PANEL_ART` in bank 4, converted from
+`resources/panel.png` by `tools/convmap.py --panel` and read off the disk
+crunched (2.4 KB). Drawing it is naming 240 character numbers, so it costs no
+pixels and no per-frame work at all: a screen cell costs the same whether it
+names a letter or a picture.
+
+Three things make it fit:
+
+- **its palette is free.** Fourteen entries above the sky (242..255) that
+  nothing else has ever used — the sprites' free pool stops at `SKY_BASE` —
+  so the artwork costs the figures none of their budget and one `.pnl` file
+  serves every map. `convmap.py` quantises **after** rounding to the VIC-IV's
+  four bits per channel, because the first version spent two entries on box
+  greens that are the same colour on the machine. Fourteen entries and
+  thirty-two measure identically once those four bits are applied: the
+  palette depth is what limits this picture, not the entry count.
+- **bank 4 is the only VIC-visible RAM with room.** Bank 1 is full to the
+  byte and bank 5 above the screen tables has 10 KB against the 15 this
+  wants. Deduplicating the characters does not close that gap either — 209 of
+  the 240 are unique, this being a render rather than pixel art — so nothing
+  is deduplicated. It does mean `HGT_SIZE=256` no longer builds, since a
+  256x256 heightmap wants the same bank; `loader.h` `#error`s on it.
+- **the paper is the artwork's own colour.** A text character's background is
+  the screen colour and there is no per-cell alternative, so a readout drawn
+  over the picture used to punch a black hole in it. `convmap.py` puts the
+  artwork's commonest colour — the flat green of its readout boxes — first in
+  its entries, at `PANEL_PAPER`, and `vic4_view_mode` makes that the screen
+  colour while the view is up (`vic4_text_mode` puts 0 back for the pages,
+  which want a black page). The 3D view never draws a pixel of 0, so nothing
+  up there notices.
+
+**The picture is therefore what decides the layout.** Everything the panel
+says has to sit inside one of its sunken boxes, because outside one the paper
+colour is wrong — so the columns in `panel.c` are counted to the character
+against the boxes, and a readout that grows has to be traded against its
+neighbour rather than pushed along the row. The boxes:
+
+| | |
+|---|---|
+| rows 0-1, cols 8-23 | the message, then the fix: `46.681N 008.083E` |
+| rows 0-1, cols 25-33 | `BATT 100%` |
+| rows 2-3, cols 8-23 | `ALT 126  HDG 090`, then `WIND 094DEG 4M/S` |
+| rows 2-3, cols 25-33 | `SPD NRM`, `FPS 12.1` |
+| row 5, cols 20-33 | the cargo bay — its `CARGO` label is painted into the picture |
+| cols 0-6 | the compass, and cols 35-39 the map. No text in either. |
+
+**The artwork is not drawn on the 8-pixel grid and it shows.** Its bands are
+two pixels above the character rows and the cargo box is four, so the cargo
+line overhangs its box. Slack *inside* a box is invisible — the paper is the
+box colour — but overhang outside it is not. A redraw with every box edge on
+a multiple of 8 is the fix; nothing in the code has to change for it.
+
+**Text is still on the character grid, which is what the RRB is for.** The
+next step is a GOTOX layer over this background: the token is a screen cell
+with colour-RAM byte 0 bit 4 set, its screen bytes a 10-bit pixel X, and bit 7
+of the same byte turning off drawing for colour 0 — which is the transparency
+that would let a readout sit anywhere along a row *and* let the picture show
+through it, so labels could go on the compass face where the mockup puts them.
+`CHRCOUNT` and `LINESTEP` are global for the frame and the framebuffer rows
+would each need an end-of-line `GOTOX right-border` + character pair; at
+`CHRCOUNT` 64 the screen tables are 3200 bytes and still fit between
+`SCREEN_A` and `SCREEN_B`. The panel wants about 1.5x the base fetch, not the
+11 layers Sanderson measured a limit at — but **xemu does not model the VIC's
+RRB time budget**, so that one is for the real machine.
 
 ### The overview map and the coordinates
 
@@ -346,12 +412,14 @@ RAM for a font. And **a text character's colour comes from colour RAM, which
 is only a four-bit field** even in 16-bit character mode — so panel ink has
 to be one of the first sixteen palette entries, which is where the terrain
 colours live. `tools/convmap.py` reserves 1 and 2 by moving the terrain
-colours that were there out to unused slots; palette 0 is the screen colour
-and serves as the paper. Palette entries 240 and 241 are `convmap.py`'s
+colours that were there out to unused slots; **the paper is palette 0 no
+longer** — see the background artwork below, which owns the screen colour for
+the duration of a flight. Palette entries 240 and 241 are `convmap.py`'s
 overlay pair, for things drawn *over* a picture rather than sampled out of a
 map — and both are taken: 240 is the overview crosshair and the two together
-are the rain's near and far depths. A further overlay needs entries out of the
-free pool, not these.
+are the rain's near and far depths. **242 to 255 are the panel artwork's** and
+were free until it existed. A further overlay needs entries out of the free
+pool, not any of these.
 
 ## The game
 
@@ -915,7 +983,7 @@ map notes.
 
 ## Resources
 
-`tools/convmap.py` turns a 1024x1024 heightmap/colourmap PNG pair into `<stem>.hgt`, `<stem>.col`, `<stem>.pal`, `<stem>.ovr` and one billboard file per sprite sheet — the two maps crunched, the palette raw, and the figures cut out of the sheets (see The billboards). The sources need no quantisation: the heightmap is 8-bit greyscale and the colourmap is already a palette image. Palette bytes are nybble-swapped for the `$D100`/`$D200`/`$D300` registers, and the sky gradient goes in indices 224-239, which the colourmap never uses.
+`tools/convmap.py` turns a 1024x1024 heightmap/colourmap PNG pair into `<stem>.hgt`, `<stem>.col`, `<stem>.pal`, `<stem>.ovr`, `<stem>.pnl` (the panel artwork, with `--panel`; see The panel) and one billboard file per sprite sheet — the two maps crunched, the palette raw, and the figures cut out of the sheets (see The billboards). The sources need no quantisation: the heightmap is 8-bit greyscale and the colourmap is already a palette image. Palette bytes are nybble-swapped for the `$D100`/`$D200`/`$D300` registers, and the sky gradient goes in indices 224-239, which the colourmap never uses.
 
 `convmap.py` takes the two map sizes as arguments; the Makefile passes
 `HGT_SIZE` and `COL_SIZE`. The sprite sheets are one **comma-separated**

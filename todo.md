@@ -117,6 +117,14 @@ boot is 186 KB of maps -- about 25 seconds off a floppy, 12 off SD, 8 in xemu.
 There is no obvious next second to win: the PRG load is about one second and
 was measured, not guessed.
 
+**The panel is where the work is now.** Its background artwork landed on 15
+Aug 2026 (see Done) and the two things left are an artwork redrawn on the
+8-pixel grid and then the Raster Rewrite Buffer, which is what would take the
+text off the character grid altogether -- pixel-precise columns, and
+transparency so a readout can sit on the compass face. **RRB is the mechanism
+the raster split could not be**: nothing has to change part way down the
+frame, because the repositioning lives in the row data.
+
 **And the game layer is at a natural stopping point too**, called on 12 Aug
 2026: two missions, four ways for a flight to end, wind, battery and weather,
 all of it driven from the mission table rather than from branches. The shape
@@ -322,6 +330,41 @@ Do not re-litigate these without new measurements.
   sample.
 
 ## Done
+
+- **The panel has a background picture**, done 15 Aug 2026. 40x6 full-colour
+  characters from `resources/panel.png` through `tools/convmap.py --panel`,
+  15360 bytes at `$40000` in bank 4, 2.4 KB crunched on the disk. It costs no
+  pixel writes and no frame time: drawing it is naming 240 character numbers,
+  and a screen cell costs the same whether it names a letter or a picture.
+  - **fourteen palette entries nothing else had ever used** (242..255, above
+    the sky and the HUD pair), so the figures' pool is untouched at 32 free
+    and one `.pnl` serves every map -- the files come out byte-identical, and
+    were compared to prove it. Quantising *after* rounding to the VIC-IV's
+    four bits per channel is what makes fourteen enough: 14, 16 and 32 entries
+    all measure a mean error of 8.36/255, so the palette depth is the limit
+    and not the entry count.
+  - **the paper is the artwork's own box green.** A text character's
+    background is the screen colour and there is no per-cell alternative, so
+    the first version punched black rectangles through the picture.
+    `convmap.py` places the artwork's commonest colour at `PANEL_PAPER` and
+    `vic4_view_mode` makes it the screen colour for the flight, `0` again for
+    the pages. That is the whole fix, and it is one register.
+  - **the picture decides the layout**, since outside a box the paper colour
+    is wrong. Everything moved into the four boxes: the fix reads
+    `46.681N 008.083E` in one of them, the compass and the map have no text on
+    them at all, and the cargo bay's `CARGO` label is painted into the
+    artwork rather than written. Checked on both missions.
+  - **`HGT_SIZE=256` no longer builds** -- a 256x256 heightmap wants the same
+    bank -- and `loader.h` `#error`s with what to do about it.
+  - **still to do: the artwork is not on the 8-pixel grid.** Its bands are two
+    pixels above the character rows and the cargo box four, so the cargo line
+    overhangs its box. Slack inside a box is invisible, overhang outside it is
+    not. A redraw with every box edge on a multiple of 8 fixes it and no code
+    changes.
+  - **and then the RRB**, which is what the artwork was the first half of: a
+    GOTOX layer would put text anywhere along a row with the picture showing
+    through it. See The panel in CLAUDE.md for the register work and for why
+    xemu cannot answer the only question that matters about it.
 
 - **The campaign is data**, done 15 Aug 2026. `campaign.yaml` lists the files
   in `missions/`, each mission names its world and its figure, and

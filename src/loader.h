@@ -65,6 +65,31 @@
 #define OVERVIEW_PX    (OVERVIEW_CHARS * 8)
 #define OVERVIEW_BYTES (OVERVIEW_CHARS * OVERVIEW_CHARS * 64)
 
+// The information panel's background artwork: PANEL_ART_COLS x PANEL_ART_ROWS
+// full-colour characters, 15360 bytes, laid out in reading order by
+// tools/convmap.py so the loader reads it straight into character memory and
+// src/panel.c does nothing but name the numbers.
+//
+// **Bank 4 is the only VIC-visible RAM with room for it.** Bank 1 is full to
+// the byte, and bank 5 above the screen tables has 10 KB against the 15 this
+// wants -- deduplicating the characters was measured and does not close that
+// gap either, 209 of the 240 being unique. Bank 4 is free whenever the
+// heightmap is larger than 256x256, which is every shipping build.
+//
+// Its palette entries are fixed ones above the sky (242..255 in convmap.py)
+// that the terrain ramp cannot reach, so the artwork costs the figures none
+// of their pool and one file serves every map.
+#define PANEL_ART       0x40000UL
+#define PANEL_ART_CHAR  (PANEL_ART / 64)
+#define PANEL_ART_COLS  40  // keep in sync with PANEL_COLS in vic4.h
+#define PANEL_ART_ROWS  6   // and PANEL_ROWS; src/panel.c checks both
+#define PANEL_ART_BYTES ((uint32_t)PANEL_ART_COLS * PANEL_ART_ROWS * 64)
+
+#if HGT_SIZE <= 256
+#error "the panel artwork and a 256x256 heightmap both want bank 4. Raise \
+HGT_SIZE, or find the artwork 15 KB somewhere else the VIC-IV can read."
+#endif
+
 // Where every billboard waits, above the overview map's pristine copy (which
 // ends at $1DC00) and well clear of the colour RAM alias at $1F800. The 32K
 // the program shares has room for one figure and not for two, and only the

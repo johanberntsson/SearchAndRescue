@@ -88,8 +88,10 @@ MAP_RES  = $(foreach n,$(MAP_NUMS),$(BUILD)/map$(n).hgt $(BUILD)/map$(n).col \
                                     $(BUILD)/map$(n).pal $(BUILD)/map$(n).ovr)
 # What one convmap run per map produces, and then the whole disk. Split
 # because campaign.bin is built by the campaign itself, above, and must not be
-# a target of the conversion rule as well.
-CONV_RES = $(MAP_RES) $(SPR_RES)
+# a target of the conversion rule as well. $(PNL_RES) is the panel artwork:
+# map-independent, but converted with the maps because every map's palette has
+# to reserve its entries.
+CONV_RES = $(MAP_RES) $(SPR_RES) $(PNL_RES)
 RES      = $(BUILD)/campaign.bin $(CONV_RES)
 
 all: $(D81)

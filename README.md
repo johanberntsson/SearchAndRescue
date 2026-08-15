@@ -32,8 +32,12 @@ generated worlds, both on the one disk**.
   the panel's characters a readable 8 pixels wide without paying for twice the march
 - About 12.5 frames per second at the default map sizes, up from 0.74 when the
   renderer was all C; a real MEGA65 runs a few percent slower than the emulator
-- Altitude, heading, GPS coordinates and frame rate in the panel, with an overview
-  map of the whole world and a crosshair showing where you are
+- **The panel is a picture, not six rows of text** — a painted instrument
+  panel with a compass and sunken readout boxes, 240 full-colour characters
+  under the flight's numbers. It costs no pixel writes and no frame time at
+  all, and its fourteen palette entries are ones nothing else had ever used
+- Altitude, heading, GPS coordinates and frame rate in those boxes, with an
+  overview map of the whole world and a crosshair showing where you are
 - **Two missions over two different worlds, both on the one disk** — the first
   over a temperate island, the second over hot plains in the rain. Both are
   generated from a paragraph of YAML and resident in attic RAM at once, which

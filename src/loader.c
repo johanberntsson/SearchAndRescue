@@ -262,7 +262,11 @@ int load_resources(load_progress report)
     if (load_far(map_name(slot, "OVR"), OVERVIEW_SLOT(slot), OVERVIEW_BYTES))
       return -1;
   }
-  progress_to(97);
+  // The panel's background, once for the whole disk: its palette entries are
+  // fixed ones above the sky, so unlike the overview map it does not travel
+  // with a map. Crunched, since it is a picture and 15 KB of one.
+  if (load_crunched("PANEL.PNL", PANEL_ART, 96, 2))
+    return -1;
   {
     const char *bad = sprite_load(campaign_figures());
 

@@ -42,6 +42,12 @@ SPRITE_MAX = 3        # SPRITE_MAX in src/sprite.h: bank 1 between the
                       # billboards and the overview maps
 CAMPAIGN_BYTES = 1024  # CAMPAIGN_BYTES in src/mission.h: the near buffer
 
+# The panel's background artwork. One picture for the whole game rather than
+# anything a mission chooses, so it is a constant here and not a campaign
+# field; it is named in the generated make because that is where the convmap
+# runs are written.
+PANEL_ART = "resources/panel.png"
+
 # The briefing draws a brief line at column 2 of a 40-column display and the
 # page has three rows for it. Keep BRIEF_WIDTH and BRIEF_LINES in step with
 # screens_briefing.
@@ -240,6 +246,12 @@ MAP_NUMS  = %(map_nums)s
 SPRITES   = %(sprites)s
 GEN_MAPS  = %(gen_maps)s
 SPR_RES   = %(spr_res)s
+# The information panel's background. Not a campaign file at all -- it is the
+# game's own furniture, the way the character set is -- but it goes through
+# convmap.py with the maps, because its palette entries have to be reserved in
+# every map's palette. One file for the whole disk, like the figures.
+PANEL_ART = %(panel_art)s
+PNL_RES   = $(BUILD)/panel.pnl
 
 """
 
@@ -259,14 +271,15 @@ CONV_HEAD = """\
 #
 # The sprites are therefore taken from slot 0's conversion. The rest of every
 # other slot's output is used and its sprite files are simply the same bytes.
-$(CONV_RES) &: $(GEN_MAPS) $(SPRITES) tools/convmap.py maps/palette.yaml \\
-          $(CONFIG_STAMP) | $(BUILD)
+$(CONV_RES) &: $(GEN_MAPS) $(SPRITES) $(PANEL_ART) tools/convmap.py \\
+          maps/palette.yaml $(CONFIG_STAMP) | $(BUILD)
 """
 
 CONV_LINE = """\
 \tpython3 tools/convmap.py maps/hmap%(id)s.png maps/cmap%(id)s.png \\
 \t    $(subst $(space),$(comma),$(SPRITES)) \\
-\t    $(BUILD)/map%(num)d $(HGT_SIZE) $(COL_SIZE) --shared maps/palette.yaml
+\t    $(BUILD)/map%(num)d $(HGT_SIZE) $(COL_SIZE) --shared maps/palette.yaml \\
+\t    --panel $(PANEL_ART)
 """
 
 
@@ -289,6 +302,7 @@ def build_mk(campaign, disk, mission_files, maps, figures):
                              for i in ids),
         "spr_res": " ".join("$(BUILD)/terrain." + sprite_ext(n)
                             for n in range(len(figures))),
+        "panel_art": PANEL_ART,
     }
     for path, i in zip(maps, ids):
         out += MAP_RULE % {"id": i, "yaml": path}
@@ -301,6 +315,7 @@ def build_mk(campaign, disk, mission_files, maps, figures):
     for n in range(len(figures)):
         ext = sprite_ext(n)
         out += "\tcp $(BUILD)/map0.%s $(BUILD)/terrain.%s\n" % (ext, ext)
+    out += "\tcp $(BUILD)/map0.pnl $(BUILD)/panel.pnl\n"
     return out
 
 
