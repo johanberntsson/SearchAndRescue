@@ -78,6 +78,7 @@ Build knobs, all in the Makefile:
 | `HGT_SIZE`, `COL_SIZE` | map resolutions, powers of two from 256 to 1024 |
 | `make release` | not a knob but a target: the `PROFILE=0` disk, into `release/sar-latest.d81` |
 | `make checkmusic` | also a target: both assemblers over the tune, byte for byte. Needs `acme` |
+| `campaign.yaml` | not a knob but the disk: the missions, and through them the maps and sprite sheets that get built |
 
 Where a frame goes (the older 160-pixel framebuffer, h256 c512, 64.7 ms; the
 shape is the same at other settings):
@@ -313,6 +314,31 @@ Do not re-litigate these without new measurements.
 
 ## Done
 
+- **The campaign is data**, done 15 Aug 2026. `campaign.yaml` lists the files
+  in `missions/`, each mission names its world and its figure, and
+  `tools/campaign.py` writes both `campaign.bin` -- read off the disk at boot,
+  before anything else, because it says how many maps and figures follow it --
+  and `build/campaign.mk`, which the Makefile includes for the map list, the
+  ids and slots, the sprite sheets and the disk's name. Those were three
+  hand-kept lists that had to agree with `MAP_COUNT` and with the C table, and
+  nothing checked them. `MISSION_COUNT`, `MAP_COUNT` and `SPRITE_FIGURES` are
+  runtime values now; adding a mission is a file and a line.
+  - **it is a pure refactor and it was checked as one.** Both missions were
+    read out of the machine's own RAM after parsing and compared field for
+    field against the table they replaced -- strings, nulls, figure, weather,
+    map and both fixes -- and both were flown. The prose brief wraps to
+    exactly the three lines that were hand-written, which is what made that
+    comparison possible.
+  - **the checks live on the PC**, where there is somewhere to print: text
+    uppercased and refused if the screen cannot draw it, the brief refused if
+    it runs off the page, a fix refused if it is off the map, `cargo` refused
+    without a `lost` line, and the whole blob refused if it will not fit the
+    buffer.
+  - **it cost two bugs worth remembering.** Byte offsets that were field
+    indices in the C, which read `figure` and `weather` three fields early --
+    caught by dumping the parsed array rather than trusting it. And a Calypsi
+    codegen fault: two byte reads combined into a word in one expression emits
+    only ONE load. Both are written up in CLAUDE.md.
 - **`M` mutes**, done 15 Aug 2026, and the engine note came down to half
   volume with it (7 of the SID's 15; full was too loud to fly under). The key
   mutes whatever the place you are in sounds like -- the tune on a page, the

@@ -11,17 +11,19 @@
 
 #include "voxel.h"
 
-// How many figures there are, and the number a mission names to pick one.
-// They all live in bank 1 and only the flight's own is held in the 32K the
-// program shares -- see SPRITE_STORE in loader.h. Adding one means a sheet in
-// the Makefile's SPRITES, an entry in spr_files, and fifteen more palette
-// slots, of which tools/convmap.py reports how many are left.
-#define SPRITE_FIGURES 2
+// How many figures the game can hold, which is a fact about bank 1 rather
+// than a choice: they sit at SPRITE_STORE in a 1028-byte slot each, and what
+// is above them is the overview maps at OVERVIEW_STORE. How many there
+// actually are is campaign_figures() -- a mission names its sheet and
+// tools/campaign.py collects them, so adding one is a line in a mission file
+// and fifteen more palette slots, of which tools/convmap.py reports how many
+// are left.
+#define SPRITE_MAX 3
 
-// Read every figure off the disk and park it in bank 1. Call it from
+// Read `figures` of them off the disk and park them in bank 1. Call it from
 // load_resources, before the display is switched. Returns null, or the name of
 // the file it could not make sense of.
-const char *sprite_load(void);
+const char *sprite_load(uint8_t figures);
 
 // Bring one figure down into the drawing buffer, for the flight about to
 // start. Nothing is drawn until this has been called.

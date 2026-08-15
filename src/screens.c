@@ -242,7 +242,7 @@ void screens_missions(uint8_t selected)
   vic4_text_mode();
   centre(2, "SELECT MISSION", PANEL_INK);
 
-  for (i = 0; i < MISSION_COUNT; i++) {
+  for (i = 0; i < mission_count(); i++) {
     uint8_t row = (uint8_t)(6 + i * 2);
     uint8_t ink = i == selected ? PANEL_INK : PANEL_LABEL;
 

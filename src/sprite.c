@@ -38,12 +38,33 @@
 #error "LOAD_STAGING is too small to hold a figure"
 #endif
 
-// The figures on disk, in the order missions number them. They all live in
-// bank 1 (SPRITE_STORE) and only the flight's own is copied down here.
-static const char *const spr_files[SPRITE_FIGURES] = {
-    "TERRAIN.SPR",  // 0: the lost hiker, arms up
-    "TERRAIN.SP2",  // 1: the pair by the lake, one of them down
-};
+// Bank 1 is full to the byte: the figures, then the overview maps, then the
+// colour RAM alias. Both of these were slack before the campaign made the
+// counts a choice, and neither is any more.
+#if SPRITE_STORE + SPRITE_MAX * SPR_SLOT > OVERVIEW_STORE
+#error "SPRITE_MAX figures do not fit below OVERVIEW_STORE in bank 1"
+#endif
+#if OVERVIEW_STORE + MAP_SLOTS * OVERVIEW_BYTES > 0x1F800UL
+#error "MAP_SLOTS overview maps run into the colour RAM alias at $1F800"
+#endif
+
+// The figures on disk, in the order the campaign numbers them: the first is
+// TERRAIN.SPR and the rest are .SP2, .SP3, which is what tools/convmap.py
+// names them and how many there are is campaign_figures(). One buffer patched
+// in place, because there is no display to printf a name onto by the time
+// this runs. They all live in bank 1 (SPRITE_STORE) and only the flight's own
+// is copied down here.
+static char spr_name[] = "TERRAIN.SPR";
+
+static const char *figure_file(uint8_t n)
+{
+  spr_name[10] = n ? (char)('1' + n) : 'R';
+  return spr_name;
+}
+
+// How many were read, so a mission naming one that is not there draws nothing
+// rather than a slot of whatever bank 1 held.
+static uint8_t spr_count;
 
 static uint8_t spr_w, spr_h;
 
@@ -80,17 +101,18 @@ static uint8_t spr_near;  // within SPR_DROP_RANGE, camera pointing anywhere
 LOW_FREE static uint8_t src_col[FB_HEIGHT];
 LOW_FREE static uint8_t src_row[FB_HEIGHT];
 
-const char *sprite_load(void)
+const char *sprite_load(uint8_t figures)
 {
   uint8_t n;
 
   spr_w = 0;  // nothing selected until a flight asks for one
-  for (n = 0; n < SPRITE_FIGURES; n++) {
-    int got = load_small(spr_files[n], spr_file, sizeof spr_file);
+  spr_count = figures > SPRITE_MAX ? SPRITE_MAX : figures;
+  for (n = 0; n < spr_count; n++) {
+    int got = load_small(figure_file(n), spr_file, sizeof spr_file);
 
     if (got < 4 || spr_file[0] > SPR_MAX || spr_file[1] > SPR_MAX ||
         (uint16_t)spr_file[0] * spr_file[1] + 4 > (uint16_t)got)
-      return spr_files[n];
+      return figure_file(n);
 
     // Straight back up out of the near buffer, whole slot and all: the tail
     // past the figure is never read, so there is nothing to be gained by
@@ -103,7 +125,7 @@ const char *sprite_load(void)
 
 void sprite_select(uint8_t figure)
 {
-  if (figure >= SPRITE_FIGURES) {
+  if (figure >= spr_count) {
     spr_w = 0;  // draws nothing, rather than drawing the wrong thing
     return;
   }

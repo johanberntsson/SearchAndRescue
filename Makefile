@@ -70,26 +70,27 @@ ELF      = $(BUILD)/sar.elf
 PRG      = $(BUILD)/autoboot.c65
 D81      = $(BUILD)/sar.d81
 
-# One sprite sheet per figure the game can stand in the world, in the order
-# src/sprite.c numbers them: 0 the lost hiker, 1 the pair by the lake. They are
-# converted together because they share the one on-screen palette.
-SPRITES  = resources/survivor-sprite.png resources/medicalemergency-sprite.png
+# **The campaign is what goes on the disk.** campaign.yaml names the mission
+# files, each mission names the world it is flown over and the figure that
+# stands in it, and tools/campaign.py collects the lot: the map list, their
+# ids and slot numbers, the sprite sheets, the disk's name, and the rules that
+# generate and convert them all come out of $(BUILD)/campaign.mk below. They
+# used to be three hand-kept lists here that had to agree with src/loader.h
+# and src/mission.c, and could not be checked.
+#
+# campaign.bin is the missions themselves, read off the disk at boot. It is
+# first in $(RES) because the loader reads it first: it says how many maps and
+# figures there are to read after it.
+CAMPAIGN = campaign.yaml
+CAMPAIGN_MK = $(BUILD)/campaign.mk
 
-# The maps on the disk, in slot order: mission 1 flies slot 0 and mission 2
-# slot 1 (src/mission.c chooses). They are *generated* from these YAMLs rather
-# than drawn, which is what makes several of them fit -- two come to about 500
-# KB crunched against 661 KB for the one hand-drawn pair. Keep MAP_COUNT in
-# src/loader.h in step with this list.
-MAP_YAMLS = maps/island.yaml maps/plains.yaml   # map files, not missions
-MAP_IDS   = 03 05
-MAP_NUMS  = 0 1   # slot numbers, one per map above
-
-# Generated maps are build products and are not in git; genmap.py names them
-# from each map's `id`.
-GEN_MAPS = $(foreach id,$(MAP_IDS),maps/hmap$(id).png maps/cmap$(id).png)
 MAP_RES  = $(foreach n,$(MAP_NUMS),$(BUILD)/map$(n).hgt $(BUILD)/map$(n).col \
                                     $(BUILD)/map$(n).pal $(BUILD)/map$(n).ovr)
-RES      = $(MAP_RES) $(BUILD)/terrain.spr $(BUILD)/terrain.sp2
+# What one convmap run per map produces, and then the whole disk. Split
+# because campaign.bin is built by the campaign itself, above, and must not be
+# a target of the conversion rule as well.
+CONV_RES = $(MAP_RES) $(SPR_RES)
+RES      = $(BUILD)/campaign.bin $(CONV_RES)
 
 all: $(D81)
 
@@ -142,8 +143,14 @@ checkmusic:
 	python3 tools/checkmusic.py
 .PHONY: checkmusic
 
+# The list file is the memory map, and it is worth having for its own sake --
+# but also because the object ORDER decides where every symbol lands, so a map
+# from a hand-run ln6502 over build/*.o describes a different program. An
+# afternoon went into reading a struct at an address that came from such a
+# link; take addresses from here.
 $(ELF): $(OBJS)
-	ln6502 $(LDFLAGS) --cstack-size $(CSTACK_GAME) -o $@ $(LINKFILE) $(OBJS)
+	ln6502 $(LDFLAGS) --cstack-size $(CSTACK_GAME) \
+	    --list-file $(BUILD)/sar.lst -o $@ $(LINKFILE) $(OBJS)
 
 # -o names the ELF; ln6502 writes the PRG beside it under the same stem.
 # diskutil.rb names the file on disk after the host file, so both programs are
@@ -155,40 +162,22 @@ comma := ,
 empty :=
 space := $(empty) $(empty)
 
-# The maps, from their map files. One genmap run each; the id in the filename
-# is the map's own, so these are spelled out rather than pattern-matched.
-maps/hmap03.png maps/cmap03.png &: maps/island.yaml maps/palette.yaml \
-                                   tools/genmap.py tools/fixed.py
-	python3 tools/genmap.py maps/island.yaml
+# The campaign, and the make it generates. GNU make notices that an included
+# file is out of date, remakes it and starts again, so this bootstraps itself
+# on a clean tree -- and `missions/*.yaml` rather than $(MISSION_YAMLS),
+# because that variable is defined by the file being built.
+$(BUILD)/campaign.bin $(CAMPAIGN_MK) &: $(CAMPAIGN) $(wildcard missions/*.yaml) \
+                                        $(wildcard maps/*.yaml) \
+                                        tools/campaign.py | $(BUILD)
+	python3 tools/campaign.py $(CAMPAIGN) $(BUILD)/campaign.bin $(CAMPAIGN_MK)
 
-maps/hmap05.png maps/cmap05.png &: maps/plains.yaml maps/palette.yaml \
-                                   tools/genmap.py tools/fixed.py
-	python3 tools/genmap.py maps/plains.yaml
-
-# **--shared is what lets more than one map share a disk.** Without it each
-# map hands the sprites whatever palette entries its own colours left free, so
-# a figure changes colour with the mission; with it every map reserves the
-# whole shared ramp and the sprite files come out byte-identical, so one set
-# serves them all. See the header of tools/convmap.py.
-#
-# The sprites are taken from slot 0's conversion for that reason. The rest of
-# slot 1's output is used and its sprite files are simply the same bytes.
-$(RES) &: $(GEN_MAPS) $(SPRITES) tools/convmap.py maps/palette.yaml \
-          $(CONFIG_STAMP) | $(BUILD)
-	python3 tools/convmap.py maps/hmap03.png maps/cmap03.png \
-	    $(subst $(space),$(comma),$(SPRITES)) \
-	    $(BUILD)/map0 $(HGT_SIZE) $(COL_SIZE) --shared maps/palette.yaml
-	python3 tools/convmap.py maps/hmap05.png maps/cmap05.png \
-	    $(subst $(space),$(comma),$(SPRITES)) \
-	    $(BUILD)/map1 $(HGT_SIZE) $(COL_SIZE) --shared maps/palette.yaml
-	cp $(BUILD)/map0.spr $(BUILD)/terrain.spr
-	cp $(BUILD)/map0.sp2 $(BUILD)/terrain.sp2
+-include $(CAMPAIGN_MK)
 
 # tools/diskutil.rb refuses to overwrite a file that already exists on the image,
 # so the image is always built from scratch.
 $(D81): $(PRG) $(RES)
 	rm -f $@
-	ruby tools/diskutil.rb $@ -name "search and rescue" -id sr \
+	ruby tools/diskutil.rb $@ -name "$(DISK_NAME)" -id sr \
 	    -writeprg -copyf1 $(PRG) \
 	    -writeseq -copyf1 $(RES)
 

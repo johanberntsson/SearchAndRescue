@@ -2,6 +2,13 @@
 // flight with different words on it: fly to a figure standing at a fix and
 // press a key. What varies is the cargo bay, and that one field decides the
 // rest -- see `cargo` below.
+//
+// **None of it is compiled in.** `campaign.yaml` and the files in `missions/`
+// are the campaign; tools/campaign.py turns them into `campaign.bin`, which
+// the loader reads before anything else because it says how many maps and
+// figures there are to read after it. campaign_load() then points the array
+// below into that blob, once, and nothing else in the game learns that any of
+// it came off a disk.
 #ifndef MISSION_H
 #define MISSION_H
 
@@ -35,16 +42,33 @@ typedef struct {
   uint8_t figure;     // which billboard stands at the fix; see sprite.h
   uint8_t weather;    // WEATHER_CLEAR or WEATHER_RAIN; see weather.h
   // Which of the maps resident in attic RAM this mission is flown over. The
-  // fixes below are cells of *that* map, so the two travel together: change
-  // one and the target is in the sea. See MAP_SLOT in loader.h.
+  // fix below is a cell of *that* map, so the two travel together: change one
+  // and the target is in the sea. See MAP_SLOT in loader.h.
   uint8_t map;
   uint16_t lat;       // millidegrees north of the target's last known fix
   uint16_t lon;       // millidegrees east
 } mission;
 
-#define MISSION_COUNT 2
+// How many the game can hold, which is what tools/campaign.py checks a
+// campaign against. The mission list draws them two rows apart from row 6, so
+// eight is what the page has room for; the buffer is what the whole campaign
+// -- records and every string in it -- has to fit inside, and 455 bytes is
+// what the two shipping missions come to. Both are spelled once more in
+// tools/campaign.py and a disagreement is caught there.
+#define MISSION_MAX    8
+#define CAMPAIGN_BYTES 1024
 
-extern const mission missions[MISSION_COUNT];
+extern mission missions[MISSION_MAX];
+
+// Read campaign.bin and point the array at it. Returns null, or what went
+// wrong -- there is no display worth the name at this point, so the string
+// goes to the boot screen's error line. Call it before anything else is
+// loaded: the two counts below are only good afterwards.
+const char *campaign_load(void);
+
+uint8_t mission_count(void);
+uint8_t campaign_maps(void);     // map slots to fill; see MAP_SLOTS
+uint8_t campaign_figures(void);  // billboards to read; see SPRITE_MAX
 
 // The key that carries out the mission, and its name for the briefing and the
 // panel. Derived from the cargo bay rather than stored, so that a mission

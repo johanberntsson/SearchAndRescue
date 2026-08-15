@@ -139,12 +139,20 @@ extern uint8_t load_staging[LOAD_STAGING];
 
 // The panel's overview map is per map too, and small enough to keep all of
 // them in bank 1: the flight's own is DMAd down to OVERVIEW at launch.
-#define OVERVIEW_STORE 0x1E800UL
+//
+// **$1EC00 rather than $1E800 since the campaign owns the figures**, because
+// SPRITE_STORE below it now has to hold SPRITE_MAX of them rather than a
+// hardcoded two. Three 1028-byte slots reach $1E80C and three overviews reach
+// exactly $1F800, where the colour RAM alias starts -- so bank 1 is full to
+// the byte and both ends are checked at compile time in src/sprite.c. Another
+// figure or another map slot means finding the room somewhere else.
+#define OVERVIEW_STORE 0x1EC00UL
 #define OVERVIEW_SLOT(n) (OVERVIEW_STORE + (uint32_t)(n) * OVERVIEW_BYTES)
 
-// How many maps the disk actually carries, and which one each mission flies
-// is in src/mission.c. Keep in sync with the Makefile's MAP_YAMLS.
-#define MAP_COUNT 2
+// How many maps the disk actually carries is campaign_maps(), read off the
+// disk with the campaign -- it used to be a constant here that had to be kept
+// in step with the Makefile and with src/mission.c by hand. MAP_SLOTS above
+// is still the ceiling: that is attic RAM and not a choice.
 
 // Called as loading proceeds, with how much of it is done as a percentage.
 // It is called once per chunk read, so most calls repeat the last figure.

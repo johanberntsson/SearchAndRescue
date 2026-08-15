@@ -72,6 +72,16 @@ generated worlds, both on the one disk**.
   seen to be alive and the boot is one picture from the first second to the
   menu
 
+**The missions are not in the program.** `campaign.yaml` lists the mission
+files, each file in `missions/` describes one mission in a paragraph of YAML --
+its name, its brief as prose, what is in the cargo bay, the world it is flown
+over, the weather and the fix -- and `tools/campaign.py` turns them into a
+small binary the game reads off the disk at boot. It also writes the Makefile
+fragment that says which maps to generate and which sprite sheets to convert,
+so the campaign is the single description of what goes on the D81. Adding a
+mission is a file and a line; the tool wraps the text to the briefing, checks
+the fix is on the map and refuses anything that will not fit.
+
 **The maps are generated rather than drawn, and that is what puts two of them
 on the disk.** `tools/genmap.py` turns a short YAML description — island or mountains
 or flatlands, a climate, how many rivers and lakes and hills, how rugged, at

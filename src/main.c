@@ -297,7 +297,7 @@ static void wait_for_space(void)
 }
 
 // The mission list, until one is chosen or the pilot backs out to the title.
-// Returns which mission to brief, or MISSION_COUNT for "none of them".
+// Returns which mission to brief, or mission_count() for "none of them".
 static uint8_t choose_mission(uint8_t selected)
 {
   screens_missions(selected);
@@ -312,10 +312,10 @@ static uint8_t choose_mission(uint8_t selected)
     if (pressed & KEY_SPACE)
       return selected;
     if (pressed & KEY_STOP)
-      return MISSION_COUNT;
+      return mission_count();
     if ((pressed & KEY_W) && selected)
       moved = (uint8_t)(selected - 1);
-    if ((pressed & KEY_S) && selected + 1 < MISSION_COUNT)
+    if ((pressed & KEY_S) && selected + 1 < mission_count())
       moved = (uint8_t)(selected + 1);
 
     // Redrawn only when it changes: the page is a rewrite of screen RAM, and
@@ -538,7 +538,7 @@ int main(void)
     // saying so once more costs nothing and covers the first time round.
     music_set(music_wanted);
     mission_no = choose_mission(mission_no);
-    if (mission_no >= MISSION_COUNT) {  // backed out of the list
+    if (mission_no >= mission_count()) {  // backed out of the list
       screens_title();
       wait_for_space();
       mission_no = 0;

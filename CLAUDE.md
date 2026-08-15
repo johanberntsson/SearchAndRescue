@@ -379,16 +379,15 @@ done, cargo lost, abandoned — are one `screens_debrief` page with different
 strings, for the same reason.
 
 **A mission names its map**, and the fix is a cell of *that* map, so the two
-travel together in the table and cannot be edited apart: mission one is flown
-over `maps/island.yaml` and stands its hiker on the step pyramid there;
-mission two over `maps/plains.yaml`, by the largest lake. See Resources for
-what a map slot is and what switching costs.
+travel together and cannot be edited apart: mission one is flown over
+`maps/island.yaml` and stands its hiker on the step pyramid there; mission two
+over `maps/plains.yaml`, by the largest lake. See Resources for what a map
+slot is and what switching costs.
 
-Adding a third mission is a table entry, a sprite sheet in the Makefile's
-`SPRITES`, and nothing else — but see Resources for the palette budget, which
-is what actually limits how many figures there can be. A third *map* is a YAML
-file, a line in `MAP_YAMLS` and `MAP_COUNT`: there is a spare attic slot for
-it.
+**Adding a mission is a file in `missions/` and a line in `campaign.yaml`**,
+and nothing else at all — see The campaign below. The palette budget in
+Resources is what actually limits how many *figures* there can be, and bank 1
+holds three; there is a spare attic slot for a third map.
 
 **The pages cost no pixels.** The display picks text or full colour per
 character *number*, so writing numbers below `$100` into the rows the 3D view
@@ -459,6 +458,56 @@ the Kernal's screen editor writes colour RAM, and the game is using it.
 a screenful of uninitialised RAM between the boot screen and the title.
 Everything that wants the view asks for it with `vic4_view_mode`, which
 `flight()` already did.
+
+## The campaign
+
+**Nothing about a mission is compiled in.** `campaign.yaml` names the mission
+files, each file in `missions/` describes one mission, and each mission names
+the world it is flown over and the figure that stands in it.
+`tools/campaign.py` turns the lot into two things:
+
+- **`campaign.bin`**, which goes on the disk and is read *first* at boot,
+  because it says how many maps and how many figures there are to read after
+  it. A header, one 24-byte record per mission, and a pool of strings the
+  records point into by offset. `campaign_load()` turns those offsets into
+  pointers once, into the `missions[]` array the rest of the game already
+  used, so `screens.c` and `main.c` did not change at all.
+- **`build/campaign.mk`**, which the Makefile includes. The map list, their
+  ids and slot numbers, the sprite sheets, the disk's name and the rules that
+  generate and convert them all come out of it. Those used to be three
+  hand-kept lists in the Makefile that had to agree with `MAP_COUNT` in
+  `loader.h` and with the table in `mission.c`, and nothing checked that they
+  did. GNU make notices the include is out of date, remakes it and restarts,
+  so it bootstraps on a clean tree.
+
+**The maps are collected, not listed.** A mission names its world; two
+missions over the same island cost one map slot. Same for figures.
+
+**Everything is checked on the PC**, because the machine has no way to report
+anything at that point and no room for the code to do it. The tool uppercases
+the text and refuses a character the screen cannot draw, wraps the brief to
+the briefing's width and refuses it rather than running off the page, refuses
+a fix that is off the map, refuses `cargo` without a `lost` line to go with
+it, and refuses a campaign too big for the buffer. The three ceilings —
+`MISSION_MAX`, `MAP_SLOTS`, `SPRITE_MAX` — are spelled once in the C and once
+in the tool, and a disagreement is caught in the tool.
+
+**The brief is prose and the tool wraps it.** Greedy, at 36 columns, which is
+what the briefing draws; the two shipping missions wrap to exactly the three
+lines the hand-written table used to hold, which is what made this refactor
+checkable.
+
+**`cargo` alone says what kind of mission it is**, as it always did: absent is
+a camera mission, present is a delivery. There is no `type:` field, because
+two fields that can disagree is exactly what the game's own design avoids.
+
+**Bank 1 is full to the byte now.** `SPRITE_MAX` figures at 1028 bytes each
+from `$1DC00`, then `MAP_SLOTS` overview maps from `$1EC00`, which end exactly
+at the colour RAM alias — `OVERVIEW_STORE` moved up a kilobyte to make room
+for a third figure. Both ends are `#error`-checked in `src/sprite.c`.
+
+The old note here said `map.bin` and `mission.bin` were "not written yet".
+This is them, under one name.
 
 Controls, which follow a real drone's (see `documentation/real-drones/`):
 `W`/`S` forward and back, `A`/`D` yaw, `R`/`F` climb and descend, `Q`/`E`
@@ -938,9 +987,9 @@ sun was measured against and the pyramid copied from.
 **A map file describes a world and nothing else** — `maps/island.yaml` is its
 seed, its shape and the things built into its terrain. What is flown over it is
 a *mission*, which has a map and is not one: two rescues could be flown over
-the same island. The game holds its missions as a C table in `src/mission.c`;
-neither `map.bin` (that table's map-side counterpart) nor `mission.bin` is
-written yet.
+the same island, and the map file would not change. The missions live in
+`missions/`, one YAML file each, and `campaign.yaml` lists them -- see The
+campaign.
 
 **Several maps fit only because they are generated.** Two of them are 186 KB
 crunched against 661 KB for the one hand-drawn pair, so a disk that used to
@@ -1217,6 +1266,16 @@ and the four arms in `static const int8_t arm_x[8]`; it stored nothing at all
 proved the function was entered. Rewritten with `int16_t` coordinates and the
 eight calls spelled out, the same logic works. Suspect this shape before
 suspecting the hardware.
+
+**Two byte reads combined into a word in one expression: one of them is
+dropped.** `(uint16_t)p[at] | (uint16_t)p[at + 1] << 8`, with `at` a `uint8_t`,
+compiles to a *single* indirect load — the high byte — and fills the low byte
+with the high byte of the address it just worked out. Every string offset and
+both fixes in the campaign came back with the right high byte and a low byte
+of `$82`, which is simply where the buffer sits. Hoisting the two halves into
+locals fixes it, and so does widening the index to `uint16_t`; the listing
+shows it in one look, because there is no second `lda (ptr),z`. See
+`word()` in `src/mission.c`.
 
 **A call with no prototype in scope returns `int`, and `int` is sixteen bits.**
 `rnd_state()` returned a `uint32_t`; its caller in the map generator did not

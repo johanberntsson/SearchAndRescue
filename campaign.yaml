@@ -1,0 +1,19 @@
+# The campaign: what goes on the disk, and in what order.
+#
+# This file and the mission files it names are the whole of what the game
+# flies. Nothing about a mission is compiled in any more -- tools/campaign.py
+# turns this into `build/campaign.bin`, which is read off the disk at boot, and
+# into `build/campaign.mk`, which tells the Makefile which maps to generate,
+# which sprite sheets to convert and what to call the disk. Adding a mission is
+# a file in `missions/` and a line here.
+#
+# The maps are not listed. Each mission names the world it is flown over and
+# the tool collects them, so two missions over the same island cost one map
+# slot rather than two -- and the fix in a mission is a cell of *that* map, so
+# the two can never be edited apart.
+
+name: SEARCH AND RESCUE
+
+missions:
+  - missions/lost-hiker.yaml
+  - missions/first-aid.yaml

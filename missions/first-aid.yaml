@@ -1,0 +1,31 @@
+# A delivery: `cargo` names what is in the bay, and that one field decides the
+# rest. RETURN opens the bay, it needs only to be within five cells and does
+# not care where the camera points -- you deliver a parcel by flying to the
+# spot, not by looking at it -- and there is one of whatever it is, so
+# releasing it anywhere else ends the flight. Which is what `lost` is for.
+
+name: First Aid
+
+brief: >
+  A hiker by the lake is in allergic shock and his friend has called it in.
+  The bay has one EpiPen in it.
+
+objective: Release the EpiPen over them
+
+cargo: EpiPen
+
+# 46.658N 008.149E is the shore of the largest lake on the plains: a cell of
+# dry ground with water on three sides of it. This fix has moved once already
+# -- clipping the generator's stretch to 65535 rather than 65536 shifted the
+# plains' lakes, and the old one came out on dry ground with no water within
+# five cells, a delivery to a lake that was not there.
+map: maps/plains.yaml
+fix:
+  lat: 46.658
+  lon: 8.149
+
+figure: resources/medicalemergency-sprite.png
+weather: rain
+
+done: EpiPen delivered to the casualty
+lost: The only EpiPen is lost on the hill

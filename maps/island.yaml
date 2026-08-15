@@ -18,7 +18,7 @@ general:
 #
 # **Only terrain goes here.** This file describes a world; who is standing in
 # it, and why, belongs to a mission -- two rescues could be flown over this
-# same island. The game holds its missions in src/mission.c.
+# same island. The missions are in missions/, one file each, listed by campaign.yaml.
 items:
   - type: pyramid
     x: 426

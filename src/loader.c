@@ -4,6 +4,7 @@
 #include "dma.h"
 #include "exo.h"
 #include "loader.h"
+#include "mission.h"
 #include "sprite.h"
 #include "vic4.h"
 #include "voxel.h"
@@ -211,19 +212,30 @@ static const char *map_name(uint8_t slot, const char *ext)
 
 int load_resources(load_progress report)
 {
-  uint8_t slot;
+  uint8_t slot, count;
 
   prog_report = report;
   progress_to(0);
+
+  // The campaign first, and not only because it is small: it is what says how
+  // many maps and how many figures there are to read after it. A kilobyte,
+  // read to a known length like everything else on this disk.
+  {
+    const char *bad = campaign_load();
+
+    if (bad)
+      return fail(bad, "CAMPAIGN.BIN");
+  }
+  count = campaign_maps();
 
   // Every map the disk carries, each into its own attic slot. Two of them
   // cost about 500 KB crunched against the 661 KB one hand-drawn map took,
   // which is the whole argument for generating them: see
   // documentation/on-device-maps.md.
-  for (slot = 0; slot < MAP_COUNT; slot++) {
-    uint8_t from = (uint8_t)(slot * (96 / MAP_COUNT));
-    uint8_t mid = (uint8_t)(from + (96 / MAP_COUNT) / 4);
-    uint8_t to = (uint8_t)(from + 96 / MAP_COUNT);
+  for (slot = 0; slot < count; slot++) {
+    uint8_t from = (uint8_t)(slot * (96 / count));
+    uint8_t mid = (uint8_t)(from + (96 / count) / 4);
+    uint8_t to = (uint8_t)(from + 96 / count);
 
     if (load_crunched(map_name(slot, "HGT"), MAP_HEIGHTMAP(slot), from, mid))
       return -1;
@@ -252,7 +264,7 @@ int load_resources(load_progress report)
   }
   progress_to(97);
   {
-    const char *bad = sprite_load();
+    const char *bad = sprite_load(campaign_figures());
 
     if (bad)
       return fail("BAD SPRITE IN", bad);

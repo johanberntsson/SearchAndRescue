@@ -1,0 +1,30 @@
+# A camera mission: no `cargo`, so the job is to look. SPACE files the report,
+# it needs the figure on screen and within ten cells, and getting it wrong
+# costs nothing but the time to go round again.
+
+name: The Lost Hiker
+
+# Prose. tools/campaign.py uppercases it and wraps it to the briefing's width,
+# and refuses it rather than running off the page.
+brief: >
+  A hiker is overdue from the ridge above the valley.
+  The last fix from their phone puts them near a summit.
+
+objective: Find them and file a report
+
+# The world, and a cell of it. 46.687N 008.106E is the top of the step pyramid
+# on the island's northern headland -- the pyramid is an `items:` entry in
+# island.yaml and is built into the terrain itself, so the hiker is standing on
+# generated ground.
+#
+# **A fix moves when its map is re-rolled.** Check it against the PNGs after
+# anything that changes the generator; tools/preview.py will fly you to it.
+map: maps/island.yaml
+fix:
+  lat: 46.687
+  lon: 8.106
+
+figure: resources/survivor-sprite.png
+weather: clear
+
+done: Survivor located and reported
