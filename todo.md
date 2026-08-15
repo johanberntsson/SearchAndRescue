@@ -352,11 +352,12 @@ Do not re-litigate these without new measurements.
   hook, which both the tune and the engine now hang off, moved into
   `src/audio.c` and `src/audio_irq.s`.
 - **Title music**, done 15 Aug 2026. A three voice SID tune over the loading
-  screen, the title and the mission list; off from the briefing to the
-  debrief, on again at the list. `audio_begin()` once and `music_set(0|1)` per
-  screen is the whole of the game's side of it. Where it stops is taste rather
-  than cycles — the flight never calls the player — and the two calls in
-  `main.c` are where to change it. Four things worth knowing:
+  screen, the title, the mission list, the briefing and the debrief -- every
+  page, with the flight the one quiet place. `audio_begin()` once and
+  `music_set(0|1)` either side of the flight is the whole of the game's side
+  of it. Where it stops is taste rather than cycles -- the flight never calls
+  the player -- and that pair of calls in `main.c` is where to change it. Four
+  things worth knowing:
   - **the tune is ACME and the build is Calypsi.** `music/` holds the player
     and the tune; `tools/acme2calypsi.py` translates them into
     `build/music_asm.s`, generated rather than checked in, so `music/` is the

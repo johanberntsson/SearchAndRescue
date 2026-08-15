@@ -50,10 +50,10 @@ generated worlds, both on the one disk**.
   way a weather report does, by the direction it comes from
 - A battery that runs down as you fly, four minutes or so at normal speed and
   a quarter of that in sport. Run it flat and the mission is over
-- **A three voice SID tune** over the loading screen, the title and the
-  mission list, played from the ROM's own interrupt at 50 Hz and written in
-  both stereo SIDs. It stops at the briefing: from there on the flight has the
-  floor
+- **A three voice SID tune** under every page — the loading screen, the title,
+  the mission list, the briefing and the debrief — played from the ROM's own
+  interrupt at 50 Hz and written into both stereo SIDs. The flight is the one
+  quiet place
 - **An engine note under the flight** — not a tune but three detuned voices
   whose pitch follows what is being asked of the props. It spools up from cold
   at launch, rises when you open the throttle, and sits higher in sport

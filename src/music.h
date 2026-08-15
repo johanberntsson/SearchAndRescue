@@ -6,9 +6,10 @@
 // tools/checkmusic.py, which proves the translation assembles to the same
 // bytes ACME does.
 //
-// Music belongs to the screens either side of a flight and not to the flight:
-// it plays over the loading screen, the title and the mission list, and the
-// briefing turns it off. What a flight has instead is engine.h.
+// Music belongs to the pages and not to the flight: it plays under all of
+// them -- the loading screen, the title, the mission list, the briefing and
+// the debrief -- and only launching stops it. What a flight has instead is
+// engine.h.
 #ifndef MUSIC_H
 #define MUSIC_H
 

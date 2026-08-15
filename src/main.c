@@ -533,8 +533,9 @@ int main(void)
     flight_outcome how;
 
 #if !FLYNOW
-    // The title and the list are the musical part of the game. Coming back to
-    // them from a debrief starts the tune again; staying on them does not.
+    // Every page is a musical one. This is where the tune picks up again
+    // after a flight -- coming off the debrief it is already playing, so
+    // saying so once more costs nothing and covers the first time round.
     music_set(music_wanted);
     mission_no = choose_mission(mission_no);
     if (mission_no >= MISSION_COUNT) {  // backed out of the list
@@ -544,23 +545,25 @@ int main(void)
       continue;
     }
 
-    // From here to the debrief there is no music. A search is meant to sound
-    // like the wind and the rain, and the briefing is where that starts.
-    music_set(0);
     screens_briefing(mission_no);
     // RUN/STOP reads the same on the briefing as it does in the air: this is
     // not the job, take me back.
     if (wait_for_key(KEY_SPACE | KEY_STOP) & KEY_STOP)
       continue;
-#else
-    music_set(0);  // FLYNOW goes straight to the flight
 #endif
 
-    // The motors, for exactly as long as the drone is in the air, and only
-    // if the pilot wants to hear them.
+    // **The flight is the one quiet place.** Every page has the tune under
+    // it, including the briefing and the debrief; the air has the motors and
+    // the wind and nothing else. The tune comes back for the debrief, which
+    // is a page like any other.
+    //
+    // The motors run for exactly as long as the drone is up, and only if the
+    // pilot wants to hear them.
+    music_set(0);
     engine_start(engine_wanted);
     how = flight(mission_no, &seconds);
     engine_set(0);
+    music_set(music_wanted);
 
     screens_debrief(mission_no, how, seconds);
     wait_for_space();

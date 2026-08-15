@@ -578,8 +578,9 @@ past with the camera pointed somewhere else.
 ## Sound
 
 Two things make a noise and never at the same time: a **tune**, which belongs
-to the menus, and an **engine note**, which belongs to the flight. Both hang
-off one interrupt.
+to the pages, and an **engine note**, which belongs to the flight. Every page
+has the tune under it and only the air is without it. Both hang off one
+interrupt.
 
 **`M` mutes whatever the place you are in sounds like** — the tune on a page,
 the motors in the air. Two settings and not one, because wanting a quiet
@@ -621,18 +622,19 @@ constants to move.
 
 ### The tune
 
-A three voice SID tune plays over the loading screen, the title and the
-mission list, and stops at the briefing. `src/music.c` is the whole of the
-game's side of it: `music_set(0|1)` at each screen. Turning it on again
-rewinds rather than resumes — it is a title screen, not a radio — and
-`music_set` is idempotent, so a screen that is already musical can say so
-again.
+A three voice SID tune plays under **every page** — the loading screen, the
+title, the mission list, the briefing and the debrief. `src/music.c` is the
+whole of the game's side of it: `music_set(0|1)` around the flight. Turning it
+on again rewinds rather than resumes — it is a title screen, not a radio — and
+`music_set` is idempotent, so a page that is already musical can say so again,
+which is what lets the tune run unbroken from a debrief into the next
+briefing.
 
-**Where the music stops is a decision about the game.** From the briefing to
-the debrief there is none: a search is meant to sound like the wind and the
-rain. It costs nothing to have it either way — the flight never calls the
-player — so this is taste, and the two calls in `main.c` are where to change
-it.
+**The flight is the one quiet place, and that is a decision about the game.**
+The air has the motors, the wind and nothing else: a search is meant to sound
+like weather. It costs nothing to have it either way — the flight never calls
+the player — so this is taste, and the pair of calls either side of `flight()`
+in `main.c` is where to change it.
 
 **The tune is written in ACME and the rest of this is Calypsi.** `music/`
 holds `player.asm` (the engine: patterns, instruments, arpeggios, vibrato,
