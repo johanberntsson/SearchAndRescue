@@ -193,9 +193,10 @@ room came from, in the order it was taken:
   and the program area from 88% used to 68.2%. See The game for what replaced
   it.
 
-**And the sound spent 3235 of it back** — 2652 for the tune and 583 for the
-engine note — taking the program area to 79.4% with 6746 bytes free. That was
-the point of the reclaim.
+**And it was spent again the same day** — 2652 on the tune, 583 on the engine
+note and 1449 on the campaign buffer, net of the C mission table it replaced.
+The program area is 83.8% used with 5297 bytes free in a default build, 82.1%
+and 5863 in a `PROFILE=0` release. That was the point of the reclaim.
 
 Next after that would be the 512-byte bounce buffer itself, or the sprite's
 1028.
@@ -709,8 +710,8 @@ else; **ACME is needed only to check it**.
   recognise is an error, not a line passed through to be mis-assembled.
 
 **It costs 2652 bytes of the 32 K** — player, tune and all — which is what the
-`printf` reclaim was for. With the engine note's 583 beside it the program
-area is 79.4% used, with 6746 bytes still free.
+`printf` reclaim was for. See the 32 KB note under Memory map for where the
+rest of that reclaim went.
 
 **The music is running while the resources load**, which is the one place it
 touches something timing-sensitive. It is fine in the emulator and should be
@@ -816,8 +817,9 @@ parked in bank 1 at load time and `sprite_select` DMAs the mission's own down
 into the one near buffer**, because the 32K has room for a kilobyte of pixels
 and not for two — and a kilobyte of DMA once a flight is nothing, while a far
 pointer in the drawing loop would be paid per pixel forever. Adding a figure
-means a sheet in the Makefile's `SPRITES`, an entry in `spr_files`, and
-`SPRITE_FIGURES`.
+is a `figure:` line in a mission file: the campaign collects the sheets, names
+them in order, and `sprite_load` reads as many as there are. `SPRITE_MAX` is
+the ceiling and it is bank 1's, not a choice — see The campaign.
 
 **The pictures come off the sprite sheets through `tools/convmap.py`, not a
 tool of their own**, because there is only one palette on screen: their
@@ -917,11 +919,11 @@ map notes.
 
 `convmap.py` takes the two map sizes as arguments; the Makefile passes
 `HGT_SIZE` and `COL_SIZE`. The sprite sheets are one **comma-separated**
-argument, from the Makefile's `SPRITES`, and the first one's output is
-`<stem>.spr` while the rest are `.sp2`, `.sp3` and so on — the order
-`src/sprite.c` numbers its figures in. Every map's conversion writes its own
-copy of them and they are identical under `--shared`, so the Makefile takes
-slot 0's and puts them on the disk as `terrain.spr`/`terrain.sp2`.
+argument, which `build/campaign.mk` fills in from the sheets the missions
+name, and the first one's output is `<stem>.spr` while the rest are `.sp2`,
+`.sp3` and so on — the order the campaign numbers its figures in. Every map's
+conversion writes its own copy of them and they are identical under
+`--shared`, so slot 0's are the ones copied to the disk.
 
 **The palette is what limits how many figures there can be**, and generating
 the maps loosened it. Each figure claims fifteen entries, and what is left
@@ -977,10 +979,12 @@ and the riser wears the lighter course because a stepped face seen from the air
 is nearly edge on. Item types genmap cannot build are refused rather than
 dropped, and the previewer pins only the ones it does not build.
 
-**The disk is generated maps now, and there are two of them.** The Makefile's
-`MAP_YAMLS` names one mission file per map slot; each is run through
-`genmap.py` and then `convmap.py` into `build/map0.*` and `build/map1.*`, and
-`src/mission.c` says which slot a mission is flown over. The hand-drawn pair in
+**The disk is generated maps now, and there are two of them.** The map list
+comes out of the campaign — each mission names its world and
+`tools/campaign.py` collects them, so the Makefile's `MAP_YAMLS` is generated
+rather than kept by hand. Each is run through `genmap.py` and then
+`convmap.py` into `build/map0.*` and `build/map1.*`, and which slot a mission
+flies is the order its map was first named in. The hand-drawn pair in
 `resources/` is no longer built into anything — it stays as the reference the
 sun was measured against and the pyramid copied from.
 
@@ -1019,8 +1023,9 @@ Three things to know before adding a third map:
   byte-identical — one set serves every map. It also settles the old question
   about sprites taking indices below 16: they no longer can.
 - attic RAM is cut into **three** 2 MB slots (`MAP_SLOT` in `loader.h`), so
-  there is room for one more without moving anything. `MAP_COUNT` in
-  `loader.h` and `MAP_YAMLS` in the Makefile have to agree.
+  there is room for one more without moving anything. Nothing has to be kept
+  in step by hand any more: `MAP_SLOTS` is the ceiling, the count comes off
+  the disk with the campaign, and `tools/campaign.py` refuses a fourth.
 - **`FLYNOW=n` launches straight into mission n**, and it is the only way a
   headless run reaches the second map — nothing else can press a key. Both
   maps were flown that way before the arrangement was believed.

@@ -14,10 +14,10 @@ See documentation/procedural-maps.md for the design and the YAML schema.
 **A map file describes a world and nothing else** -- its seed and shape, and
 the things built into its terrain.  Which mission is flown over it, and where
 anybody stands, is not in here: a mission *has* a map, and the two are not one
-to one, since two rescues could be flown over the same island.  The game's
-mission table is in src/mission.c and names the map slot it wants.  Items that
-are terrain -- a pyramid -- are built into the two maps here; a survivor is a
-mission object and will come from the mission side when that exists.
+to one, since two rescues could be flown over the same island.  A mission is
+a file in missions/, listed by campaign.yaml, and it names the map it wants by
+path.  Items that are terrain -- a pyramid -- are built into the two maps
+here; a survivor is a mission object and comes from the mission side.
 
 Everything is drawn from one seeded xorshift stream, so the same YAML gives
 byte identical output on any machine, and the seed in the file is the whole of
@@ -714,8 +714,8 @@ RISER = 4                # of which this much is the riser's own band
 # The item types this file knows how to build, and the sizes each takes. An
 # item type that is only a mission object -- a survivor, a landing site --
 # does not belong in a map file at all: it belongs to whatever flies here, and
-# the game holds it in src/mission.c today. So an unknown type is a typo and
-# is refused rather than passed along.
+# a mission file in missions/ holds it. So an unknown type is a typo and is
+# refused rather than passed along.
 ITEMS = {"pyramid": PYRAMID}
 
 

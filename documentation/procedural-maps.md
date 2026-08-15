@@ -7,9 +7,12 @@ own renderer, and **the disk carries two of them** — mission one over
 attic RAM at once. That is the thing the whole exercise was for: two generated
 maps are 186 KB crunched at the shipping resolution against 661 KB for the one
 hand-drawn pair, so a disk
-that held one world now holds two with room to spare. `mission.bin` is still
-not written; the hand-drawn pair in `resources/` is no longer built into
-anything. See "As built" at the end for what the tools do and what was learned
+that held one world now holds two with room to spare. **The missions are data
+too now** -- `campaign.yaml` lists the files in `missions/`, each names the
+world it is flown over, and `tools/campaign.py` writes both the binary the
+game reads at boot and the map list the Makefile builds from, so what used to
+be called `mission.bin` and `map.bin` is one file doing both jobs. The
+hand-drawn pair in `resources/` is no longer built into anything. See "As built" at the end for what the tools do and what was learned
 making them.
 
 This covers **build-time map generation**, which is how the maps are made.
@@ -30,7 +33,7 @@ drawing/sourcing them.
 ## Pipeline
 
 ```
-map.yaml → tools/genmap.py → height map (indices), colour map (indices), map.bin
+map.yaml → tools/genmap.py → height map (indices), colour map (indices)
                                         │
                               (same file, dev mode)
                                         ▼
@@ -120,8 +123,9 @@ An item is one of two things, and the type says which:
 - **belonging to a mission.** A survivor, a landing site: a position the game
   reads, which has no business in a file that describes a *world* -- two
   missions could stand different people on the same island. These live in
-  `src/mission.c` today and will move to `mission.bin`; `genmap.py` refuses an
-  item type it does not know how to build rather than silently dropping it.
+  `missions/*.yaml` as the mission's `fix`, and reach the game through
+  `campaign.bin`; `genmap.py` refuses an item type it does not know how to
+  build rather than silently dropping it.
 
 The previewer draws a pin for the second kind only. A pin on a pyramid would
 hide the thing it was pointing at, and "can this be spotted from the air" is
@@ -136,9 +140,12 @@ field does three jobs at once:
   `hmap03.png`/`cmap03.png` (matching whatever zero-padding convention
   `convmap.py` already expects) — so filenames are derived, never
   hand-typed or tracked separately from the YAML.
-- **Mission reference.** Mission configs refer to a map by this index
-  ("use map 3") rather than by filename or seed, giving a stable handle
-  that doesn't change if the map is regenerated with a different seed.
+- **Mission reference.** *Not what happened.* A mission names its map by
+  **path** (`map: maps/island.yaml`) and `tools/campaign.py` assigns the slot
+  from the order the maps are first named in, so two missions over one island
+  share a slot and the numbering has no gaps. `id` turned out to be a
+  file-naming device and nothing else; it is still unique per map, and it is
+  still what the previewer and the Makefile find the PNGs by.
 - **Attic RAM addressing.** Once maps are resident in attic RAM (whether
   loaded from disk today, or generated in place later per the two-stage
   boot idea above), `id` gives a direct, computable offset — `id * stride`
@@ -257,10 +264,14 @@ interface is worth having: **if generation moves onto the MEGA65, only what
 *writes* the maps changes.** A stage-one generator reads `map.bin` and never
 needs to know that missions exist. See `documentation/on-device-maps-experiment.md`.
 
-### `mission.bin` — what is flown, and where
+### `campaign.bin` — what is flown, and where
 
-Nothing of this exists yet; the game holds it as a C table in
-`src/mission.c`. What belongs in it:
+**Built, 15 Aug 2026**, under the name `campaign.bin` rather than
+`mission.bin`, because one file turned out to carry the whole campaign:
+`campaign.yaml` lists the files in `missions/` and `tools/campaign.py` writes
+both the binary the game reads at boot and the Makefile fragment that says
+which maps and sprite sheets to build. See "The campaign" in CLAUDE.md. What
+it holds is what this section said it should:
 
 - which map slot the mission is flown over — the maps are all resident, and
   `map_use()` switches between them for 512 bytes of plane table
@@ -331,11 +342,11 @@ to the generator from here.
 - Automatic item placement/snapping (flat-ground search, biome
   constraints) — items are placed manually by eye while flying.
 - ~~Separating world/terrain definition from mission/item definition into
-  separate YAML files~~ — **done, on the naming and the design if not yet in
-  a second file.** `maps/*.yaml` describe worlds and nothing else, the tools
-  call them map files, and what a mission is lives in `src/mission.c` until
-  `mission.bin` exists. A mission has a map and is not one; the seam became
-  annoying the moment the disk carried two maps.
+  separate YAML files~~ — **done, and in a second file now.** `maps/*.yaml`
+  describe worlds and nothing else; `missions/*.yaml` describe what is flown
+  over them, and `campaign.yaml` lists those. A mission has a map and is not
+  one; the seam became annoying the moment the disk carried two maps, and it
+  is a real seam now rather than a naming convention.
 
 ## As built (stage one)
 
@@ -354,8 +365,8 @@ maps are build products and are not in git; the YAML and the palette are.
 Everything in the schema above is implemented as written, plus a `--size`
 (default 1024, powers of two) and a `--palette`. `items` are validated, and
 the ones that are terrain — a `pyramid`, so far — are built into the two maps;
-what the game will read out of `mission.bin` is still a C table in
-`src/mission.c`.
+what is flown over them comes from `missions/*.yaml` through
+`tools/campaign.py`.
 
 ### What the numbers mean
 

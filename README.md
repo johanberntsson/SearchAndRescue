@@ -12,6 +12,8 @@ aftershocks that reshape the landscape mid-flight. `documentation/vision.md` has
 
 ## Status
 
+`release/sar-latest.d81` is a disk you can boot -- built 15 Aug 2026.
+
 Two missions exist, end to end: a title screen, a mission list, a briefing, a
 flight, and a debrief. They are deliberately the same flight with different
 words on it — fly to somebody and press a key — because that is where the
@@ -139,9 +141,13 @@ You will need:
 - [Calypsi 6502 tools](https://github.com/hth313/Calypsi-tool-chains/releases) 5.18 or later
 - [Xemu](https://github.com/lgblgblgb/xemu) for `xemu-xmega65`
 - Ruby, for the bundled `tools/diskutil.rb`
-- Python with Pillow and NumPy, for the map converter and the generator.
-  `tools/preview.py` also wants tkinter (`python3-tkinter` on Fedora,
-  `python3-tk` on Debian) and PyYAML
+- Python with Pillow, NumPy and PyYAML, for the map generator, the map
+  converter and the campaign. `tools/preview.py` also wants tkinter
+  (`python3-tkinter` on Fedora, `python3-tk` on Debian)
+- [ACME](https://sourceforge.net/projects/acme-crossass/) is *not* needed to
+  build: the SID player under `music/` is translated into the project's own
+  assembler by `tools/acme2calypsi.py`, which is Python. ACME is only wanted
+  by `make checkmusic`, which proves the translation byte for byte
 - [exomizer](https://bitbucket.org/magli143/exomizer/wiki/Home), which crunches the
   maps so they fit a D81. `tools/convmap.py` looks for it in `$EXOMIZER`, at
   `tools/exomizer`, in an `ozmoo-z6` checkout beside this project, and on `PATH`
@@ -153,6 +159,7 @@ make FLYNOW=1                    # skip the menus and fly mission 1 (or FLYNOW=2
 make COL_SIZE=1024               # the finer colourmap: better, and 40 s more to load
 make REPORT=120                  # hold the startup benchmark report, to read it
 make release                     # the disk to hand out, into release/sar-latest.d81
+make checkmusic                  # both assemblers over the tune, byte for byte
 make clean
 ```
 
@@ -192,11 +199,19 @@ of whatever is in the bay: release it anywhere else and the mission is lost.
 
 ## Layout
 
+    campaign.yaml   what goes on the disk: the missions, in order
+    missions/        one YAML file per mission
+    maps/            one YAML file per world, and the shared palette
+    music/           the SID player and the tune, in ACME
     src/            engine: display, DMA, resource loading and decrunching,
-                    renderer, sprites, input, panel; game: screens, missions
-    tools/          convmap.py builds the map resources, profread.py reads
-                    profiles, diskutil.rb builds the disk image
-    resources/      source height and colour maps
+                    renderer, sprites, audio, input, panel; game: screens,
+                    missions
+    tools/          campaign.py builds the campaign and the map list,
+                    genmap.py generates a world, convmap.py builds the map
+                    resources, preview.py flies one on the PC, profread.py
+                    reads profiles, diskutil.rb builds the disk image
+    resources/      the hand-drawn maps the generator was measured against,
+                    and the sprite sheets
     documentation/  vision.md, the technical and gameplay design
     release/        a disk image you can just boot
     screenshots/

@@ -2,6 +2,12 @@
 
 ## Where it is
 
+**Released 15 Aug 2026** -- `release/sar-latest.d81`, `PROFILE=0`, booted and
+checked to the title before it was copied. Today put sound in it (a tune under
+every page, an engine note under the flight, `M` to mute either), rebuilt the
+loading screen as the title screen, and took the missions out of the program
+and onto the disk.
+
 Two missions, end to end: title, mission list, briefing, flight, debrief —
 **and each over its own generated world**, both resident at once on one disk.
 Mission one finds the lost hiker on the step pyramid of the island at 46.687N
@@ -117,9 +123,12 @@ all of it driven from the mission table rather than from branches. The shape
 is proven — a third mission is data plus a sprite sheet. Memory was the scarce
 thing here — about 800 bytes of the 32K — and **dropping `printf` on 15 Aug
 2026 gave 6.5 KB of it back**, of which the title music spent 2652 the same
-day, and the engine note 583 more. The program area is **79.4% used with 6746 bytes free**;
-the low free RAM at `$1600` is unchanged and still tight at 80 bytes spare, and zero page has
-ten. Read the Open note on `cstack` before starting anything large.
+day, the engine note 583 more, and the campaign's buffer 1449 after the C
+mission table it replaced came out. The program area is **83.8% used with 5297 bytes free** in a default build,
+82.1% and 5863 in a `PROFILE=0` release.
+The low free RAM at `$1600` is unchanged and still tight at 80 bytes spare,
+zero page has ten, and bank 1 is now full to the byte -- see The campaign in
+CLAUDE.md. Read the Open note on `cstack` before starting anything large.
 
 - **The keyboard controls are finished.** Called on 13 Aug 2026, flying them:
   WASD, RF, QE and the three speed modes are the drone's and they feel right.

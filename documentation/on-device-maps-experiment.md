@@ -300,6 +300,10 @@ now has in hand is a few thousand cycles, not a file.
    it and never needs to know that missions exist; what the *game* reads is
    `mission.bin`, which is a different file for a different thing. See
    documentation/procedural-maps.md.
+   (Since written: the game's half of that exists as `campaign.bin`, from
+   `campaign.yaml` and `missions/*.yaml`. The generator's half was never
+   needed, because the generator stayed on the PC. The rest of this list is
+   left as it was written, for an approach that was measured and dropped.)
 
 ## Where the port has got to
 
