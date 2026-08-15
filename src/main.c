@@ -350,6 +350,7 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
   vic4_view_mode();
   panel_init();
   panel_message(STANDBY);
+  message_left = MESSAGE_FRAMES;  // it fades to the fix, like any other
   panel_speed(speed_mode);
   panel_cargo(mission_cargo_name(m));
   // Seeded before anything asks for a random number, and the weather set
@@ -408,8 +409,11 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
     profile_count(C_FRAMES, 1);  // always: the FPS readout needs it
     fps10 = profile_fps10(frame_start - profile_now32());
 
+    // The alert is over: the two top boxes go back to the fix and the
+    // battery, which is what panel_message(0) means now that a message
+    // covers them rather than having a row of its own.
     if (message_left && !--message_left)
-      panel_message(STANDBY);
+      panel_message(0);
 
     // Every way out of the loop reports the flight that actually happened, so
     // the debrief times an abandoned one too.

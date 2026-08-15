@@ -117,34 +117,37 @@ boot is 186 KB of maps -- about 25 seconds off a floppy, 12 off SD, 8 in xemu.
 There is no obvious next second to win: the PRG load is about one second and
 was measured, not guessed.
 
-**The panel is where the work is now**, and the next step is **a sprite
-plane over it**, decided 15 Aug 2026 after `make sprtest` came back yes.
+**The panel is done and it is a picture with a sprite plane over it**,
+finished 16 Aug 2026. What is left of it is the artwork itself: the two
+mockups in `screenshots/` were drawn as a suggestion, the text now sits where
+they put it, and anything about the picture that wants changing is a PNG and
+not a line of code. The one thing worth knowing before redrawing it is that
+`resources/panel.png` is 320x48 (or a whole multiple), and that its readout
+boxes are what `panel.c`'s pixel coordinates are measured against.
 
-The artwork landed the same day (see Done) and immediately ran into the thing
-it cannot live with: the text is on the 8-pixel character grid and the picture
-is not. That is not fixable with a shifted font -- a glyph moved down 4 spills
-into the row below, so each line would need two cells, and five lines in six
-rows means one cell would have to hold two halves at once. It needs a plane
-that does not consume character cells.
+The history below is kept because the reasoning is worth more than the
+outcome.
 
-**Hardware sprites are that plane, and they work.** `src/sprtest.c` proved
-16-bit sprite pointers, 64-pixel widths, 48-pixel heights and priority over
-full-colour characters, all in the game's own display -- see The panel in
-CLAUDE.md for the table. Five 64x48 sprites cover the whole 320-pixel panel
-for 1920 bytes, a glyph is about sixteen writes, and **nothing has to be
-restored**, which is what makes it cheaper than painting into the panel's own
-pixels. What is left to do:
+The artwork landed on 15 Aug and immediately ran into the thing it cannot live
+with: the text was on the 8-pixel character grid and the picture is not. That
+is not fixable with a shifted font -- a glyph moved down 4 spills into the row
+below, so each line would need two cells, and five lines in six rows means one
+cell would have to hold two halves at once. It needs a plane that does not
+consume character cells.
 
-- **confirm it on the real machine.** The note this replaced came from
-  hardware behaving differently from the emulator, and it would be a poor joke
-  to make the same mistake in the other direction. `make sprtest` boots a PRG
-  and needs no disk.
-- three sprites are still spare afterwards, and the crosshair could be one.
-- the two fallbacks, if hardware says no: **paint the glyphs into the panel's
-  full-colour pixels** (works everywhere, about 1% of a frame, and wants a
-  15 KB pristine copy in bank 4 to restore from), or **buy the panel a
-  seventh row** by taking 8 pixels off the 3D view, which gains a little speed
-  and needs `checkview`'s reference screenshot regenerating.
+**Hardware sprites are that plane.** `src/sprtest.c` proved 16-bit sprite
+pointers, 64-pixel widths, 48-pixel heights and priority over full-colour
+characters, in the game's own display, in xemu and then **on the real MEGA65,
+where it looked identical**. Five 64x48 sprites cover the whole 320-pixel
+panel for 1920 bytes; `src/overlay.c` is the plane and `src/panel.c` is now a
+list of pixel coordinates. Three sprites are still spare, and the overview
+map's crosshair could be one of them.
+
+Two fallbacks were priced and are not needed, but the numbers are worth
+keeping: **painting the glyphs into the panel's own full-colour pixels** (four
+times the writes and a 15 KB pristine copy in bank 4 to restore from), and
+**buying the panel a seventh row** by taking 8 pixels off the 3D view, which
+would gain a little speed and need `checkview`'s reference regenerating.
 
 **RRB is the third way and is not needed for this.** It can do vertical too --
 `fcm_yoffs`, screen byte 1 bits 5-7 with a direction bit at bit 4, offsetting
@@ -358,6 +361,28 @@ Do not re-litigate these without new measurements.
   sample.
 
 ## Done
+
+- **The panel's text is a plane of hardware sprites**, done 16 Aug 2026, over
+  the artwork below. Five 64x48 sprites side by side are 320x48 -- the panel
+  exactly -- and 1920 bytes of 1bpp bitmap in bank 4 above the picture.
+  `src/overlay.c` draws into it; `src/panel.c` is pixel coordinates now.
+  - **it is faster than the characters it replaced.** The frame's "everything
+    else" went 2.46 ms with character text, 4.1 ms with the first version of
+    the plane, and **1.87 ms** once a field that has not changed stopped being
+    redrawn. Most of them do not change every frame: the fix is in
+    millidegrees, which is one map cell.
+  - **nothing has to be restored**, which is the real reason it beats painting
+    glyphs into the panel's own pixels. The plane is transparent where it is
+    not drawn.
+  - **the glyphs are the C65 ROM's**, read by the CPU at `$2D000`, so there is
+    no font in the build.
+  - two bugs not to repeat, both from drawing a field in pieces: a clear
+    rounded out to byte columns eats whatever shares them (`DEG` became
+    `)EG`), and a label drawn separately from its value is orphaned when
+    something covers the box (the launch message wiped `BATT`). A box is one
+    string, and a clear is masked to the pixel.
+  - **confirmed on the real MEGA65** before any of it was written, with
+    `make sprtest`.
 
 - **The panel has a background picture**, done 15 Aug 2026. 40x6 full-colour
   characters from `resources/panel.png` through `tools/convmap.py --panel`,

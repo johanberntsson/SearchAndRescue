@@ -161,7 +161,12 @@ HUD_PAPER = 241
 # slot the colourmap does not use. Keep in sync with src/panel.h.
 PANEL_INK = 1
 PANEL_LABEL = 2
-PANEL_COLOURS = ((PANEL_INK, (255, 255, 255)), (PANEL_LABEL, (150, 160, 170)))
+# The panel's readouts, which are hardware sprites over the artwork rather
+# than characters: one colour for the whole plane, sampled off the phosphor
+# green in screenshots/layout-example.png. Keep in sync with PANEL_TEXT.
+PANEL_TEXT = 3
+PANEL_COLOURS = ((PANEL_INK, (255, 255, 255)), (PANEL_LABEL, (150, 160, 170)),
+                 (PANEL_TEXT, (51, 199, 76)))
 
 # The panel's background artwork: 320x48 pixels of full-colour characters
 # under the readouts, in the entries the sky and the HUD pair leave over at

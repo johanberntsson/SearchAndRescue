@@ -36,6 +36,11 @@ generated worlds, both on the one disk**.
   panel with a compass and sunken readout boxes, 240 full-colour characters
   under the flight's numbers. It costs no pixel writes and no frame time at
   all, and its fourteen palette entries are ones nothing else had ever used
+- **The readouts ride over it on five hardware sprites**, 64x48 each, which is
+  the panel's 320x48 exactly. That takes the text off the 8-pixel character
+  grid — the altitude and heading sit on the compass face — and it is *faster*
+  than the characters it replaced, because a field that has not changed is not
+  redrawn and nothing has to be restored under it
 - Altitude, heading, GPS coordinates and frame rate in those boxes, with an
   overview map of the whole world and a crosshair showing where you are
 - **Two missions over two different worlds, both on the one disk** — the first

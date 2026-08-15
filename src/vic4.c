@@ -2,8 +2,7 @@
 
 #include "dma.h"
 #include "loader.h"
-#include "dma.h"
-#include "loader.h"
+#include "overlay.h"
 #include "panel.h"
 #include "vic4.h"
 
@@ -107,6 +106,12 @@ void vic4_text_mode(void)
   // every text character there is and cannot be set per cell, so it belongs
   // to whichever of the two displays is up -- see PANEL_PAPER.
   VICIV.screencol = 0;
+
+  // And the panel's sprite plane goes with the panel. A sprite is above
+  // everything, so one left enabled would float over the mission list. Every
+  // page in the game comes through here, which is why it is here and not in
+  // each of them.
+  overlay_off();
   for (cell = 0; cell < SCREEN_ROWS * FB_COLS; cell++)
     put_cell(cell, ' ', ' ', PANEL_INK);
 }

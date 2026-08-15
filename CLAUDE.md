@@ -119,6 +119,7 @@ Only banks 1, 4 and 5 are free: `$20000-$3FFFF` holds the C65 ROM, and **colour 
 | `$1E800` | 1024 each | Every map's overview tile set; the flight's is DMAd to `$1D000` |
 | `$1F800-$1FFFF` | 2 KB | Colour RAM alias — **do not write** |
 | `$40000` | 15360 | The panel's background artwork, 40x6 full-colour characters |
+| `$43C00` | 16 + 1920 | The panel's text plane: eight sprite pointers, then five 64x48 sprites |
 | `$40000-$4FFFF` | 64 KB | Heightmap, only when it is 256x256 — **which no longer builds**, see The panel |
 | `$8000000-$81FFFFF` | 2 MB | Map slot 0: colourmap planes, then heightmap |
 | `$8200000-$83FFFFF` | 2 MB | Map slot 1 — mission two's world |
@@ -331,39 +332,72 @@ Three things make it fit:
   which want a black page). The 3D view never draws a pixel of 0, so nothing
   up there notices.
 
-**The picture is therefore what decides the layout.** Everything the panel
-says has to sit inside one of its sunken boxes, because outside one the paper
-colour is wrong — so the columns in `panel.c` are counted to the character
-against the boxes, and a readout that grows has to be traded against its
-neighbour rather than pushed along the row. The boxes:
+### The text plane
+
+**The readouts are not characters. They are five hardware sprites.** A picture
+is not drawn on an 8-pixel grid and a text character is, which was the one
+thing the artwork could not live with — the boxes are 14 pixels tall where two
+character rows are 16, and the cargo box is 4 pixels off the grid outright.
+`src/overlay.c` puts 64x48 sprites side by side over the panel: 5 x 64 is 320,
+the width exactly, and 48 is its six rows. See `src/overlay.h` for why not the
+alternatives, and the sprite paragraph above for the registers and the proof.
+
+- **1920 bytes of 1bpp bitmap** in bank 4 above the artwork, and eight sprite
+  pointers below it. A glyph is eight rows of one shifted byte pair, about
+  sixteen writes, against sixty-four for painting it into full-colour pixels.
+- **Nothing is restored.** The plane is transparent where it is not drawn, so
+  clearing a field is writing zeros and the artwork underneath is never
+  touched. That is what makes it cheaper than blitting, not the write count.
+- **The plane is in column strips**, exactly as the framebuffer is: the five
+  sprites are separate 384-byte blocks, so a byte column is
+  `(col >> 3) * 384 + (col & 7)` and stepping down a row is +8 whether or not
+  the column crosses into the next sprite.
+- **One colour, because a sprite has one.** Labels and values are the same
+  green (`PANEL_TEXT`, reserved by `convmap.py` beside the other panel inks
+  and sampled off the mockup). Two colours would mean two planes, and the
+  mockup wanted one anyway.
+- **The glyphs come from the C65 ROM's character set at `$2D000`**, read by
+  the CPU rather than fetched by the VIC-IV. The ROM lives in RAM, so a far
+  read simply works — no font in the build at all.
+
+**Measured, and it is faster than the characters it replaced**: the frame's
+"everything else" went 2.46 ms (character text) → 4.1 ms (the first version of
+the plane) → **1.87 ms**. What closed it was not drawing a field that has not
+changed: at 170 cycles a byte in C, refreshing four readouts every frame is
+real money, and most of them do not move every frame — the fix is in
+millidegrees, which is one map cell, so it changes only when the camera
+crosses a cell.
+
+Two bugs are worth not repeating, both from drawing a field in pieces:
+
+- **the clear has to be masked to the pixel, not rounded out to byte
+  columns.** Text at an arbitrary x always shares its first and last byte
+  column with whatever is beside it: the wind's bearing ends inside the same
+  column its `DEG` begins in, and rounding turned `DEG` into `)EG` on every
+  refresh.
+- **a box is one string.** The launch message covers the fix and the battery,
+  and when the battery was drawn as a separate label plus a number, the
+  message wiped `BATT` with nothing left to put it back. Every readout now
+  writes its own label with its own value in one call.
+
+The layout, in pixels of the panel's 320x48, measured off `resources/panel.png`:
 
 | | |
 |---|---|
-| rows 0-1, cols 8-23 | the message, then the fix: `46.681N 008.083E` |
-| rows 0-1, cols 25-33 | `BATT 100%` |
-| rows 2-3, cols 8-23 | `ALT 126  HDG 090`, then `WIND 094DEG 4M/S` |
-| rows 2-3, cols 25-33 | `SPD NRM`, `FPS 12.1` |
-| row 5, cols 20-33 | the cargo bay — its `CARGO` label is painted into the picture |
-| cols 0-6 | the compass, and cols 35-39 the map. No text in either. |
+| x 0-55 | the compass: the altitude at y 12, the heading at y 28 |
+| x 57-188, y 5 | the fix, `46.681N 008.083E` — or a message, which takes both top boxes |
+| x 191-270, y 5 | `BATT 100%` |
+| x 57-188, y 21 | `WIND 094DEG 4M/S`, sixteen characters, the box to the pixel |
+| x 198-270, y 21 | `SPD NRM` |
+| x 156-265, y 36 | the cargo bay — its `CARGO` label is painted into the picture |
+| x 60-124, y 36 | the frame rate, the one readout with no box of its own |
+| x 276-314 | the overview map, still full-colour characters |
 
-**The artwork is not drawn on the 8-pixel grid and it shows.** Its bands are
-two pixels above the character rows and the cargo box is four, so the cargo
-line overhangs its box. Slack *inside* a box is invisible — the paper is the
-box colour — but overhang outside it is not. A redraw with every box edge on
-a multiple of 8 is the fix; nothing in the code has to change for it.
-
-**Text is still on the character grid, which is what the RRB is for.** The
-next step is a GOTOX layer over this background: the token is a screen cell
-with colour-RAM byte 0 bit 4 set, its screen bytes a 10-bit pixel X, and bit 7
-of the same byte turning off drawing for colour 0 — which is the transparency
-that would let a readout sit anywhere along a row *and* let the picture show
-through it, so labels could go on the compass face where the mockup puts them.
-`CHRCOUNT` and `LINESTEP` are global for the frame and the framebuffer rows
-would each need an end-of-line `GOTOX right-border` + character pair; at
-`CHRCOUNT` 64 the screen tables are 3200 bytes and still fit between
-`SCREEN_A` and `SCREEN_B`. The panel wants about 1.5x the base fetch, not the
-11 layers Sanderson measured a limit at — but **xemu does not model the VIC's
-RRB time budget**, so that one is for the real machine.
+**A message takes the two top boxes for as long as it is up**, covering the
+fix and the battery, and `panel_message(0)` is how one ends: the fix redraws
+itself on the next frame and the battery is put back from the last figure it
+read. The artwork has five text areas and the game has six things to say, so
+an alert borrows the field it needs — which is what an instrument does.
 
 ### The overview map and the coordinates
 

@@ -1,55 +1,60 @@
 #include "panel.h"
 
 #include "loader.h"
+#include "overlay.h"
 #include "vic4.h"
 
-// Where each readout goes -- and it is the background artwork that decides,
-// not taste. A text character's paper is the screen colour and there is only
-// one of those, so everything the panel says has to sit inside one of the
-// picture's sunken boxes, where that colour is right. The boxes, measured off
-// resources/panel.png in character cells:
+// **Every readout is a pixel position now, not a character cell.** The panel
+// is a picture, the picture is not drawn on an 8-pixel grid, and the text
+// rides over it on a plane of hardware sprites -- see src/overlay.h for why
+// that and not a shifted font or the Raster Rewrite Buffer.
 //
-//   rows 0-1  cols 8-23 and 24-33
-//   rows 2-3  cols 8-23 and 25-33
-//   row  5    cols 20-33   the cargo bay, its CARGO label painted in
-//   cols 0-6  the compass; cols 35-39 the map. No text in either.
+// So these are pixel coordinates within the panel's 320x48, measured off
+// resources/panel.png, and each one puts its text inside one of the picture's
+// boxes:
 //
-// So a row holds one readout and the columns are counted to the character:
-// there is nowhere for anything to overflow to, and a readout that grows has
-// to be traded against its neighbour rather than pushed along the row.
-#define ROW_MESSAGE 0
-#define ROW_POS     1
-#define ROW_FLIGHT  2
-#define ROW_WIND    3
-#define ROW_CARGO   5
+//   x 0..55    the compass, which carries the altitude and the heading
+//   x 57..188  y 2..15   the fix -- or a message, which takes both top boxes
+//   x 191..270 y 2..15   the battery
+//   x 57..188  y 18..32  the wind
+//   x 198..270 y 18..32  the speed limiter
+//   x 156..265 y 36..44  the cargo bay, its CARGO label painted into the art
+//   x 276..314           the overview map, which is still full-colour tiles
+//
+// The frame rate is the one readout with no box of its own: it sits on the
+// frame to the left of the painted CARGO, because the artwork has five text
+// areas and the game has six things to say.
+#define ALT_X   16
+#define ALT_Y   12
+#define HDG_X   16
+#define HDG_Y   28
 
-// Both top boxes; the divider between them is two pixels of the character at
-// column 23, which a long message crosses rather than stops at.
-#define MSG_COL    8
-#define MSG_WIDTH 26
+#define FIX_X   59
+#define FIX_Y    5
+#define FIX_W  128  // "46.681N 008.083E" to the pixel
 
-// "46.632N 008.171E" -- the box to the character, and the way a fix reads on
-// a real controller, with the hemisphere letters doing the labelling.
-#define LAT_COL   8
-#define LON_COL  16
-// 25 and not 24: the box starts halfway through the character at column 23,
-// so a readout at 24 reads as though it were part of the fix beside it.
-// "BATT 100%" is nine characters and the box is nine wide from here.
-#define BATT_COL 25
+#define BATT_X 195
+#define BATT_Y   5
 
-// "ALT 126  HDG 090" and "SPD NRM" beside it.
-#define ALT_COL  12
-#define HDG_COL  21
-#define SPD_COL  25
+#define WIND_X  59
+#define WIND_Y  21
 
-// "WIND 248DEG 4M/S", which is 16 characters exactly, and "FPS 11.6".
-#define WIND_COL  8
-#define FPS_COL  29
+#define SPD_X  202
+#define SPD_Y   21
 
-// The bay itself. The word CARGO is part of the picture, painted on the frame
-// to the left of the box, so the whole box is the load's name.
-#define CARGO_COL   20
-#define CARGO_WIDTH 14
+#define CARGO_X  160
+#define CARGO_Y   36
+#define CARGO_W  104  // what the box holds, and what a shrinking name clears
+
+#define FPS_X    60
+#define FPS_Y    36
+
+// A message takes both of the top boxes, crossing the two-pixel divider
+// between them, and covers the fix and the battery for as long as it is up.
+// That is deliberate: an alert on an instrument takes the field it needs.
+#define MSG_X   59
+#define MSG_Y    5
+#define MSG_W  208  // 26 characters
 
 // An angle in 256ths of a turn -- the camera's units, and the wind's -- as the
 // compass bearing a pilot expects to read.
@@ -57,8 +62,8 @@
 // The quarter turn is the whole point of it. Angle 0 moves the camera along
 // +x, which is east, while the overview map is north up, so the raw angle
 // printed as degrees called east 000 and north 270. Adding 64 first turns it
-// into a real bearing; the cast back to uint8_t is what wraps 192 (north)
-// round to 000 rather than letting it read 360.
+// into a real bearing; the mask is what wraps 192 (north) round to 000 rather
+// than letting it read 360.
 //
 // 45/32 rather than the equal 360/256: a heading of 183 or more overflows the
 // 16-bit product of the latter, and 192 came out as 14 degrees.
@@ -71,103 +76,107 @@
 // all. This is the same family as the int8_t miscompile under Performance.
 #define DEGREES(a) (((((uint16_t)(a) + 64) & 0xFF) * 45) / 32)
 
-#if PANEL_ART_COLS != PANEL_COLS || PANEL_ART_ROWS != PANEL_ROWS
-#error "the panel artwork is not the shape of the panel"
-#endif
+// Fields are built here and drawn in one go, because the plane is written a
+// byte at a time and adjacent glyphs share byte columns: a string is cleared
+// and redrawn as a unit, a character at a time would erase its neighbour.
+static char field[28];
 
-void panel_puts(uint8_t col, uint8_t row, const char *s, uint8_t colour)
-{
-  vic4_puts(col, (uint8_t)(FB_ROWS + row), s, colour);
-}
+// **A field that has not changed is not redrawn**, and that is not a
+// micro-optimisation: drawing one is about 170 cycles a byte in C, and the
+// four readouts refreshed every frame came to 4.1 ms of an 88 ms one. Most of
+// them do not actually move every frame -- the fix is in millidegrees, which
+// is one map cell, so it changes only when the camera crosses a cell, and the
+// heading only when the pilot yaws. Caching took the whole panel from 4.1 ms
+// to well under one.
+static char last_fix[18];
+static char last_alt[5];
+static char last_hdg[5];
+static char last_fps[6];
 
-// The panel's paper is a picture now, so clearing a cell means putting the
-// artwork character back rather than writing a space. Every readout that
-// blanks a field before writing it goes through here: a space would punch a
-// hole in the background and never fill it in again.
-static void panel_blank(uint8_t col, uint8_t row, uint8_t width)
-{
-  while (width--) {
-    vic4_panel_tile(col, row,
-                    (uint16_t)(PANEL_ART_CHAR + (uint16_t)row * PANEL_ART_COLS
-                               + col));
-    col++;
-  }
-}
-
-// Zero padded rather than space padded, for the fractional half of a
-// coordinate: .005 of a degree has to read as 005, not as 5.
-static void put_frac(uint8_t col, uint8_t row, uint16_t value, uint8_t width,
-                     uint8_t colour)
+// True if `field` differs from what was drawn last, updating the record if
+// it does. Compared rather than remembering the numbers behind it, because
+// two different altitudes can print the same three characters.
+static uint8_t moved(char *last, uint8_t size)
 {
   uint8_t i;
 
-  for (i = width; i-- > 0;) {
-    vic4_panel_char(col + i, row, '0' + (uint8_t)(value % 10), colour);
-    value /= 10;
+  for (i = 0; i < size; i++) {
+    if (last[i] != field[i]) {
+      for (; i < size; i++) {
+        last[i] = field[i];
+        if (!field[i])
+          break;
+      }
+      return 1;
+    }
+    if (!field[i])
+      return 0;
   }
+  return 0;
 }
 
-// Degrees and three decimals, with the hemisphere letter after them, which is
-// how a drone controller shows a GPS fix.
-static void put_degrees(uint8_t col, uint8_t row, uint16_t mdeg, uint8_t width,
-                        char hemisphere)
-{
-  put_frac(col, row, mdeg / 1000, width, PANEL_INK);
-  vic4_panel_char(col + width, row, '.', PANEL_INK);
-  put_frac(col + width + 1, row, mdeg % 1000, 3, PANEL_INK);
-  vic4_panel_char(col + width + 4, row, vic4_screen_code(hemisphere), PANEL_INK);
-}
+// What is on the panel that something else can cover up. A message takes the
+// fix's box and the battery's, so both have to be able to come back: the fix
+// is redrawn every frame anyway, and the battery only when it changes, so the
+// last figure is kept.
+static uint8_t msg_up;
+static uint8_t batt_last;
 
-// Right-aligned unsigned number, `width` digits, space padded. Returns
-// nothing: the panel is fixed-width, so there is nowhere for it to overflow
-// to and a too-large value is clamped to all nines.
-static void put_number(uint8_t col, uint8_t row, uint16_t value, uint8_t width,
-                       uint8_t colour)
+// Right aligned in `width`. `pad` is what leads: a space for a measurement
+// that reads better without leading zeros, '0' for a bearing or a coordinate,
+// which are always read with them.
+static char *put_u(char *d, uint16_t value, uint8_t width, char pad)
 {
   uint8_t i;
 
   for (i = width; i-- > 0;) {
     uint8_t digit = (uint8_t)(value % 10);
 
-    // Leave a leading zero only in the units position, so 0 reads as "0"
-    // rather than as a blank.
-    if (value == 0 && i != width - 1)
-      panel_blank((uint8_t)(col + i), row, 1);
-    else
-      vic4_panel_char(col + i, row, '0' + digit, colour);
+    d[i] = (value || i == width - 1 || pad == '0') ? (char)('0' + digit) : pad;
     value /= 10;
   }
+  return d + width;
+}
+
+// Degrees and three decimals with the hemisphere letter after them, which is
+// how a drone controller shows a GPS fix -- and, with the letters doing the
+// labelling, why the fix needs no LAT and LON in front of it.
+static char *put_s(char *d, const char *s)
+{
+  while (*s)
+    *d++ = *s++;
+  return d;
+}
+
+static char *put_degrees(char *d, uint16_t mdeg, uint8_t width, char hemisphere)
+{
+  d = put_u(d, mdeg / 1000, width, '0');
+  *d++ = '.';
+  d = put_u(d, mdeg % 1000, 3, '0');
+  *d++ = hemisphere;
+  return d;
+}
+
+void panel_puts(uint16_t x, uint8_t y, const char *s)
+{
+  overlay_text(x, y, s);
 }
 
 void panel_init(void)
 {
   uint8_t col, row;
 
-  // The background picture first, and everything else over it. It is 240
-  // full-colour characters that came off the disk already in this order, so
-  // this is the whole of drawing it -- no pixels move, and it costs the same
-  // screen RAM the spaces it replaced did.
+  // The background picture: 240 full-colour characters that came off the disk
+  // already in this order, so this is the whole of drawing it. No pixels
+  // move, and it costs the same screen RAM the spaces it replaced did.
   for (row = 0; row < PANEL_ROWS; row++)
-    panel_blank(0, row, PANEL_COLS);
+    for (col = 0; col < PANEL_COLS; col++)
+      vic4_panel_tile(col, row,
+                      (uint16_t)(PANEL_ART_CHAR + (uint16_t)row * PANEL_ART_COLS
+                                 + col));
 
-  // The position needs no labels: the hemisphere letters are the labels.
-  panel_puts(BATT_COL, ROW_POS, "BATT", PANEL_LABEL);
-  vic4_panel_char(BATT_COL + 8, ROW_POS, vic4_screen_code('%'), PANEL_LABEL);
-
-  panel_puts(ALT_COL - 4, ROW_FLIGHT, "ALT", PANEL_LABEL);
-  panel_puts(HDG_COL - 4, ROW_FLIGHT, "HDG", PANEL_LABEL);
-  panel_puts(SPD_COL, ROW_FLIGHT, "SPD", PANEL_LABEL);
-
-  // Only the two numbers are rewritten when the wind shifts; the units are
-  // part of the furniture, like every other label here.
-  panel_puts(WIND_COL, ROW_WIND, "WIND", PANEL_LABEL);
-  panel_puts(WIND_COL + 8, ROW_WIND, "DEG", PANEL_LABEL);
-  panel_puts(WIND_COL + 13, ROW_WIND, "M/S", PANEL_LABEL);
-  panel_puts(FPS_COL - 4, ROW_WIND, "FPS", PANEL_LABEL);
-
-  // The overview map: full-colour tiles dropped straight into panel cells.
-  // Their pixels came off the disk already in character order, so there is
-  // nothing to do here but name them.
+  // The overview map: full-colour tiles dropped straight into panel cells,
+  // over the box the artwork leaves for them.
   //
   // vic4_overview_ready is NOT called here. This runs again every time a
   // flight starts, and by then the map carries a crosshair -- taking the
@@ -177,49 +186,82 @@ void panel_init(void)
     for (col = 0; col < OVERVIEW_CHARS; col++)
       vic4_panel_tile(PANEL_MAP_COL + col, PANEL_MAP_ROW + row,
                       (uint16_t)OVERVIEW_CHAR + row * OVERVIEW_CHARS + col);
+
+  // And the text plane over the lot, wiped and empty. **Nothing is drawn
+  // here**: every readout writes its own label with its own value, as one
+  // string, so a label cannot be left behind by whatever covers its box --
+  // which is exactly what happened when the launch message wiped BATT and
+  // there was nothing left to put it back.
+  overlay_on();
+  msg_up = 0;
+  batt_last = 100;
+
+  // Nothing on the plane, so nothing that was drawn last time still holds.
+  last_fix[0] = last_alt[0] = last_hdg[0] = last_fps[0] = 0;
+
+  // The one static label there is. FPS is the readout that changes most
+  // often, so its label is drawn once here rather than being redrawn with
+  // every new figure -- which is safe now that a clear is masked to the pixel
+  // and cannot eat what shares its byte column.
+  overlay_text(FPS_X, FPS_Y, "FPS");
 }
 
 // Cinematic / normal / sport, the three a real drone offers.
 void panel_speed(uint8_t mode)
 {
   static const char *const names[] = {"SLO", "NRM", "SPT"};
+  char *d = put_s(field, "SPD ");
 
-  panel_puts(SPD_COL + 4, ROW_FLIGHT, names[mode > 2 ? 2 : mode], PANEL_INK);
+  put_s(d, names[mode > 2 ? 2 : mode])[0] = 0;
+  overlay_text(SPD_X, SPD_Y, field);
 }
 
 void panel_cargo(const char *what)
 {
-  panel_blank(CARGO_COL, ROW_CARGO, CARGO_WIDTH);
-  panel_puts(CARGO_COL, ROW_CARGO, what, PANEL_INK);
+  // The bay can hold a shorter name than it did a moment ago, so the whole
+  // box is cleared rather than the string's own span.
+  overlay_clear(CARGO_X, CARGO_Y, CARGO_W, 8);
+  overlay_text(CARGO_X, CARGO_Y, what);
 }
 
 void panel_battery(uint8_t percent)
 {
-  put_number(BATT_COL + 5, ROW_POS, percent, 3, PANEL_INK);
+  char *d;
+
+  batt_last = percent;
+  if (msg_up)
+    return;  // a message has the box; panel_message(0) puts this back
+  d = put_u(put_s(field, "BATT "), percent, 3, ' ');
+  *d++ = '%';
+  *d = 0;
+  overlay_text(BATT_X, BATT_Y, field);
 }
 
 void panel_wind(uint8_t from, uint8_t mps)
 {
-  // A bearing is read with its leading zeros -- 045, not 45 -- so this gets
-  // the zero-padded field the coordinates use rather than the space-padded
-  // one the altitude does. Same units as the heading above it.
-  put_frac(WIND_COL + 5, ROW_WIND, DEGREES(from), 3, PANEL_INK);
-  // One digit, which is all WIND_MPS can produce: the box is sixteen
-  // characters wide and every one of them is spoken for.
-  put_number(WIND_COL + 12, ROW_WIND, mps > 9 ? 9 : mps, 1, PANEL_INK);
+  // "WIND 201DEG 1M/S" -- sixteen characters, which is the box to the pixel.
+  // One digit of speed is all WIND_MPS can produce and all there is room for.
+  char *d = put_u(put_s(field, "WIND "), DEGREES(from), 3, '0');
+
+  d = put_u(put_s(d, "DEG "), mps > 9 ? 9 : mps, 1, ' ');
+  put_s(d, "M/S")[0] = 0;
+  overlay_text(WIND_X, WIND_Y, field);
 }
 
 void panel_message(const char *s)
 {
-  uint8_t col;
-
-  // Clipped to the box rather than to the display: past column 33 there is
-  // the frame of the picture and then the map, and a message that ran on
-  // would write over both.
-  panel_blank(MSG_COL, ROW_MESSAGE, MSG_WIDTH);
-  for (col = 0; col < MSG_WIDTH && s[col]; col++)
-    vic4_panel_char((uint8_t)(MSG_COL + col), ROW_MESSAGE,
-                    vic4_screen_code(s[col]), PANEL_INK);
+  if (!s) {
+    // The alert is over: give the two top boxes back. The fix redraws itself
+    // on the next frame; the battery only changes every ninth one, so it has
+    // to be put back from what it last read.
+    overlay_clear(MSG_X, MSG_Y, MSG_W, 8);
+    msg_up = 0;
+    panel_battery(batt_last);
+    return;
+  }
+  overlay_clear(MSG_X, MSG_Y, MSG_W, 8);
+  msg_up = 1;
+  overlay_text(MSG_X, MSG_Y, s);
 }
 
 void panel_status(int16_t altitude, uint8_t heading, uint16_t x, uint16_t y,
@@ -227,15 +269,26 @@ void panel_status(int16_t altitude, uint8_t heading, uint16_t x, uint16_t y,
 {
   uint8_t cx = (uint8_t)(x >> 8);  // the map cell, and one millidegree
   uint8_t cy = (uint8_t)(y >> 8);
+  char *d;
 
   if (altitude < 0)
     altitude = 0;
 
-  put_number(ALT_COL, ROW_FLIGHT, (uint16_t)altitude, 3, PANEL_INK);
-  put_frac(HDG_COL, ROW_FLIGHT, DEGREES(heading), 3, PANEL_INK);
+  put_u(field, (uint16_t)altitude, 3, ' ')[0] = 0;
+  if (moved(last_alt, sizeof last_alt))
+    overlay_text(ALT_X, ALT_Y, field);
+  put_u(field, DEGREES(heading), 3, '0')[0] = 0;
+  if (moved(last_hdg, sizeof last_hdg))
+    overlay_text(HDG_X, HDG_Y, field);
 
-  put_degrees(LAT_COL, ROW_POS, MAP_LAT_SOUTH + (255 - cy), 2, 'N');
-  put_degrees(LON_COL, ROW_POS, MAP_LON_WEST + cx, 3, 'E');
+  if (!msg_up) {
+    d = put_degrees(field, MAP_LAT_SOUTH + (255 - cy), 2, 'N');
+    *d++ = ' ';
+    d = put_degrees(d, MAP_LON_WEST + cx, 3, 'E');
+    *d = 0;
+    if (moved(last_fix, sizeof last_fix))
+      overlay_text(FIX_X, FIX_Y, field);
+  }
 
   // The overview is one pixel per eight cells, so the cell index shifts
   // straight down into it.
@@ -244,7 +297,10 @@ void panel_status(int16_t altitude, uint8_t heading, uint16_t x, uint16_t y,
 
   if (fps10 > 999)
     fps10 = 999;
-  put_number(FPS_COL, ROW_WIND, fps10 / 10, 2, PANEL_INK);
-  vic4_panel_char(FPS_COL + 2, ROW_WIND, '.', PANEL_INK);
-  put_number(FPS_COL + 3, ROW_WIND, fps10 % 10, 1, PANEL_INK);
+  d = put_u(field, fps10 / 10, 2, ' ');
+  *d++ = '.';
+  d = put_u(d, fps10 % 10, 1, '0');
+  *d = 0;
+  if (moved(last_fps, sizeof last_fps))
+    overlay_text(FPS_X + 4 * 8, FPS_Y, field);
 }

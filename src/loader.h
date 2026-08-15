@@ -85,6 +85,13 @@
 #define PANEL_ART_ROWS  6   // and PANEL_ROWS; src/panel.c checks both
 #define PANEL_ART_BYTES ((uint32_t)PANEL_ART_COLS * PANEL_ART_ROWS * 64)
 
+// And the sprite plane that carries the panel's text over that artwork: eight
+// sprite pointers, then five 384-byte bitmaps. Bank 4 again, above the
+// picture, and on a 64-byte boundary because a 16-bit sprite pointer is the
+// data address divided by 64. See src/overlay.h for what it is for.
+#define OVERLAY_PTRS  (PANEL_ART + PANEL_ART_BYTES)  // $43C00
+#define OVERLAY_PLANE (OVERLAY_PTRS + 64)            // $43C40, / 64 = $10F1
+
 #if HGT_SIZE <= 256
 #error "the panel artwork and a 256x256 heightmap both want bank 4. Raise \
 HGT_SIZE, or find the artwork 15 KB somewhere else the VIC-IV can read."

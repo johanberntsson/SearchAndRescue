@@ -12,6 +12,13 @@
 #define PANEL_INK   1
 #define PANEL_LABEL 2
 
+// The panel's own ink, and the only colour on it: a hardware sprite carries
+// one colour for the whole sprite, so the plane that holds the readouts is
+// green from end to end. The mockups in screenshots/ wanted exactly that, and
+// a second colour would mean a second plane. Reserved by tools/convmap.py
+// with the two above.
+#define PANEL_TEXT  3
+
 // The paper, and the one thing about the panel that is not per character: a
 // text character's background is the screen colour, full stop. It used to be
 // palette 0 and black, which was fine over nothing and punches a hole in the
@@ -34,11 +41,14 @@
 
 void panel_init(void);
 
-// Write a string at a panel cell. Text is stopped at the right edge rather
-// than wrapped, so a long message cannot walk over the row below.
-void panel_puts(uint8_t col, uint8_t row, const char *s, uint8_t colour);
+// Write a string anywhere in the panel at all, in pixels rather than cells:
+// the text rides on a plane of hardware sprites over the artwork, which is
+// what took it off the 8-pixel character grid. See src/overlay.h.
+void panel_puts(uint16_t x, uint8_t y, const char *s);
 
-// The top row, for anything the game wants to tell the pilot.
+// Anything the game wants to tell the pilot. It takes the two top boxes, and
+// so covers the fix and the battery for as long as it is up; `panel_message(0)`
+// is how an alert ends and gives them back.
 void panel_message(const char *s);
 
 // The speed limiter: 0 cinematic, 1 normal, 2 sport.
