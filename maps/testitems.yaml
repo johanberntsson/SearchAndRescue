@@ -24,8 +24,7 @@ general:
   ruggedness: rolling
 
 items:
-  # A road first, so that whatever is built afterwards stands on top of it
-  # rather than being driven through -- see place_items.
+  # In any order: see place_items for the two things that make that true.
   - type: road
     size: medium
     from: 282,528

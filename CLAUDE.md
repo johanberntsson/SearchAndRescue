@@ -1153,14 +1153,32 @@ exists only to be flown over and looked at.
 **How a road chooses its route**, which is the only part of the generator that
 searches rather than computes: a Dijkstra over a coarse grid of two map cells
 a node, then the corners taken off. The cost is `ROAD_*` at the top of
-`genmap.py` — a flat cell costs 10, height above sea costs up to 40 at the
+`genmap.py` — a flat node costs 10, height above sea costs up to 40 at the
 ceiling, every height unit of rise between one node and the next costs 3, and
-a little noise keeps a road over flat country from being a ruled line. Two
-things are refusals rather than costs: **any water in a node bars it**, there
-being no bridges, and so does **standing above `ROAD_CEILING`**, 55% of the
-way up that map's own land — which is the "go round the mountain" rule. A road
-whose ends cannot be joined under those two says so and stops; it does not
-quietly draw a line through a lake.
+a little noise keeps a road over flat country from being a ruled line.
+
+**The ceiling is a price and not a wall**, and it took a real map to see why.
+Above `ROAD_CEILING` — 55% of the way up that map's own land — a node costs
+`ROAD_ABOVE`, forty flat nodes, so a road will go eighty map cells out of its
+way rather than cross one node of high ground. That is the "go round the
+mountain" rule. It was a hard refusal first, and the first hilltop landmark
+with a road to it proved that wrong: the author had asked for a road to a
+place and been told the place was unsuitable. A price says what was meant —
+climb when climbing is the only way to get where you were sent, go round when
+it is not.
+
+**Water is still a wall**, there being no bridges, and it is the only one: a
+road whose ends water has separated says so and stops rather than quietly
+drawing a line through a lake.
+
+**The order items are listed in does not matter**, and two things make that
+true. A road is routed against the ground *as the generator left it* rather
+than against whatever has been built on it so far — the rule the river taught,
+in the one other place this file measures against a map it is also changing —
+so a road to a pyramid does not have to climb the pyramid, and no route
+depends on where it sat in the file. And a road never paints over something
+already built, so it stops at a wall instead of driving through it. A building
+does paint over a road, which is the right way round.
 
 A priority queue is not the kind of code the rest of that file is. The port to
 the machine it was written for was measured and abandoned (see below), and

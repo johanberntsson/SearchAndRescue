@@ -102,8 +102,8 @@ items:
     y: 67
 ```
 
-Order matters: a later item paints over an earlier one, so roads go first
-and whatever stands beside them after.
+The order does not matter: a road is routed against the ground as the
+generator left it, and never paints over something already built.
 
 Coordinates as placed by hand while flying in the previewer — no need to
 also support lat/lon in the file, but the previewer should be able to
@@ -138,15 +138,22 @@ a canyon. There is no feedback here to get wrong. Its route is a Dijkstra over
 a coarse grid of two map cells a node, then smoothed:
 
 - **any water in a node bars it** — there are no bridges, and a road that
-  clipped the corner of a lake would look like one.
-- **so does standing above `ROAD_CEILING`**, 55% of the way up that map's own
-  land. That is the "go round the mountain" rule, and it is a refusal rather
-  than a cost: above it a node is not passable at all.
+  clipped the corner of a lake would look like one. It is the only bar there
+  is, and a road whose ends water has separated **says so and stops** rather
+  than drawing a line through a lake.
+- **above `ROAD_CEILING`** — 55% of the way up that map's own land — a node
+  costs forty flat nodes, so a road goes eighty map cells out of its way
+  rather than cross one node of it. That is the "go round the mountain" rule.
+  **It is a price and not a wall**, which took a real map to learn: a hilltop
+  is where a landmark goes, and a wall answers a request for a road to one by
+  refusing the place rather than finding the way.
 - **rise between one node and the next costs**, which is what makes a road
   follow a contour rather than climb straight up, and a little noise keeps one
   over flat country from being a ruled line.
-- a road whose ends cannot be joined under those rules **says so and stops**.
-  It does not quietly draw a line through a lake.
+- **the route is worked out against the ground the generator left**, not
+  against what has been built on it, and a road never paints over something
+  already built. Between them those are why the order items are listed in
+  does not change anything.
 
 A priority queue is not the kind of code the rest of `genmap.py` is. The port
 to the machine it was written for was measured and abandoned; what the

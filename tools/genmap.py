@@ -744,14 +744,25 @@ ROAD = {"small": 2, "medium": 3, "large": 5}
 #   SLOPE    per height unit of rise between one cell and the next, which is
 #            what makes it follow a contour rather than climb straight up
 #   WANDER   noise, so that a road over flat country is not a ruled line
-#   CEILING  no road above this fraction of the land's own range. **This is
-#            the "go around the mountain" rule** and it is a hard refusal, not
-#            a cost: above it a cell is not passable at all.
+#   CEILING  the height, as a fraction of the land's own range, above which a
+#            cell costs ABOVE instead of what it would otherwise
+#   ABOVE    what that is: forty flat cells, so a road will go eighty map
+#            cells out of its way rather than cross one cell of high ground.
+#            **This is the "go around the mountain" rule.**
+#
+# **The ceiling is a price and not a wall**, and it took a real map to see
+# why. Put a landmark on a hilltop -- which is where a landmark goes -- and
+# ask for a road to it, and a wall says no: the author has asked for a road to
+# a place and been told the place is unsuitable. A price says what was
+# actually meant, which is that a road climbs when climbing is the only way to
+# get where it was sent and goes round when it is not. Water is still a wall,
+# because there are no bridges.
 ROAD_FLAT = 10
 ROAD_CLIMB = 40
 ROAD_SLOPE = 3
 ROAD_WANDER = 12
 ROAD_CEILING = 0.55
+ROAD_ABOVE = 40 * ROAD_FLAT
 
 # The routing grid, in pixels at DEFAULT_SIZE. Two map cells: fine enough to
 # find a way between two hills, coarse enough that the search is a thousandth
@@ -870,8 +881,8 @@ def road_cost(h, water, spec, size, scale, stream):
     the hills, not around every stone: at ROAD_STEP this is two map cells a
     node and the search is a thousandth of the map. A block is impassable if
     **any** of it is wet -- there are no bridges and a road that clipped the
-    corner of a lake would look like one -- or if it stands above the ceiling,
-    which is the rule that sends it round a mountain rather than over.
+    corner of a lake would look like one. High ground is not impassable, it is
+    expensive; see ROAD_ABOVE for why that distinction is the whole of it.
 
     Returns the cost per block, which blocks are barred, and the block size.
     """
@@ -888,8 +899,8 @@ def road_cost(h, water, spec, size, scale, stream):
     climb = np.clip(hb - sea, 0, None) * ROAD_CLIMB // max(ceiling - sea, 1)
     wander = F.scale(value_noise(n, max(2, n // 8), stream.salt()),
                      ROAD_WANDER * ONE) >> F.FRACBITS
-    cost = ROAD_FLAT + climb + wander
-    return cost, wet | (hb > ceiling), hb, step, ceiling
+    cost = ROAD_FLAT + climb + wander + np.where(hb > ceiling, ROAD_ABOVE, 0)
+    return cost, wet, hb, step, ceiling
 
 
 def road_route(cost, barred, hb, start, goal):
@@ -977,30 +988,33 @@ def stamp_road(built, water, cy, cx, radius, size):
           << (F.FRACBITS - F.DISCBITS)) * 2) // (radius * 2 + 1)
     ys, xs = (cy + span) % size, (cx + span) % size
     box = np.ix_(ys, xs)
-    built[box] = np.where((d <= ONE) & ~water[box], BUILT_ROAD, built[box])
+    # Never over something already built. A road that met a house would
+    # otherwise drive through its wall, and which of the two won would depend
+    # on the order they happened to be listed in.
+    built[box] = np.where((d <= ONE) & ~water[box] & (built[box] < 0),
+                          BUILT_ROAD, built[box])
 
 
-def build_road(h, water, built, item, size, scale, stream, n):
+def build_road(natural, water, built, item, size, scale, stream, n):
     radius = max(1, round(ROAD[item["size"]] * scale))
-    cost, barred, hb, step, ceiling = road_cost(h, water, item["spec"], size,
-                                                scale, stream)
+    cost, barred, hb, step, ceiling = road_cost(natural, water, item["spec"],
+                                                size, scale, stream)
     ends = []
     for x, y, which in ((item["x"], item["y"], "run from"),
                         (item["to-x"], item["to-y"], "run to")):
         by = (round(y * scale) // step) % cost.shape[0]
         bx = (round(x * scale) // step) % cost.shape[0]
         if barred[by, bx]:
-            sys.exit(f"item {n} (road) cannot {which} {x},{y}: it is water, "
-                     f"or it is above the road ceiling, which is "
-                     f"{ROAD_CEILING:.0%} of the way up this map's own land")
+            sys.exit(f"item {n} (road) cannot {which} {x},{y}: there is water "
+                     f"there, and a road has no way over it")
         ends.append((by, bx))
 
     path = road_route(cost, barred, hb, ends[0], ends[1])
     if path is None:
         sys.exit(f"item {n} (road) has no way from {item['x']},{item['y']} to "
-                 f"{item['to-x']},{item['to-y']} that stays out of the water "
-                 f"and under the ceiling. Move an end, or put a road in "
-                 f"between and let this one meet it")
+                 f"{item['to-x']},{item['to-y']} that stays out of the water. "
+                 f"Water is the one thing it cannot cross: move an end, or put "
+                 f"a road on the far side and let this one meet it")
 
     pts = road_smooth(path, cost.shape[0], step)
     for (y0, x0), (y1, x1) in zip(pts, pts[1:]):
@@ -1012,13 +1026,19 @@ def build_road(h, water, built, item, size, scale, stream, n):
 
 
 def place_items(h, water, items, size, spec, stream):
-    """Everything a map file asks to have built into it, in the order asked.
+    """Everything a map file asks to have built into it.
 
-    The order is the file's and it matters: a later item paints over an
-    earlier one, so a road listed after a house drives through its wall. Roads
-    first is the arrangement that looks like anything.
+    **The order it is listed in does not matter**, and two things are what
+    make that true: a road is routed over the ground as the generator left it
+    rather than over whatever has been built on it so far, and it never paints
+    over something already built. Without the first, a road drawn to a pyramid
+    would have to climb the pyramid -- and where any road went would depend on
+    where it sat in the file. That is the rule the river taught, in the one
+    other place this file measures against a map it is also changing: measure
+    against a pristine copy.
     """
     built = np.full(h.shape, -1, np.int64)
+    natural = h.copy()
     scale = size / DEFAULT_SIZE
     for n, item in enumerate(items):
         if item["type"] == "pyramid":
@@ -1027,7 +1047,7 @@ def place_items(h, water, items, size, spec, stream):
             build_house(h, water, built, item, size, scale, n)
         elif item["type"] == "road":
             item = dict(item, spec=spec)
-            build_road(h, water, built, item, size, scale, stream, n)
+            build_road(natural, water, built, item, size, scale, stream, n)
     return built
 
 

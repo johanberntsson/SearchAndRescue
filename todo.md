@@ -373,11 +373,18 @@ Do not re-litigate these without new measurements.
     as tall as the survivor billboard.
   - **a road is given two ends and finds its own way**: a Dijkstra over a
     coarse grid of two map cells a node, smoothed afterwards. Water bars a
-    node outright and so does standing above 55% of the map's own land, which
-    is the "go round the mountain" rule; rise between nodes costs, which is
-    what makes it follow a contour. It is **paint and not terrain** -- the one
-    built thing that does not move the ground -- so the canyon trap the river
-    taught cannot happen to it.
+    node outright; high ground costs forty flat nodes, which is the "go round
+    the mountain" rule; rise between nodes costs, which is what makes it
+    follow a contour. It is **paint and not terrain** -- the one built thing
+    that does not move the ground -- so the canyon trap the river taught
+    cannot happen to it.
+  - **the ceiling was a wall for an afternoon and is a price now.** The first
+    map anyone else drew put a pyramid on a hilltop and asked for a road to
+    it, and a wall answered by refusing the place rather than finding the way.
+    Two more things came out of the same map: a road is routed against the
+    ground the generator left rather than what has been built on it since --
+    the rule the river taught -- and it never paints over something already
+    built. Between them the order items are listed in stopped mattering.
   - a material is now a palette band and a `BUILT_*` code looked up in one
     table, so a fourth kind is two lines and a builder.
   - **it costs 12 palette entries** (roof and road, six each): the sprite pool

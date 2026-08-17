@@ -27,17 +27,19 @@ general:
 # same island. The missions are in missions/, one file each, listed by
 # campaign.yaml.
 #
-# **Order matters**: a later item paints over an earlier one, so roads go
-# first and the buildings that stand beside them after.
+# The order they are listed in does not matter: a road is routed against the
+# ground as the generator left it, and stops at the wall of anything already
+# built rather than driving through it.
 #
 # Here is one of every type there is.
 items:
   # A road is the two ends and a width. Everything between them is worked out
-  # from the terrain: it keeps out of the water, stays under the road ceiling
-  # rather than going over a mountain, and prefers a contour to a climb -- so
-  # where it actually goes is a thing to look at in the previewer, not
-  # something to predict from the numbers. Either spelling of a point will do:
-  # `226,176` or `[226, 176]`.
+  # from the terrain: water it cannot cross at all, high ground it will go a
+  # long way round rather than climb, and it prefers a contour to a slope --
+  # so where it actually goes is a thing to look at in the previewer, not
+  # something to predict from the numbers. The ends are yours, though: a road
+  # to a building on a hilltop climbs to it. Either spelling of a point will
+  # do: `226,176` or `[226, 176]`.
   - type: road
     size: medium      # small, medium, large -- how wide
     from: 226,176
