@@ -22,12 +22,29 @@
 
 #include <stdint.h>
 
-#define OVERLAY_SPRITES 5
+#define OVERLAY_PLANE_SPRITES 5                    // 5 x 64 is the panel wide
+#define OVERLAY_SPRITES 6                          // and one more, see below
 #define OVERLAY_STRIDE  8                            // bytes per sprite row
 #define OVERLAY_ROWS    48                              // the panel's six rows
-#define OVERLAY_W       (OVERLAY_SPRITES * 64)          // 320: the whole width
+#define OVERLAY_W       (OVERLAY_SPRITES * 64)          // the drawing surface
 #define OVERLAY_SLOT    (OVERLAY_STRIDE * OVERLAY_ROWS) // 384 bytes a sprite
 #define OVERLAY_COLS    (OVERLAY_W / 8)                 // byte columns across
+
+// **The battery has a sprite to itself, because a sprite carries one colour.**
+// It is the one readout that changes colour -- green, then yellow, then red --
+// and everything else on the plane has to stay green, so it cannot share one.
+//
+// It is drawn like any other field, at x OVERLAY_ALERT in the same coordinates
+// as everything else, and simply appears somewhere else: the five plane
+// sprites are laid end to end from x 0, and this one is placed over the
+// artwork's battery box instead. It is behind sprites 0-4 in the hardware's
+// priority, which costs nothing, since no two of them draw in the same place.
+#define OVERLAY_ALERT    (OVERLAY_PLANE_SPRITES * 64)  // where it is drawn
+#define OVERLAY_ALERT_AT 199                           // where it appears
+
+// One sprite's colour, as a palette entry. Sprite OVERLAY_PLANE_SPRITES is
+// the battery's; the rest are green and set once by overlay_on.
+void overlay_ink(uint8_t sprite, uint8_t entry);
 
 // Point the sprites at the plane, size them, colour them and turn them on.
 // Called when a flight starts; the plane is wiped by it.

@@ -114,15 +114,18 @@ static void gate_low(void)
 // sound at the same time, so each sets the level it wants when it starts.
 #define ENGINE_VOLUME 7
 
+// Sustain is the only per-voice volume a SID has -- there is one master level
+// and nothing else -- so the balance between the three voices is these three
+// numbers. Attack is short but not zero, to keep the launch from starting
+// with a click. At file scope because the battery beep borrows voice 3 and
+// has to be able to hand it back exactly as it found it.
+static const uint8_t sustain[3] = {0xE4, 0xC4, 0xA4};
+#define ENGINE_AD 0x20  // attack 2, decay 0, for all three
+
 static void engine_arm(void)
 {
   uint8_t v;
 
-  // Sustain is the only per-voice volume a SID has -- there is one master
-  // level and nothing else -- so the balance between the three voices is
-  // these three numbers. Attack is short but not zero, to keep the launch
-  // from starting with a click.
-  static const uint8_t sustain[3] = {0xE4, 0xC4, 0xA4};
   static const uint8_t wave[3] = {WAVE_1, WAVE_2, WAVE_3};
 
   // Whoever had the SID before this leaves its voices gated on, so the gates
@@ -141,7 +144,7 @@ static void engine_arm(void)
 
     sid_put((uint8_t)(base + 2), 0x00);  // pulse width, voice 2's alone
     sid_put((uint8_t)(base + 3), 0x05);  // matters: 12.5%, thin and reedy
-    sid_put((uint8_t)(base + 5), 0x20);  // attack 2, decay 0
+    sid_put((uint8_t)(base + 5), ENGINE_AD);
     sid_put((uint8_t)(base + 6), sustain[v]);
     sid_put((uint8_t)(base + 4), wave[v]);  // and the gate opens
   }
@@ -198,4 +201,64 @@ void engine_throttle(uint8_t mode, uint8_t moving, int8_t climb)
   // wrong direction -- at most RATE units, a fifth of a semitone -- and the
   // next tick corrects it. Guarding it would cost an SEI every frame.
   engine_target = f;
+}
+
+// The battery warning, on the engine's third voice.
+//
+// **Shared with src/engine_asm.s**, which leaves voice 3's frequency alone
+// while this is non-zero -- otherwise the interrupt would write the note's
+// pitch over the beep fifty times a second. Counted down here, once a frame,
+// rather than in the interrupt: every SID write in a flight is then on this
+// side of the fence and there is nothing to race.
+uint8_t engine_beep_left;
+
+// Voice 3's registers. The SID gives each voice seven, so the third's begin
+// at 14: frequency, then pulse width, control, attack/decay, sustain/release.
+#define V3_FREQ 14
+#define V3_CTRL 18
+#define V3_AD   19
+#define V3_SR   20
+
+// A third of a second at the frame rates a flight runs at, and half again
+// for the second warning. The pitches are a fifth apart, which is enough to
+// tell them apart without either sounding like the motors.
+#define BEEP_WARN_HZ    HZ(660)
+#define BEEP_ALARM_HZ   HZ(990)
+#define BEEP_WARN_FRAMES  4
+#define BEEP_ALARM_FRAMES 7
+
+void engine_beep(uint8_t level)
+{
+  uint16_t hz = level >= 2 ? BEEP_ALARM_HZ : BEEP_WARN_HZ;
+
+  // Nothing at all when the flight is muted: this is the flight's own
+  // channel, and M means a quiet one.
+  if (!engine_on)
+    return;
+
+  engine_beep_left = level >= 2 ? BEEP_ALARM_FRAMES : BEEP_WARN_FRAMES;
+
+  // Gate down first and then up, because an envelope triggers only on that
+  // edge -- the whole reason the engine has a gate_low at all. Voice 3 has
+  // been gated on since launch, so without the falling edge this would change
+  // its pitch and nothing else.
+  sid_put(V3_CTRL, WAVE_3 & (uint8_t)~1);
+  sid_put(V3_AD, 0x08);   // straight to full, then a slow decay
+  sid_put(V3_SR, 0xF0);   // held while the gate is up, and gone the moment
+  sid_put(V3_FREQ, (uint8_t)hz);
+  sid_put(V3_FREQ + 1, (uint8_t)(hz >> 8));
+  sid_put(V3_CTRL, WAVE_3);  // it is not
+}
+
+void engine_beep_step(void)
+{
+  if (!engine_beep_left || --engine_beep_left)
+    return;
+
+  // Voice 3 goes back exactly as engine_arm left it, gate edge and all, and
+  // the interrupt starts writing its pitch again on the next tick.
+  sid_put(V3_CTRL, WAVE_3 & (uint8_t)~1);
+  sid_put(V3_AD, ENGINE_AD);
+  sid_put(V3_SR, sustain[2]);
+  sid_put(V3_CTRL, WAVE_3);
 }

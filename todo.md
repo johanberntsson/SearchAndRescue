@@ -1,5 +1,7 @@
 # What's next
 
+Made a logo in https://codepo8.github.io/logo-o-matic/#goto-unknown
+
 ## Where it is
 
 **Released 15 Aug 2026** -- `release/sar-latest.d81`, `PROFILE=0`, booted and
@@ -361,6 +363,25 @@ Do not re-litigate these without new measurements.
   sample.
 
 ## Done
+
+- **Three things asked for after flying it**, done 17 Aug 2026.
+  - **`P` shows the frame rate**, off to begin with and kept for the session
+    like the mute. Nothing in the game says so: it is for working on the
+    renderer, and the briefing has no spare row. It is row 5 of the key
+    matrix, so `input.c` scans six rows now.
+  - **the overview map moved a column left.** The artwork's box for it is x
+    276-314 of the panel's 320, so tiles hard against the right edge
+    overhung it and left a gap on the other side.
+  - **the battery goes yellow under 25% and red under 10%, with a warning
+    note at each.** That needed a sixth sprite: a sprite carries one colour,
+    everything else on the plane has to stay green, so the battery has one of
+    its own -- drawn at `OVERLAY_ALERT` like any other field and simply
+    appearing over its own box. `BAT` rather than `BATT`, eight characters
+    being the whole 64 pixels of it. The beep borrows the engine's third
+    voice, the triangle an octave down, and hands it back a third of a second
+    later; `engine_asm.s` leaves that voice's pitch alone meanwhile.
+    `panel_battery` returns the level it drew and `main.c` decides what it
+    sounds like -- the panel says how it looks and nothing about sound.
 
 - **The panel's text is a plane of hardware sprites**, done 16 Aug 2026, over
   the artwork below. Five 64x48 sprites side by side are 320x48 -- the panel

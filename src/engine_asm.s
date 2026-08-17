@@ -11,7 +11,7 @@
 ; note is and where it is going lives in Y:X for the eight instructions it is
 ; needed for.
 
-            .extern engine_freq, engine_target
+            .extern engine_freq, engine_target, engine_beep_left
 
 SID:        .equlab 0xd400
 SID2:       .equlab 0xd420
@@ -90,7 +90,11 @@ write$:     lda     engine_freq
             sta     SID+8
             sta     SID2+8
 
-            ; Voice 3: an octave down, for the body of it.
+            ; Voice 3: an octave down, for the body of it -- unless the
+            ; battery warning has borrowed it, in which case its pitch is not
+            ; ours to write. src/engine.c hands it back a few frames later.
+            lda     engine_beep_left
+            bne     done$
             lda     engine_freq+1
             lsr     a
             tax
@@ -100,4 +104,4 @@ write$:     lda     engine_freq
             sta     SID2+14
             stx     SID+15
             stx     SID2+15
-            rts
+done$:      rts

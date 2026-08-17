@@ -393,6 +393,16 @@ The layout, in pixels of the panel's 320x48, measured off `resources/panel.png`:
 | x 60-124, y 36 | the frame rate, the one readout with no box of its own |
 | x 276-314 | the overview map, still full-colour characters |
 
+**The battery has a sprite of its own**, which is the whole reason there are
+six and not five: a sprite carries one colour, and the battery is the only
+readout that changes colour -- green, then yellow under `PANEL_WARN_AT` (25%),
+then red under `PANEL_ALARM_AT` (10%). It is drawn like any other field, at x
+`OVERLAY_ALERT` in the same coordinates as the rest, and simply *appears*
+somewhere else, over the artwork's battery box. `panel_battery` returns the
+level it drew so that `main.c` can decide what it sounds like: the panel says
+how it looks, and the sound is not the panel's business. `BAT` rather than
+`BATT` because the sprite is 64 pixels and eight characters is all of them.
+
 **A message takes the two top boxes for as long as it is up**, covering the
 fix and the battery, and `panel_message(0)` is how one ends: the fix redraws
 itself on the next frame and the battery is put back from the last figure it
@@ -638,6 +648,13 @@ gimbal up and down, `1`/`2`/`3` the speed limiter (cinematic, normal, sport),
 `SPACE` to file a report, `RETURN` to release the cargo, `RUN/STOP` to abandon
 the mission, and `M` to mute the engine — see Sound, where the same key mutes
 the tune on every screen that is not a flight.
+
+**`P` shows the frame rate, and nothing on any screen says so.** It is off
+when the game starts and kept for the session like the mute. Deliberately
+undocumented in the game: it is a thing to watch while working on the
+renderer, not an instrument on a drone, and the briefing has no spare row for
+a line about it. It is row 5 of the matrix, which is why `input.c` scans six
+rows rather than five.
 
 **Sport mode has no terrain following, and that is the third way to fail.**
 `fly` has always clamped the camera to `GROUND_GAP` above the ground; now the
@@ -899,6 +916,19 @@ starts the motors cold at 30 Hz and they are heard to come up.
   the SID's 15**, halved on 15 Aug 2026 after hearing the first version: full
   was too loud to fly under. The tune keeps its own level, since the two never
   sound at once and each sets what it wants as it starts.
+- **the battery warning borrows voice 3**, and it is the only thing in a
+  flight that is not the motors: one note when the pack goes yellow at 25%
+  and a higher, longer one when it goes red at 10%. Voice 3 is the triangle
+  an octave down, the quietest of the three and the least missed for the
+  third of a second this takes; the other two carry the note straight
+  through. `engine_beep_left` is shared with `engine_asm.s`, which leaves
+  voice 3's *pitch* alone while it is set — otherwise the interrupt would
+  write the note over the beep fifty times a second — and it is counted down
+  by the flight loop rather than by the interrupt, so every SID write in a
+  flight stays on one side of the fence. It gates down before it gates up,
+  for the reason two bullets above, and hands the voice back with the same
+  registers `engine_arm` gave it. A muted flight makes no sound at all,
+  warning included: `M` means quiet.
 - **muting mid-flight resumes where the throttle left it**, not from cold.
   `engine_start(heard)` is the launch, and a muted one never touches the SID
   at all rather than making a click and falling silent; `engine_set` is the

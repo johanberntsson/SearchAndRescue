@@ -165,8 +165,13 @@ PANEL_LABEL = 2
 # than characters: one colour for the whole plane, sampled off the phosphor
 # green in screenshots/layout-example.png. Keep in sync with PANEL_TEXT.
 PANEL_TEXT = 3
+# And what the battery reads in when the pack is low and when it is nearly
+# gone.  It has a sprite of its own so that it can have a colour of its own.
+PANEL_WARN = 4
+PANEL_ALARM = 5
 PANEL_COLOURS = ((PANEL_INK, (255, 255, 255)), (PANEL_LABEL, (150, 160, 170)),
-                 (PANEL_TEXT, (51, 199, 76)))
+                 (PANEL_TEXT, (51, 199, 76)), (PANEL_WARN, (255, 204, 51)),
+                 (PANEL_ALARM, (255, 68, 51)))
 
 # The panel's background artwork: 320x48 pixels of full-colour characters
 # under the readouts, in the entries the sky and the HUD pair leave over at

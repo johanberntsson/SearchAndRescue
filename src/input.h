@@ -19,6 +19,7 @@
 #define KEY_RETURN 0x1000  // release the cargo
 #define KEY_STOP   0x2000  // RUN/STOP: give up and fly home
 #define KEY_M      0x4000  // mute: the music on a page, the engine in the air
+#define KEY_P      0x8000  // performance: show the frame rate. Undocumented
 
 // Scan the matrix once. `held` gets every key down now, which is what flight
 // wants; `pressed` gets the ones that went down since the last scan, which is

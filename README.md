@@ -60,7 +60,10 @@ generated worlds, both on the one disk**.
   drone about whatever it is doing — including a hover. The panel names it the
   way a weather report does, by the direction it comes from
 - A battery that runs down as you fly, four minutes or so at normal speed and
-  a quarter of that in sport. Run it flat and the mission is over
+  a quarter of that in sport. Run it flat and the mission is over. The readout
+  goes **yellow under a quarter and red under a tenth**, with a warning note
+  on its own SID voice at each — the only thing in a flight that is not the
+  motors
 - **A three voice SID tune** under every page — the loading screen, the title,
   the mission list, the briefing and the debrief — played from the ROM's own
   interrupt at 50 Hz and written into both stereo SIDs. The flight is the one
@@ -194,6 +197,7 @@ After the title screen and the briefing, `SPACE` launches the flight.
 | `RETURN` | release the cargo |
 | `RUN/STOP` | abandon the mission, and back out of the list or a briefing |
 | `M` | mute: the engine in the air, the music on every other screen. Two settings, both remembered |
+| `P` | show the frame rate. Off to begin with, remembered for the session, and **nothing in the game mentions it** — it is for working on the renderer, not for flying |
 
 **Sport mode has no terrain following.** In the two slower modes the drone
 refuses to fly closer to the ground than it should, exactly as before; in sport

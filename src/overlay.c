@@ -163,22 +163,31 @@ void overlay_on(void)
   SPRHGTEN = (1 << OVERLAY_SPRITES) - 1;
   SPRHGHT = OVERLAY_ROWS;
 
+  SPRITE_XMSB = 0;
   for (n = 0; n < OVERLAY_SPRITES; n++) {
-    // A sprite carries one colour, which is why the panel's labels and its
-    // values are the same green now. Two colours would mean two planes, and
-    // the design wanted one anyway -- see the mockups in screenshots/.
+    // The plane's five are laid end to end across the panel; the battery's
+    // one is put over the artwork's box for it. All of them start green -- the
+    // battery's changes colour as the pack runs down, and nothing else does.
+    uint16_t at = n < OVERLAY_PLANE_SPRITES ? (uint16_t)(n * 64)
+                                            : OVERLAY_ALERT_AT;
+
+    at += SPR_ORIGIN_X;
     SPRITE_COL(n) = PANEL_TEXT;
-    SPRITE_X(n) = (uint8_t)(SPR_ORIGIN_X + n * 64);
+    SPRITE_X(n) = (uint8_t)at;
     SPRITE_Y(n) = SPR_ORIGIN_Y;
+    // A sprite past X 255 -- the rightmost of the plane, at 280 -- keeps the
+    // ninth bit of its position over here.
+    if (at > 255)
+      SPRITE_XMSB |= (uint8_t)(1 << n);
   }
 
-  // The rightmost sprite starts at X 280, which does not fit in eight bits.
-  SPRITE_XMSB = 0;
-  for (n = 0; n < OVERLAY_SPRITES; n++)
-    if (SPR_ORIGIN_X + n * 64 > 255)
-      SPRITE_XMSB |= (uint8_t)(1 << n);
-
   SPRITE_ENABLE = (uint8_t)((1 << OVERLAY_SPRITES) - 1);
+}
+
+void overlay_ink(uint8_t sprite, uint8_t entry)
+{
+  if (sprite < OVERLAY_SPRITES)
+    SPRITE_COL(sprite) = entry;
 }
 
 void overlay_off(void)

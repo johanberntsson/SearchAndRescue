@@ -19,6 +19,25 @@
 // with the two above.
 #define PANEL_TEXT  3
 
+// Except the battery, which has a sprite of its own so that it can have a
+// colour of its own: green down to PANEL_WARN_AT percent, then yellow, then
+// red. Reserved by tools/convmap.py with the rest.
+#define PANEL_WARN   4
+#define PANEL_ALARM  5
+
+// Where those two begin. A quarter of the pack is about a minute of normal
+// flying and a tenth is twenty-odd seconds -- time to turn for the fix, and
+// then time to regret not having.
+#define PANEL_WARN_AT  25
+#define PANEL_ALARM_AT 10
+
+// What panel_battery drew: 0 green, 1 yellow, 2 red. The caller compares it
+// with the last one to decide whether anything should be heard about it --
+// the panel says how it looks and main decides how it sounds.
+#define BATTERY_OK    0
+#define BATTERY_WARN  1
+#define BATTERY_ALARM 2
+
 // The paper, and the one thing about the panel that is not per character: a
 // text character's background is the screen colour, full stop. It used to be
 // palette 0 and black, which was fine over nothing and punches a hole in the
@@ -59,8 +78,15 @@ void panel_speed(uint8_t mode);
 void panel_cargo(const char *what);
 
 // What is left in the pack, 0 to 100. Called only when the figure changes,
-// which at the fastest drain is every ninth frame or so.
-void panel_battery(uint8_t percent);
+// which at the fastest drain is every ninth frame or so. Returns the level it
+// drew -- BATTERY_OK, _WARN or _ALARM -- so that the caller can beep when it
+// falls.
+uint8_t panel_battery(uint8_t percent);
+
+// Show or hide the frame rate, which is off when a flight starts. There is
+// nothing on any screen about it: it is P, and it is not a drone's
+// instrument.
+void panel_fps(uint8_t on);
 
 // The wind. `from` is the direction it blows FROM in 256ths of a turn, the
 // same units as the heading, shown in degrees beside it; `mps` is its speed.

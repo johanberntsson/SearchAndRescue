@@ -40,11 +40,16 @@
 #define PANEL_ROWS  (SCREEN_ROWS - FB_ROWS)
 #define PANEL_COLS  FB_COLS
 
-// Where the overview map sits in the panel: a square of full-colour tiles
-// tucked against the right edge, clear of the readouts on the left.
+// Where the overview map sits in the panel: a square of full-colour tiles in
+// the box the artwork leaves for it, clear of the readouts on the left.
 // PANEL_MAP_SIZE must match OVERVIEW_CHARS in loader.h.
+//
+// **One column short of the right edge.** The artwork's map box is x 276-314
+// of the panel's 320, so tiles hard against the edge overhang it by five
+// pixels and leave a gap on the left; a column in puts them at 280-311,
+// inside it both sides.
 #define PANEL_MAP_SIZE 4
-#define PANEL_MAP_COL  (PANEL_COLS - PANEL_MAP_SIZE)
+#define PANEL_MAP_COL  (PANEL_COLS - PANEL_MAP_SIZE - 1)
 #define PANEL_MAP_ROW  1
 
 // Colour RAM is aliased into chip RAM at $1F800, so bank 1 only offers

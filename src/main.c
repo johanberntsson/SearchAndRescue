@@ -65,6 +65,12 @@ static uint8_t speed_mode = SPEED_DEFAULT;
 static uint8_t music_wanted = 1;
 static uint8_t engine_wanted = 1;
 
+// And `P` shows the frame rate, which starts hidden and is kept for the
+// session the same way. Deliberately undocumented -- it is a thing to watch
+// while working on the renderer, not an instrument on a drone -- so nothing
+// on any screen mentions it.
+static uint8_t fps_wanted;
+
 // The mute key on every screen that is not a flight. The flight has its own,
 // two lines of it, down in the loop.
 static void music_key(uint16_t pressed)
@@ -91,6 +97,10 @@ static const uint16_t battery_drain[SPEED_MODES] = {7, 10, 28};
 static uint16_t battery;
 static uint8_t battery_warned;
 
+// Which of the panel's three battery colours is showing. Kept so that the
+// beep fires on the change and not on every frame that is still red.
+static uint8_t battery_level;
+
 // Take a frame out of the pack. Returns non-zero when it is flat.
 static uint8_t battery_step(void)
 {
@@ -105,8 +115,16 @@ static uint8_t battery_step(void)
   battery -= drain;
   // Only when the figure actually moves: at the fastest drain that is every
   // ninth frame, and at the slowest every thirty-seventh.
-  if ((uint8_t)(battery >> 8) != was)
-    panel_battery((uint8_t)(battery >> 8));
+  if ((uint8_t)(battery >> 8) != was) {
+    uint8_t level = panel_battery((uint8_t)(battery >> 8));
+
+    // The panel says what colour it is and this decides what it sounds like:
+    // once, on the way down, on each of the two thresholds.
+    if (level > battery_level) {
+      battery_level = level;
+      engine_beep(level);
+    }
+  }
   return 0;
 }
 
@@ -361,7 +379,9 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
   // Both after panel_init, which would otherwise blank the readouts they set.
   battery = BATTERY_FULL;
   battery_warned = 0;
+  battery_level = BATTERY_OK;
   panel_battery(BATTERY_FULL >> 8);
+  panel_fps(fps_wanted);
   wind_start();
 
   cam.x = 128 << 8;  // middle of the map
@@ -380,6 +400,7 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
     uint8_t hit, flat;
 
     input_scan(&held, &pressed);
+    engine_beep_step();
     wind_drift();
     flat = battery_step();
     hit = fly(&cam, held);
@@ -390,6 +411,13 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
     // The same key as the menus', on the other of the two settings. The panel
     // says which, since a flight has no room for a line about it and nothing
     // else would tell the pilot the key had been noticed.
+    // P, and nothing anywhere says so: the frame rate is a thing to look at
+    // while working on the renderer, not an instrument on a drone. Kept for
+    // the session like the mute, and off when the game starts.
+    if (pressed & KEY_P) {
+      fps_wanted = !fps_wanted;
+      panel_fps(fps_wanted);
+    }
     if (pressed & KEY_M) {
       engine_wanted = !engine_wanted;
       engine_set(engine_wanted);

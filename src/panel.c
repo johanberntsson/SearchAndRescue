@@ -33,7 +33,9 @@
 #define FIX_Y    5
 #define FIX_W  128  // "46.681N 008.083E" to the pixel
 
-#define BATT_X 195
+// The battery is drawn on its own sprite, so its x is that sprite's own
+// coordinates rather than the panel's; OVERLAY_ALERT_AT is where it lands.
+#define BATT_X OVERLAY_ALERT
 #define BATT_Y   5
 
 #define WIND_X  59
@@ -122,6 +124,12 @@ static uint8_t moved(char *last, uint8_t size)
 static uint8_t msg_up;
 static uint8_t batt_last;
 
+// The frame rate is not a drone's instrument and the panel is a drone's
+// panel, so it is off unless somebody asks for it with P. Undocumented on
+// purpose -- there is no room on the briefing for a line about it, and the
+// figure appearing is all the acknowledgement the key needs.
+static uint8_t fps_shown;
+
 // Right aligned in `width`. `pad` is what leads: a space for a measurement
 // that reads better without leading zeros, '0' for a bearing or a coordinate,
 // which are always read with them.
@@ -198,12 +206,22 @@ void panel_init(void)
 
   // Nothing on the plane, so nothing that was drawn last time still holds.
   last_fix[0] = last_alt[0] = last_hdg[0] = last_fps[0] = 0;
+  fps_shown = 0;
+}
 
-  // The one static label there is. FPS is the readout that changes most
-  // often, so its label is drawn once here rather than being redrawn with
-  // every new figure -- which is safe now that a clear is masked to the pixel
-  // and cannot eat what shares its byte column.
-  overlay_text(FPS_X, FPS_Y, "FPS");
+// P, and nothing on the screen says so. The label is drawn once here rather
+// than with every new figure -- FPS is the readout that changes most often --
+// which is safe because a clear is masked to the pixel and cannot eat what
+// shares its byte column.
+void panel_fps(uint8_t on)
+{
+  fps_shown = on;
+  if (on) {
+    overlay_text(FPS_X, FPS_Y, "FPS");
+    last_fps[0] = 0;  // whatever it read before, put the figure back
+  } else {
+    overlay_clear(FPS_X, FPS_Y, 8 * 8, 8);
+  }
 }
 
 // Cinematic / normal / sport, the three a real drone offers.
@@ -224,17 +242,33 @@ void panel_cargo(const char *what)
   overlay_text(CARGO_X, CARGO_Y, what);
 }
 
-void panel_battery(uint8_t percent)
+uint8_t panel_battery(uint8_t percent)
 {
+  uint8_t level = percent < PANEL_ALARM_AT   ? BATTERY_ALARM
+                  : percent < PANEL_WARN_AT  ? BATTERY_WARN
+                                             : BATTERY_OK;
   char *d;
 
   batt_last = percent;
+
+  // The colour goes on even while a message covers the figure, so that the
+  // pack is already red when the box is handed back.
+  overlay_ink(OVERLAY_PLANE_SPRITES,
+              level == BATTERY_ALARM  ? PANEL_ALARM
+              : level == BATTERY_WARN ? PANEL_WARN
+                                      : PANEL_TEXT);
   if (msg_up)
-    return;  // a message has the box; panel_message(0) puts this back
-  d = put_u(put_s(field, "BATT "), percent, 3, ' ');
+    return level;  // panel_message(0) puts the figure back
+
+  // "BAT 100%" is eight characters, which is this sprite's whole 64 pixels.
+  // The fourth character of BATTERY is what it costs to have the readout on
+  // a sprite of its own, and a sprite of its own is what it costs to have a
+  // colour of its own.
+  d = put_u(put_s(field, "BAT "), percent, 3, ' ');
   *d++ = '%';
   *d = 0;
   overlay_text(BATT_X, BATT_Y, field);
+  return level;
 }
 
 void panel_wind(uint8_t from, uint8_t mps)
@@ -250,16 +284,20 @@ void panel_wind(uint8_t from, uint8_t mps)
 
 void panel_message(const char *s)
 {
+  // Both boxes: the message's own span on the plane, and the battery, which
+  // is on a sprite of its own and would otherwise show through the middle of
+  // the message.
+  overlay_clear(MSG_X, MSG_Y, MSG_W, 8);
+  overlay_clear(OVERLAY_ALERT, MSG_Y, 64, 8);
+
   if (!s) {
-    // The alert is over: give the two top boxes back. The fix redraws itself
-    // on the next frame; the battery only changes every ninth one, so it has
-    // to be put back from what it last read.
-    overlay_clear(MSG_X, MSG_Y, MSG_W, 8);
+    // The alert is over: give the two boxes back. The fix redraws itself on
+    // the next frame; the battery only changes every ninth one, so it has to
+    // be put back from what it last read.
     msg_up = 0;
     panel_battery(batt_last);
     return;
   }
-  overlay_clear(MSG_X, MSG_Y, MSG_W, 8);
   msg_up = 1;
   overlay_text(MSG_X, MSG_Y, s);
 }
@@ -295,6 +333,8 @@ void panel_status(int16_t altitude, uint8_t heading, uint16_t x, uint16_t y,
   vic4_crosshair((uint8_t)(cx * OVERVIEW_PX / 256),
                  (uint8_t)(cy * OVERVIEW_PX / 256));
 
+  if (!fps_shown)
+    return;
   if (fps10 > 999)
     fps10 = 999;
   d = put_u(field, fps10 / 10, 2, ' ');

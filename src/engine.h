@@ -32,4 +32,19 @@ void engine_set(uint8_t on);
 // walking.
 void engine_throttle(uint8_t mode, uint8_t moving, int8_t climb);
 
+// The battery warning, and the one thing in a flight that is not the motors.
+// `level` is BATTERY_WARN or BATTERY_ALARM (panel.h): a higher, longer note
+// for the second. It is heard only if the engine is -- M means a quiet
+// flight, and this is the flight's own channel.
+//
+// **It borrows the engine's third voice**, the triangle an octave down, which
+// is the quietest of the three and the least missed for the third of a second
+// this takes. The other two carry the note straight through it.
+void engine_beep(uint8_t level);
+
+// Once a frame while a flight is running: this is what ends the beep and
+// gives the voice back. Doing it here rather than in the interrupt keeps the
+// SID writes on one side of the fence.
+void engine_beep_step(void);
+
 #endif
