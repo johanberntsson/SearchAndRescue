@@ -1,18 +1,22 @@
 # Base template for map generator
 #
+# Nothing generates this file -- it is here to be copied. `id: 0` keeps it out
+# of every real map's way; a copy needs an id of its own, and tools/genmap.py
+# refuses two files that claim the same one.
+
 general:
-  id: 3               # id in rane 0 - ...
-  seed: 12345         # seed in range 0 - ...
-  type: island        # island,  ...
-  climate: temperate  # temperate, ...
-  rivers: few         # few, ...
-  river-size: small   # small, ...
-  hills: few          # few, ...
-  hills-size: small   # small, ...
-  lakes: few          # few, ...
-  lakes-size: small   # small, ...
-  scale: medium       # medium, ...
-  ruggedness: rolling # rolling, ..
+  id: 0               # 0..99, and the name of the PNG pair it writes
+  seed: 12345         # any integer; the same one always gives the same map
+  type: island        # island, mountains, flatlands
+  climate: temperate  # temperate, hot, cold
+  rivers: few         # none, few, many
+  river-size: small   # small, large
+  hills: few          # none, few, many
+  hills-size: small   # small, large
+  lakes: few          # none, few, many
+  lakes-size: small   # small, large
+  scale: medium       # near, medium, distant -- how big the country is
+  ruggedness: rolling # smooth, rolling, rugged, jagged
 
 # Things built into the terrain, placed by hand in the previewer, in map pixels
 # -- a quarter of a cell at the default 1024. An item is part of the world,
@@ -20,19 +24,33 @@ general:
 #
 # **Only terrain goes here.** This file describes a world; who is standing in
 # it, and why, belongs to a mission -- two rescues could be flown over this
-# same island. The missions are in missions/, one file each, listed by campaign.yaml.
+# same island. The missions are in missions/, one file each, listed by
+# campaign.yaml.
 #
-# Here is an example of every type implemented
+# **Order matters**: a later item paints over an earlier one, so roads go
+# first and the buildings that stand beside them after.
+#
+# Here is one of every type there is.
 items:
-  - type: pyramid  
-    x: 426
-    y: 274
-    size: medium      # medium, ... 
-  - type: house  
-    x: 226
-    y: 174
-    size: small      # small, ... 
- - road:
+  # A road is the two ends and a width. Everything between them is worked out
+  # from the terrain: it keeps out of the water, stays under the road ceiling
+  # rather than going over a mountain, and prefers a contour to a climb -- so
+  # where it actually goes is a thing to look at in the previewer, not
+  # something to predict from the numbers. Either spelling of a point will do:
+  # `226,176` or `[226, 176]`.
+  - type: road
+    size: medium      # small, medium, large -- how wide
     from: 226,176
     to: 476,274
-    
+
+  # A rectangular flat-topped building: a ring of wall around a dark roof.
+  - type: house
+    size: small       # small, medium, large
+    x: 226
+    y: 174
+
+  # A step pyramid, terraced, the size of a landmark you can navigate by.
+  - type: pyramid
+    size: medium      # small, medium, large
+    x: 426
+    y: 274

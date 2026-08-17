@@ -1131,6 +1131,43 @@ and the riser wears the lighter course because a stepped face seen from the air
 is nearly edge on. Item types genmap cannot build are refused rather than
 dropped, and the previewer pins only the ones it does not build.
 
+**There are three kinds now: `pyramid`, `house` and `road`.** A material is a
+band in `maps/palette.yaml` and a `BUILT_*` code in the `built` field, looked
+up in one table in `colourise` — so a fourth is those two lines and a builder.
+`maps/template.yaml` is one of each, and `maps/testitems.yaml` is a map that
+exists only to be flown over and looked at.
+
+- **a `house` is a flat-topped rectangle**: a ring of wall one map cell wide
+  around a dark `roof` band. There is no roof *shape*, because from a drone
+  what you see is the plan and a pitched roof at this scale is two pixels of
+  slope the march samples over — what says roof is the colour. `medium` is
+  6 by 4 cells and stands 12 height units, which is what the survivor
+  billboard is; nothing here is to scale, for the same reason `SPR_WORLD_H`
+  is not.
+- **a `road` is `from:` and `to:` and a width, and it finds its own way.** It
+  is **paint and not terrain** — the only built thing that does not move the
+  ground — which is what keeps it clear of the trap that a river measured
+  against the map it has already cut digs itself a canyon. There is no
+  feedback here to get wrong.
+
+**How a road chooses its route**, which is the only part of the generator that
+searches rather than computes: a Dijkstra over a coarse grid of two map cells
+a node, then the corners taken off. The cost is `ROAD_*` at the top of
+`genmap.py` — a flat cell costs 10, height above sea costs up to 40 at the
+ceiling, every height unit of rise between one node and the next costs 3, and
+a little noise keeps a road over flat country from being a ruled line. Two
+things are refusals rather than costs: **any water in a node bars it**, there
+being no bridges, and so does **standing above `ROAD_CEILING`**, 55% of the
+way up that map's own land — which is the "go round the mountain" rule. A road
+whose ends cannot be joined under those two says so and stops; it does not
+quietly draw a line through a lake.
+
+A priority queue is not the kind of code the rest of that file is. The port to
+the machine it was written for was measured and abandoned (see below), and
+what the integers are still for is reproducibility: every number in the search
+is one and ties break on coordinates, so a seed and a map file give the same
+road every time.
+
 **The disk is generated maps now, and there are two of them.** The map list
 comes out of the campaign — each mission names its world and
 `tools/campaign.py` collects them, so the Makefile's `MAP_YAMLS` is generated

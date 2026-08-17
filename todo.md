@@ -364,6 +364,33 @@ Do not re-litigate these without new measurements.
 
 ## Done
 
+- **Two more things the terrain can be built out of**, done 17 Aug 2026:
+  a `house` and a `road`, beside the pyramid that was there.
+  - **a house** is a flat-topped rectangle: a ring of wall one map cell wide
+    around a dark `roof` band. No roof shape -- from a drone you see the plan,
+    and a pitched roof at this scale is two pixels of slope the march samples
+    over, so what says roof is the colour. `medium` is 6 by 4 cells and stands
+    as tall as the survivor billboard.
+  - **a road is given two ends and finds its own way**: a Dijkstra over a
+    coarse grid of two map cells a node, smoothed afterwards. Water bars a
+    node outright and so does standing above 55% of the map's own land, which
+    is the "go round the mountain" rule; rise between nodes costs, which is
+    what makes it follow a contour. It is **paint and not terrain** -- the one
+    built thing that does not move the ground -- so the canyon trap the river
+    taught cannot happen to it.
+  - a material is now a palette band and a `BUILT_*` code looked up in one
+    table, so a fourth kind is two lines and a builder.
+  - **it costs 12 palette entries** (roof and road, six each): the sprite pool
+    is 20 free rather than 32, still a third figure's worth with five to
+    spare.
+  - `maps/testitems.yaml` is a map that exists only to be flown over and
+    looked at; `maps/template.yaml` is one of every type, and is valid YAML
+    again -- it was a sketch that stopped every genmap run, having been
+    committed by accident with the panel work.
+  - **the shipping maps are untouched.** Nothing was placed in island or
+    plains: items go in by hand in the previewer, and that is Johan's to
+    place.
+
 - **Three things asked for after flying it**, done 17 Aug 2026.
   - **`P` shows the frame rate**, off to begin with and kept for the session
     like the mute. Nothing in the game says so: it is for working on the

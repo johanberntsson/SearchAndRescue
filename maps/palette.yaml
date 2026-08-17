@@ -45,6 +45,14 @@ bands:
   # sun as the ground it stands on, which is what puts a bright line along the
   # west edge of every terrace and a dark one along the east.
   masonry:  {base: 150, count: 2}
+  # A roof, which is the inside of whatever `items` builds as a house: one
+  # colour, and a dark one, so that a building reads as a rectangle with an
+  # edge to it rather than as a grey slab from above.
+  roof:     {base: 162, count: 1}
+  # And a road surface, which is only ever painted on -- a road does not move
+  # the ground it crosses. Dark for the same reason, and shaded like the rest
+  # so that it takes the light of the hillside it is cut into.
+  road:     {base: 168, count: 1}
 
 # What the sun does to a band's colour, darkest face to brightest.  A multiplier
 # below 1 scales the colour; above 1 it is a lerp that far toward white by
@@ -72,6 +80,8 @@ climates:
     highland: [[96, 104, 64], [122, 112, 96]]
     peak:     [[140, 138, 132], [246, 248, 252]]
     masonry:  [[96, 98, 94], [136, 138, 132]]
+    roof:     [[52, 44, 44]]
+    road:     [[62, 58, 54]]
 
   hot:
     water:    [[10, 40, 60], [70, 150, 170]]
@@ -80,6 +90,8 @@ climates:
     highland: [[150, 110, 70], [190, 150, 104]]
     peak:     [[198, 166, 120], [236, 222, 196]]
     masonry:  [[140, 122, 92], [186, 170, 134]]
+    roof:     [[104, 66, 48]]
+    road:     [[92, 82, 68]]
 
   cold:
     water:    [[12, 28, 44], [72, 104, 124]]
@@ -88,3 +100,5 @@ climates:
     highland: [[104, 106, 104], [150, 152, 156]]
     peak:     [[200, 206, 214], [255, 255, 255]]
     masonry:  [[92, 94, 100], [132, 134, 140]]
+    roof:     [[54, 56, 64]]
+    road:     [[70, 72, 78]]

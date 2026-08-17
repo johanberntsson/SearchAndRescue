@@ -1,0 +1,47 @@
+# A map for looking at what `items` can build, and nothing else.
+#
+# It is not in campaign.yaml and no mission flies it, so nothing on the disk
+# changes when this is regenerated. It exists because a house and a road are
+# things you have to look at to believe -- the road especially, which chooses
+# its own way and can only be judged by seeing where it went.
+#
+#     python3 tools/genmap.py maps/testitems.yaml
+#     python3 tools/preview.py maps/testitems.yaml
+#
+# id 99 keeps it clear of every real map's slot.
+general:
+  id: 99
+  seed: 4242
+  type: island
+  climate: temperate
+  rivers: few
+  river-size: small
+  hills: many
+  hills-size: large
+  lakes: few
+  lakes-size: small
+  scale: medium
+  ruggedness: rolling
+
+items:
+  # A road first, so that whatever is built afterwards stands on top of it
+  # rather than being driven through -- see place_items.
+  - type: road
+    size: medium
+    from: 282,528
+    to: 663,567
+
+  - type: house
+    size: large
+    x: 282
+    y: 528
+
+  - type: house
+    size: medium
+    x: 663
+    y: 567
+
+  - type: house
+    size: small
+    x: 598
+    y: 257

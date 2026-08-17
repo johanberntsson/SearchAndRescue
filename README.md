@@ -104,9 +104,14 @@ reproducibly from a seed. The terrain is **lit by a sun in the west**, the way
 the hand-drawn map is, which is what makes a heightfield read as country rather
 than as a coloured contour map: the land ramp is 21 elevation steps of six
 shades each, and which shade a pixel gets is how fast the ground falls towards
-the light. Landmarks are terrain too: a `pyramid` in the mission's `items` is
+the light. Landmarks are terrain too: a `pyramid` in the map's `items` is
 terraformed into both maps, terrace by terrace, and costs the renderer nothing
-because there is nothing there but ground. Switching worlds between missions
+because there is nothing there but ground. So is a **`house`** — a flat-topped
+rectangle with a ring of wall around a dark roof — and a **`road`**, which is
+given only its two ends and **finds its own way between them**: it keeps out of
+the water, stays below a ceiling rather than climbing over a mountain, and
+prefers a contour to a climb, so where it actually runs is something to go and
+look at rather than something you drew. Switching worlds between missions
 costs 512 bytes of table: a map's whole location lives in the renderer's plane
 lookups, so pointing the march at another one is rebuilding those and nothing
 else. And the arithmetic is the MEGA65's own — Q0.16 integers, reciprocals,

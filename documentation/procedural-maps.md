@@ -88,14 +88,22 @@ general:
   ruggedness: rolling    # smooth | rolling | rugged | jagged
 
 items:
+  - type: road
+    size: medium         # small | medium | large -- how wide
+    from: 226,176        # or [226, 176]; either spelling is taken
+    to: 476,274
   - type: pyramid
     size: medium         # small | medium | large
     x: 580
     y: 345
   - type: house
+    size: small
     x: 128
     y: 67
 ```
+
+Order matters: a later item paints over an earlier one, so roads go first
+and whatever stands beside them after.
 
 Coordinates as placed by hand while flying in the previewer — no need to
 also support lat/lon in the file, but the previewer should be able to
@@ -109,7 +117,42 @@ same parsing code, for all three feature types.
 Items carry a `size` on the same pattern — named steps, not a number — and
 what the sizes are is per item type, since "large" means nothing in the
 abstract. A pyramid's are `small | medium | large`, cut around the one in
-`resources/C1W.png`.
+`resources/C1W.png`; a house's are a few map cells either way; a road's are
+how wide the line is.
+
+**Built, as of 17 Aug 2026: `pyramid`, `house` and `road`.** A material is a
+band in `maps/palette.yaml` and a `BUILT_*` code in the `built` field, looked
+up in one table in `colourise`, so a fourth is those two and a builder
+function. `maps/testitems.yaml` is a map that exists only to be flown over
+and looked at.
+
+A **house** is a flat-topped rectangle: a ring of wall one map cell wide
+around a dark roof. There is no roof *shape* — from a drone what you see is
+the plan, and a pitched roof at this scale would be two pixels of slope the
+march samples over. What says roof is the colour.
+
+A **road** is the only built thing that is paint rather than terrain: it
+colours the ground it crosses and does not move it, which is what keeps it
+clear of the trap below that a river measured against its own cut digs itself
+a canyon. There is no feedback here to get wrong. Its route is a Dijkstra over
+a coarse grid of two map cells a node, then smoothed:
+
+- **any water in a node bars it** — there are no bridges, and a road that
+  clipped the corner of a lake would look like one.
+- **so does standing above `ROAD_CEILING`**, 55% of the way up that map's own
+  land. That is the "go round the mountain" rule, and it is a refusal rather
+  than a cost: above it a node is not passable at all.
+- **rise between one node and the next costs**, which is what makes a road
+  follow a contour rather than climb straight up, and a little noise keeps one
+  over flat country from being a ruled line.
+- a road whose ends cannot be joined under those rules **says so and stops**.
+  It does not quietly draw a line through a lake.
+
+A priority queue is not the kind of code the rest of `genmap.py` is. The port
+to the machine it was written for was measured and abandoned; what the
+integers are still for is reproducibility, and every number in the search is
+one, with ties broken on coordinates, so a seed and a map file give the same
+road every time.
 
 ### Items that are terrain
 

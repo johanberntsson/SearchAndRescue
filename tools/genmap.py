@@ -210,7 +210,7 @@ SUN_MOTTLE = 0.55
 # The bands the code asks the palette file for by name: the land ramp in
 # ascending order, then the two that are not elevation at all.
 LAND_BANDS = ("shore", "lowland", "highland", "peak")
-BANDS = LAND_BANDS + ("water", "masonry")
+BANDS = LAND_BANDS + ("water", "masonry", "roof", "road")
 
 # The land ramp is walked with a gamma, so its top bands are the top few per
 # cent of the relief rather than an even slice of it. Linear put snow on a
@@ -711,57 +711,323 @@ PYRAMID = {
 TERRACE = 8              # pixels at DEFAULT_SIZE: two map cells
 RISER = 4                # of which this much is the riser's own band
 
-# The item types this file knows how to build, and the sizes each takes. An
-# item type that is only a mission object -- a survivor, a landing site --
-# does not belong in a map file at all: it belongs to whatever flies here, and
-# a mission file in missions/ holds it. So an unknown type is a typo and is
-# refused rather than passed along.
-ITEMS = {"pyramid": PYRAMID}
+# A house: half the width, half the depth, and how tall, in the same units as
+# PYRAMID above -- so `medium` is 6 by 4 map cells and stands 12 height units,
+# which is what the survivor billboard is. **Nothing here is to scale either.**
+# A cell is a hundred metres, so an honest house would be a twentieth of a
+# pixel; these are the sizes at which a building reads as a building from the
+# air, chosen the way SPR_WORLD_H was.
+#
+# The floor under all of them is the renderer's: a terrace narrower than a map
+# cell is not there (see TERRACE), and the same is true of a wall. The wall
+# ring is one cell wide and the smallest roof left inside it is two cells by
+# one, which is the least that still reads as a roof rather than as a smudge.
+HOUSE = {
+    "small":  (8, 6, 8),
+    "medium": (12, 8, 12),
+    "large":  (16, 12, 16),
+}
+HOUSE_WALL = 4           # pixels at DEFAULT_SIZE: one map cell of wall
+
+# A road is a width and nothing else: its route is worked out from the
+# terrain. Radius in pixels at DEFAULT_SIZE, so `medium` is seven pixels
+# across -- under two map cells, and about as thin as the colourmap can carry
+# at the resolution the disk ships.
+ROAD = {"small": 2, "medium": 3, "large": 5}
+
+# How a road chooses its way. It is a shortest path over a cost field, so
+# these are the weights of the things it is trading against each other:
+#
+#   FLAT     what a level cell costs, and the unit the rest are measured in
+#   CLIMB    added in full at the ceiling and not at all at sea level, which
+#            is what keeps a road in the valleys when a valley will do
+#   SLOPE    per height unit of rise between one cell and the next, which is
+#            what makes it follow a contour rather than climb straight up
+#   WANDER   noise, so that a road over flat country is not a ruled line
+#   CEILING  no road above this fraction of the land's own range. **This is
+#            the "go around the mountain" rule** and it is a hard refusal, not
+#            a cost: above it a cell is not passable at all.
+ROAD_FLAT = 10
+ROAD_CLIMB = 40
+ROAD_SLOPE = 3
+ROAD_WANDER = 12
+ROAD_CEILING = 0.55
+
+# The routing grid, in pixels at DEFAULT_SIZE. Two map cells: fine enough to
+# find a way between two hills, coarse enough that the search is a thousandth
+# of the pixels the map has.
+ROAD_STEP = 8
+
+# How hard the corners are taken off the route the search comes back with.
+# Eight-connected steps on a coarse grid are all right angles and 45s; a road
+# is not. Each pass replaces every interior point with a quarter-half-quarter
+# of itself and its neighbours, and six of them turn a staircase into
+# something a car could drive.
+ROAD_SMOOTH = 6
+
+# What a built pixel is made of. The value goes in the `built` field and is
+# looked up in one table in colourise: the first two are the pyramid's own
+# courses, which a house borrows for its walls.
+BUILT_TREAD = 0          # the flat of a terrace, and the darker course
+BUILT_RISER = 1          # its face, and the lighter one
+BUILT_ROOF = 2
+BUILT_ROAD = 3
+
+# The item types this file knows how to build, what sizes each takes and what
+# else it needs to be told. An item type that is only a mission object -- a
+# survivor, a landing site -- does not belong in a map file at all: it belongs
+# to whatever flies here, and a mission file in missions/ holds it. So an
+# unknown type is a typo and is refused rather than passed along.
+ITEMS = {
+    "pyramid": {"sizes": PYRAMID, "at": ("x", "y")},
+    "house":   {"sizes": HOUSE,   "at": ("x", "y")},
+    "road":    {"sizes": ROAD,    "at": ("from", "to")},
+}
 
 
-def place_items(h, water, items, size):
-    """genmap.place_items in Q0.16. Terraces are integers already.
+def site(h, box, height):
+    """The level a building stands at: the median of what it covers.
 
-    The only arithmetic here is the median of the footprint, which the float
-    version gets from numpy's sort. A pyramid covers 97x97 pixels at most, so
-    the sort is small -- but the machine has a histogram already written for
-    the stretch, and one that is 1024 buckets wide resolves the site to a
-    ninth of a height unit, which is finer than the terraces it is levelling
-    for.
+    **MASK, not ONE.** The cap exists so the top cannot go over 1.0, and
+    against ONE it lands on exactly 1.0 -- seventeen bits, which the uint16 a
+    field value is stored in cannot hold. One step lower is a part in 65536 of
+    the range, and it is the same decision stretch() takes a few hundred lines
+    up.
+
+    The median comes from percentile(), which is a histogram: the float
+    version sorts, and a 1024-bucket histogram resolves the site to a ninth of
+    a height unit, finer than any terrace it is levelling for.
+    """
+    return min(percentile(h[box], 1, 2), MASK - height)
+
+
+def build_pyramid(h, water, built, item, size, scale, n):
+    half, height = PYRAMID[item["size"]]
+    terrace = max(2, round(TERRACE * scale))
+    riser = max(1, round(RISER * scale))
+    steps = max(2, round(half * scale) // terrace)
+    half = steps * terrace
+    height = int(height * ONE) // HEIGHT_MAX
+    cy, cx = round(item["y"] * scale), round(item["x"] * scale)
+
+    span = np.arange(-half, half + 1)
+    ys, xs = (cy + span) % size, (cx + span) % size
+    box = np.ix_(ys, xs)
+    if water[box].any():
+        sys.exit(f"item {n} (pyramid) at {item['x']},{item['y']} stands in "
+                 f"water; move it or shrink it -- it covers "
+                 f"{round((2 * half + 1) / scale)} pixels of the map")
+
+    out = np.maximum(np.abs(span)[:, None], np.abs(span)[None, :])
+    tier = np.clip((half - out) // terrace + 1, 1, steps)
+    band = ((half - out) % terrace) < riser
+
+    base = site(h, box, height)
+    h[box] = base + (height * tier) // steps
+    built[box] = np.where(band, BUILT_RISER, BUILT_TREAD)
+
+
+def build_house(h, water, built, item, size, scale, n):
+    """A flat-topped block: a ring of wall, and a roof inside it.
+
+    There is no roof *shape* -- the top is one level -- because from a drone
+    the thing you see is the plan, and a pitched roof at this scale would be
+    two pixels of slope the march samples over. What says roof is the colour:
+    the ring wears the pyramid's lighter course and the middle is a dark band
+    of its own, so a house reads as a rectangle with an edge to it rather than
+    as a grey slab.
+    """
+    halfw, halfd, height = HOUSE[item["size"]]
+    hw = max(2, round(halfw * scale))
+    hd = max(2, round(halfd * scale))
+    wall = max(1, round(HOUSE_WALL * scale))
+    # A roof needs something left of it after both walls are taken off.
+    wall = min(wall, min(hw, hd) - 1)
+    height = int(height * ONE) // HEIGHT_MAX
+    cy, cx = round(item["y"] * scale), round(item["x"] * scale)
+
+    dy = np.arange(-hd, hd + 1)
+    dx = np.arange(-hw, hw + 1)
+    ys, xs = (cy + dy) % size, (cx + dx) % size
+    box = np.ix_(ys, xs)
+    if water[box].any():
+        sys.exit(f"item {n} (house) at {item['x']},{item['y']} stands in "
+                 f"water; move it -- it covers "
+                 f"{round((2 * hw + 1) / scale)}x{round((2 * hd + 1) / scale)} "
+                 f"pixels of the map")
+
+    base = site(h, box, height)
+    h[box] = base + height
+    outer = ((np.abs(dy) > hd - wall)[:, None]
+             | (np.abs(dx) > hw - wall)[None, :])
+    built[box] = np.where(outer, BUILT_RISER, BUILT_ROOF)
+
+
+def road_cost(h, water, spec, size, scale, stream):
+    """The coarse grid a road is routed over: what each block costs to cross.
+
+    Blocks rather than pixels because a road only has to find its way between
+    the hills, not around every stone: at ROAD_STEP this is two map cells a
+    node and the search is a thousandth of the map. A block is impassable if
+    **any** of it is wet -- there are no bridges and a road that clipped the
+    corner of a lake would look like one -- or if it stands above the ceiling,
+    which is the rule that sends it round a mountain rather than over.
+
+    Returns the cost per block, which blocks are barred, and the block size.
+    """
+    step = max(1, round(ROAD_STEP * scale))
+    n = size // step
+    hb = h[:n * step, :n * step].reshape(n, step, n, step).max(axis=(1, 3))
+    wet = water[:n * step, :n * step].reshape(n, step, n, step).any(axis=(1, 3))
+
+    sea = int(spec["sea"] * ONE)
+    land = h[~water]
+    top = percentile(land, 99, 100) if land.size else ONE
+    ceiling = sea + F.scale(max(top - sea, 1), int(ROAD_CEILING * ONE))
+
+    climb = np.clip(hb - sea, 0, None) * ROAD_CLIMB // max(ceiling - sea, 1)
+    wander = F.scale(value_noise(n, max(2, n // 8), stream.salt()),
+                     ROAD_WANDER * ONE) >> F.FRACBITS
+    cost = ROAD_FLAT + climb + wander
+    return cost, wet | (hb > ceiling), hb, step, ceiling
+
+
+def road_route(cost, barred, hb, start, goal):
+    """Dijkstra from `start` to `goal` over the block grid, or None.
+
+    A priority queue is not the kind of code the rest of this file is -- see
+    the header -- but the port to the machine that shaped everything else was
+    measured and abandoned, and what the integers are still for is
+    reproducibility. Every number here is one, and ties break on the
+    coordinates, so a seed and a map file give the same road every time.
+
+    The eight neighbours are weighted 10 and 14, the usual integer stand-in
+    for 1 and root two, and each step also pays ROAD_SLOPE for every height
+    unit it climbs or drops. That last term is what makes a road follow a
+    contour instead of taking the short way up.
+    """
+    n = cost.shape[0]
+    dist = np.full((n, n), -1, np.int64)
+    from_ = np.zeros((n, n, 2), np.int64)
+    queue = [(0, int(start[0]), int(start[1]))]
+
+    while queue:
+        d, y, x = heapq.heappop(queue)
+        if dist[y, x] >= 0:
+            continue
+        dist[y, x] = d
+        if (y, x) == goal:
+            break
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                if not dy and not dx:
+                    continue
+                ny, nx = (y + dy) % n, (x + dx) % n
+                if barred[ny, nx] or dist[ny, nx] >= 0:
+                    continue
+                rise = abs(int(hb[ny, nx]) - int(hb[y, x])) * HEIGHT_MAX
+                step = (int(cost[ny, nx]) * (14 if dy and dx else 10)) // 10
+                step += (rise >> F.FRACBITS) * ROAD_SLOPE
+                heapq.heappush(queue, (d + step, ny, nx))
+                from_[ny, nx] = (y, x)
+
+    if dist[goal] < 0:
+        return None
+    path = [goal]
+    while path[-1] != tuple(start):
+        path.append(tuple(int(v) for v in from_[path[-1]]))
+    path.reverse()
+    return path
+
+
+def road_smooth(path, n, step):
+    """The block path as pixel points, unwrapped, with the corners taken off.
+
+    Unwrapped first: the world wraps, so a route may leave one edge and arrive
+    at the other, and averaging coordinates that jump by a map width would
+    drag the whole road across it. Each point is placed within half a map of
+    the last, smoothed there, and wrapped again when it is drawn.
+    """
+    size = n * step
+    pts = []
+    for y, x in path:
+        y, x = y * step + step // 2, x * step + step // 2
+        if pts:
+            py, px = pts[-1]
+            y += size * ((py - y + size // 2) // size)
+            x += size * ((px - x + size // 2) // size)
+        pts.append([y, x])
+
+    for _ in range(ROAD_SMOOTH):
+        for i in range(1, len(pts) - 1):
+            for a in (0, 1):
+                pts[i][a] = (pts[i - 1][a] + 2 * pts[i][a] + pts[i + 1][a]) // 4
+    return pts
+
+
+def stamp_road(built, water, cy, cx, radius, size):
+    """One disc of road surface. Colour only: a road does not move the ground.
+
+    That is the whole of why this is nothing like stamp_river. A river has to
+    cut, and cutting against a map it has already cut is what digs a canyon;
+    a road is paint, so there is no feedback to get wrong.
+    """
+    span = np.arange(-radius, radius + 1)
+    d = ((F.hypot(span[:, None], span[None, :], F.DISCBITS)
+          << (F.FRACBITS - F.DISCBITS)) * 2) // (radius * 2 + 1)
+    ys, xs = (cy + span) % size, (cx + span) % size
+    box = np.ix_(ys, xs)
+    built[box] = np.where((d <= ONE) & ~water[box], BUILT_ROAD, built[box])
+
+
+def build_road(h, water, built, item, size, scale, stream, n):
+    radius = max(1, round(ROAD[item["size"]] * scale))
+    cost, barred, hb, step, ceiling = road_cost(h, water, item["spec"], size,
+                                                scale, stream)
+    ends = []
+    for x, y, which in ((item["x"], item["y"], "run from"),
+                        (item["to-x"], item["to-y"], "run to")):
+        by = (round(y * scale) // step) % cost.shape[0]
+        bx = (round(x * scale) // step) % cost.shape[0]
+        if barred[by, bx]:
+            sys.exit(f"item {n} (road) cannot {which} {x},{y}: it is water, "
+                     f"or it is above the road ceiling, which is "
+                     f"{ROAD_CEILING:.0%} of the way up this map's own land")
+        ends.append((by, bx))
+
+    path = road_route(cost, barred, hb, ends[0], ends[1])
+    if path is None:
+        sys.exit(f"item {n} (road) has no way from {item['x']},{item['y']} to "
+                 f"{item['to-x']},{item['to-y']} that stays out of the water "
+                 f"and under the ceiling. Move an end, or put a road in "
+                 f"between and let this one meet it")
+
+    pts = road_smooth(path, cost.shape[0], step)
+    for (y0, x0), (y1, x1) in zip(pts, pts[1:]):
+        span = max(abs(y1 - y0), abs(x1 - x0))
+        for t in range(max(span, 1)):
+            stamp_road(built, water, y0 + (y1 - y0) * t // span,
+                       x0 + (x1 - x0) * t // span, radius, size)
+    stamp_road(built, water, pts[-1][0], pts[-1][1], radius, size)
+
+
+def place_items(h, water, items, size, spec, stream):
+    """Everything a map file asks to have built into it, in the order asked.
+
+    The order is the file's and it matters: a later item paints over an
+    earlier one, so a road listed after a house drives through its wall. Roads
+    first is the arrangement that looks like anything.
     """
     built = np.full(h.shape, -1, np.int64)
     scale = size / DEFAULT_SIZE
     for n, item in enumerate(items):
-        if item["type"] != "pyramid":
-            continue
-        half, height = PYRAMID[item["size"]]
-        terrace = max(2, round(TERRACE * scale))
-        riser = max(1, round(RISER * scale))
-        steps = max(2, round(half * scale) // terrace)
-        half = steps * terrace
-        height = int(height * ONE) // HEIGHT_MAX
-        cy, cx = round(item["y"] * scale), round(item["x"] * scale)
-
-        span = np.arange(-half, half + 1)
-        ys, xs = (cy + span) % size, (cx + span) % size
-        box = np.ix_(ys, xs)
-        if water[box].any():
-            sys.exit(f"item {n} (pyramid) at {item['x']},{item['y']} stands in "
-                     f"water; move it or shrink it -- it covers "
-                     f"{round((2 * half + 1) / scale)} pixels of the map")
-
-        out = np.maximum(np.abs(span)[:, None], np.abs(span)[None, :])
-        tier = np.clip((half - out) // terrace + 1, 1, steps)
-        band = ((half - out) % terrace) < riser
-
-        # **MASK, not ONE.** The cap exists so the apex cannot go over 1.0,
-        # and against ONE it lands on exactly 1.0 -- seventeen bits, which the
-        # uint16 a field value is stored in cannot hold. One step lower is a
-        # part in 65536 of the range, and it is the same decision stretch()
-        # takes a few hundred lines up.
-        base = min(percentile(h[box], 1, 2), MASK - height)
-        h[box] = base + (height * tier) // steps
-        built[box] = np.where(band, ONE, 0)
+        if item["type"] == "pyramid":
+            build_pyramid(h, water, built, item, size, scale, n)
+        elif item["type"] == "house":
+            build_house(h, water, built, item, size, scale, n)
+        elif item["type"] == "road":
+            item = dict(item, spec=spec)
+            build_road(h, water, built, item, size, scale, stream, n)
     return built
 
 
@@ -896,10 +1162,17 @@ def colourise(h, bed, water, level, built, spec, pal, stream):
     deep, wcolours = band_colours(pal, spec["climate"], "water")
     for e, c in zip(deep, wcolours):
         rgb[e] = c
-    stone, scolours = band_colours(pal, spec["climate"], "masonry")
-    for e, c in zip(stone, scolours):
-        for l, m in enumerate(shades):
-            rgb[e + l] = lit(c, m)
+    # What a built pixel can be made of, in BUILT_* order: the pyramid's two
+    # courses, then a roof and a road surface. One table, indexed by the
+    # `built` field itself, so adding a material is a band here and a code
+    # there and nothing else.
+    material = []
+    for name in ("masonry", "roof", "road"):
+        entries, colours = band_colours(pal, spec["climate"], name)
+        for e, c in zip(entries, colours):
+            material.append(e)
+            for l, m in enumerate(shades):
+                rgb[e + l] = lit(c, m)
 
     sea = int(spec["sea"] * ONE)
     land = h[~water & (built < 0)]
@@ -932,11 +1205,14 @@ def colourise(h, bed, water, level, built, spec, pal, stream):
 
     indices = np.asarray(ramp, np.uint8)[step] + face.astype(np.uint8)
 
-    course = np.clip(F.scale(built, len(stone) * ONE) >> F.FRACBITS,
-                     0, len(stone) - 1)
+    # Lit by the same sun as the ground it stands on, which is what puts a
+    # bright line along the west edge of every terrace and a dark one along
+    # the east -- and what keeps a road from reading as a sticker.
+    course = np.clip(built, 0, len(material) - 1)
     dressed = np.clip(sun >> F.FRACBITS, 0, len(shades) - 1).astype(np.uint8)
     indices = np.where(built >= 0,
-                       np.asarray(stone, np.uint8)[course] + dressed, indices)
+                       np.asarray(material, np.uint8)[course] + dressed,
+                       indices)
 
     depth = np.clip(F.scale(np.clip(level - bed, 0, None),
                             (ONE * ONE) // int(DEPTH_REF * ONE)), 0, ONE)
@@ -959,6 +1235,27 @@ FIELDS = {
     "ruggedness": RUGGEDNESS,
     "scale": SCALE,
 }
+
+
+def pair(value):
+    """One `from:` or `to:` as two whole numbers, or None if it is neither.
+
+    Both spellings are taken -- `226,176` and `[226, 176]` -- because the
+    previewer prints marks one number to a line and either is a reasonable
+    thing to paste them into.
+    """
+    if isinstance(value, str):
+        parts = value.split(",")
+        if len(parts) != 2:
+            return None
+        try:
+            return int(parts[0]), int(parts[1])
+        except ValueError:
+            return None
+    if (isinstance(value, (list, tuple)) and len(value) == 2
+            and all(isinstance(v, int) for v in value)):
+        return int(value[0]), int(value[1])
+    return None
 
 
 def read_map(path):
@@ -992,12 +1289,26 @@ def read_map(path):
         if kind not in ITEMS:
             sys.exit(f"{path}: item {n} is a '{kind}', expected one of "
                      f"{', '.join(sorted(ITEMS))}")
-        for axis in ("x", "y"):
-            if not isinstance(item.get(axis), int):
-                sys.exit(f"{path}: item {n} ({kind}) has no integer {axis}")
-        if item.get("size") not in ITEMS[kind]:
+        # A road is told where it goes as well as where it starts, so what an
+        # item needs is per type rather than always the one pair. Its two ends
+        # are normalised to x/y and to-x/to-y here, so that everything after
+        # this point sees the same shape whatever the file said.
+        for name in ITEMS[kind]["at"]:
+            if name in ("x", "y"):
+                if not isinstance(item.get(name), int):
+                    sys.exit(f"{path}: item {n} ({kind}) has no integer {name}")
+                continue
+            got = pair(item.get(name))
+            if got is None:
+                sys.exit(f"{path}: item {n} ({kind}) has no `{name}:` -- it "
+                         f"wants two whole numbers, written `{name}: 226,176` "
+                         f"or `{name}: [226, 176]`")
+            prefix = "" if name == "from" else "to-"
+            item[prefix + "x"], item[prefix + "y"] = got
+        if item.get("size") not in ITEMS[kind]["sizes"]:
             sys.exit(f"{path}: item {n} ({kind}) is size '{item.get('size')}', "
-                     f"expected one of {', '.join(sorted(ITEMS[kind]))}")
+                     f"expected one of "
+                     f"{', '.join(sorted(ITEMS[kind]['sizes']))}")
     return spec, doc.get("items") or []
 
 
@@ -1084,7 +1395,7 @@ def main():
 
     # Last, and after the water: a built thing is not weathered by anything the
     # generator does, and nothing may flood it or cut a channel through it.
-    built = place_items(h, water, items, size)
+    built = place_items(h, water, items, size, spec, stream)
 
     indices, rgb = colourise(h, bed, water, level, built, spec, pal, stream)
     heights = np.clip((h * HEIGHT_MAX) >> F.FRACBITS, 0, 255).astype(np.uint8)
@@ -1106,10 +1417,13 @@ def main():
         scale = size / DEFAULT_SIZE
         ground = int(heights[round(item["y"] * scale),
                              round(item["x"] * scale)])
-        print(f"  item {n}: {item['size']} {item['type']} at "
-              f"{item['x']},{item['y']} (cell {item['x'] * CELLS // DEFAULT_SIZE},"
-              f"{item['y'] * CELLS // DEFAULT_SIZE}), {ground} high. Built into "
-              f"the maps")
+        where = (f"{item['x']},{item['y']} to {item['to-x']},{item['to-y']}"
+                 if item["type"] == "road" else
+                 f"{item['x']},{item['y']} (cell "
+                 f"{item['x'] * CELLS // DEFAULT_SIZE},"
+                 f"{item['y'] * CELLS // DEFAULT_SIZE}), {ground} high")
+        print(f"  item {n}: {item['size']} {item['type']} at {where}. "
+              f"Built into the maps")
 
 
 if __name__ == "__main__":
