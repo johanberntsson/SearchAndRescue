@@ -356,9 +356,21 @@ alternatives, and the sprite paragraph above for the registers and the proof.
   green (`PANEL_TEXT`, reserved by `convmap.py` beside the other panel inks
   and sampled off the mockup). Two colours would mean two planes, and the
   mockup wanted one anyway.
-- **The glyphs come from the C65 ROM's character set at `$2D000`**, read by
-  the CPU rather than fetched by the VIC-IV. The ROM lives in RAM, so a far
-  read simply works — no font in the build at all.
+- **The panel has a font of its own**, `font/ClairsysOzmoo-Regular-US.fnt`,
+  read off the disk into bank 4 and indexed by the character itself. The
+  game's *pages* still take the C65 ROM's set at `$2D000` through `CHARPTR` —
+  they are text characters and that costs no RAM at all. The panel's text is
+  not characters any more, so what it is drawn *from* is only a table
+  `overlay.c` reads, and swapping that table costs 768 bytes and nothing else.
+  It is in the C64 screen-code layout, in which space through `Z` sit exactly
+  where ASCII puts them, so no conversion happens on the way in — doing the
+  conversion the pages need drew every letter as its lowercase.
+- **Only 96 glyphs ship, from space up**, which is every code the panel can be
+  asked for. That is not thrift: at 768 bytes the font fits the staging
+  buffer, so it is read the way the palette is. **`load_far` hangs on it** —
+  the loader stopped dead partway through a *map*, which is not even where the
+  font is read, and booted the moment the call came out. Second file to walk
+  into that unexplained fault; see the palette note in `loader.c`.
 
 **Measured, and it is faster than the characters it replaced**: the frame's
 "everything else" went 2.46 ms (character text) → 4.1 ms (the first version of

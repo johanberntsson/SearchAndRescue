@@ -94,7 +94,18 @@ MAP_RES  = $(foreach n,$(MAP_NUMS),$(BUILD)/map$(n).hgt $(BUILD)/map$(n).col \
 # map-independent, but converted with the maps because every map's palette has
 # to reserve its entries.
 CONV_RES = $(MAP_RES) $(SPR_RES) $(PNL_RES)
-RES      = $(BUILD)/campaign.bin $(CONV_RES)
+
+# The panel's own character set, straight onto the disk: 256 glyphs of eight
+# bytes, which is already the shape src/overlay.c reads, so there is nothing
+# to convert. The 512 bytes of padding are the same ones tools/convmap.py adds
+# to everything else -- the Kernal reports EOF on a SEQ file 256 bytes early,
+# whatever its size, so every resource is read to a known length and padded
+# past the tail that cannot be reached.
+PANEL_FNT = font/ClairsysOzmoo-Regular-US.fnt
+FNT_RES = $(BUILD)/panel.fnt
+
+
+RES      = $(BUILD)/campaign.bin $(CONV_RES) $(FNT_RES)
 
 all: $(D81)
 
@@ -109,6 +120,19 @@ prg: $(PRG)
 
 $(BUILD):
 	mkdir -p $(BUILD)
+
+# **Below `all:` on purpose.** The first explicit target in the file is the
+# default goal, so this rule sitting above it made `make` build the font and
+# stop -- with every earlier object still in place, a disk that looked current
+# and a whole test run that proved nothing.
+# 96 glyphs from space up, which is every code the panel can be asked for,
+# and 768 bytes -- small enough to be read through the loader's staging
+# buffer. That is not a size optimisation: load_far hangs on this file the way
+# it hangs on the palette, and the staging path is the one that works. Keep
+# the slice in step with PANEL_FONT_FIRST and PANEL_FONT_GLYPHS in loader.h.
+$(FNT_RES): $(PANEL_FNT) | $(BUILD)
+	python3 -c "import sys; f = open(sys.argv[1], 'rb').read(); \
+	    open(sys.argv[2], 'wb').write(f[32 * 8:128 * 8] + bytes(512))" $< $@
 
 # Both compiler and assembler see these, so changing either has to force a
 # rebuild. Without it, `make PROFILE=0` and then `make` leaves every object

@@ -267,6 +267,22 @@ int load_resources(load_progress report)
   // with a map. Crunched, since it is a picture and 15 KB of one.
   if (load_crunched("PANEL.PNL", PANEL_ART, 96, 2))
     return -1;
+  // And the font its readouts are drawn from, which needs no crunching at
+  // two kilobytes and no conversion at all: the file is already 256 glyphs of
+  // eight bytes. See PANEL_FONT.
+  // And the font its readouts are drawn from: 96 glyphs of eight bytes, no
+  // crunching and no conversion -- the file is already the table overlay.c
+  // reads.
+  //
+  // **Through the staging buffer and not load_far**, which hangs on this file
+  // exactly as it hangs on the palette above: the loader stopped partway
+  // through a *map*, nowhere near where this is read, and booted again the
+  // moment the call came out. Two files now, the same unexplained fault, and
+  // the same one-line arrangement that works.
+  if (load_small("PANEL.FNT", load_staging, PANEL_FONT_BYTES)
+      != PANEL_FONT_BYTES)
+    return fail("SHORT READ", "PANEL.FNT");
+  dma_copy((uint32_t)(uint16_t)load_staging, PANEL_FONT, PANEL_FONT_BYTES);
   {
     const char *bad = sprite_load(campaign_figures());
 

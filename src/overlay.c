@@ -31,11 +31,13 @@
 #define SPR_ORIGIN_X 24
 #define SPR_ORIGIN_Y (50 + FB_ROWS * 8)
 
-// The C65 ROM's 8x8 set, which the panel's text came from when it was made of
-// characters and still comes from now. It is read here by the CPU rather than
-// fetched by the VIC-IV -- the ROM lives in RAM at $20000-$3FFFF, so a far
-// read simply works.
-#define ROM_FONT 0x2D000UL
+// The panel's own character set, read off the disk into bank 4 -- see
+// PANEL_FONT in loader.h for why the panel gets one and the game's pages do
+// not. It is read here by the CPU, a row at a time, rather than fetched by
+// the VIC-IV: nothing about this is a character any more.
+#if OVERLAY_PLANE + OVERLAY_SPRITES * OVERLAY_SLOT > PANEL_FONT
+#error "the sprite plane runs into the panel font in bank 4"
+#endif
 
 // One byte column of the plane. The five sprites are separate 384-byte
 // blocks, so the plane is in column strips exactly as the framebuffer is:
@@ -85,8 +87,7 @@ void overlay_clear(uint16_t x, uint8_t y, uint16_t w, uint8_t h)
 // string not on an 8-pixel boundary does -- do not erase each other.
 static void overlay_glyph(uint16_t x, uint8_t y, uint8_t code)
 {
-  const uint8_t __far *rom = (const uint8_t __far *)(ROM_FONT
-                                                     + (uint32_t)code * 8);
+  const uint8_t __far *rom;
   uint8_t col = (uint8_t)(x >> 3);
   uint8_t shift = (uint8_t)(x & 7);
   volatile uint8_t __far *lo;
@@ -96,6 +97,14 @@ static void overlay_glyph(uint16_t x, uint8_t y, uint8_t code)
 
   if (col >= OVERLAY_COLS)
     return;
+  // Only the glyphs that ship, which is everything the panel can be asked
+  // for; anything else draws nothing rather than eight bytes of whatever
+  // follows the font in bank 4.
+  if (code < PANEL_FONT_FIRST
+      || code >= PANEL_FONT_FIRST + PANEL_FONT_GLYPHS)
+    return;
+  rom = (const uint8_t __far *)(PANEL_FONT
+                                + (uint32_t)(code - PANEL_FONT_FIRST) * 8);
   spills = shift && (uint8_t)(col + 1) < OVERLAY_COLS;
   // Both pointers land on the glyph's first row and step by one row after
   // that, for the reason in overlay_clear.
@@ -130,8 +139,12 @@ void overlay_text(uint16_t x, uint8_t y, const char *s)
   }
   overlay_clear(x, y, (uint16_t)(at - x), 8);
 
+  // **The character itself, not a screen code.** The panel's font is in the
+  // C64 screen-code layout, in which space through Z sit exactly where ASCII
+  // puts them -- so the conversion the game's text pages need is one this
+  // does not, and doing it anyway drew every letter as its lowercase.
   for (at = x; *s; s++, at += 8)
-    overlay_glyph(at, y, vic4_screen_code(*s));
+    overlay_glyph(at, y, (uint8_t)*s);
 }
 
 void overlay_on(void)

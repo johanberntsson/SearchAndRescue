@@ -83,7 +83,7 @@
 #define PANEL_ART_CHAR  (PANEL_ART / 64)
 #define PANEL_ART_COLS  40  // keep in sync with PANEL_COLS in vic4.h
 #define PANEL_ART_ROWS  6   // and PANEL_ROWS; src/panel.c checks both
-#define PANEL_ART_BYTES ((uint32_t)PANEL_ART_COLS * PANEL_ART_ROWS * 64)
+#define PANEL_ART_BYTES (PANEL_ART_COLS * PANEL_ART_ROWS * 64UL)
 
 // And the sprite plane that carries the panel's text over that artwork: eight
 // sprite pointers, then five 384-byte bitmaps. Bank 4 again, above the
@@ -91,6 +91,35 @@
 // data address divided by 64. See src/overlay.h for what it is for.
 #define OVERLAY_PTRS  (PANEL_ART + PANEL_ART_BYTES)  // $43C00
 #define OVERLAY_PLANE (OVERLAY_PTRS + 64)            // $43C40, / 64 = $10F1
+
+// And the panel's own character set: font/ClairsysOzmoo-Regular-US.fnt, 256
+// glyphs of eight bytes, read off the disk into bank 4 above the plane.
+//
+// **The panel has a font of its own and the game's pages do not.** The pages
+// are text characters and take whatever CHARPTR points at, which is the C65
+// ROM's set at $2D000 -- no RAM, no loading, and it is the font every C65
+// screen is in. The panel's text is not characters at all any more: it is
+// drawn a glyph at a time into the sprite plane, so what it is drawn *from*
+// is only a table this reads, and swapping that table costs 2 KB and nothing
+// else. src/overlay.c checks at compile time that it clears the plane.
+//
+// It is in the C64 screen-code layout, which for everything the panel writes
+// -- space through Z -- is the same as ASCII, so a glyph is indexed by the
+// character itself. Lowercase is not: those codes are graphics in that
+// layout, and the panel has always been uppercase.
+//
+// **Only 96 of the 256 glyphs ship**, from space up: that is every code the
+// panel can be asked for, it is 768 bytes rather than 2048, and -- the reason
+// it is 96 and not 256 -- it fits in the staging buffer, so the font is read
+// the way the palette is and not through load_far. **load_far hangs on it**,
+// exactly as it hangs on the palette: the loader stopped dead partway through
+// a map, which is not even where the font is read. See the note on the
+// palette in src/loader.c; that mystery is still unexplained and this is the
+// second file to walk into it.
+#define PANEL_FONT        0x44800UL
+#define PANEL_FONT_FIRST  32   // the first glyph shipped: space
+#define PANEL_FONT_GLYPHS 96   // keep in step with the slice in the Makefile
+#define PANEL_FONT_BYTES  (PANEL_FONT_GLYPHS * 8)
 
 #if HGT_SIZE <= 256
 #error "the panel artwork and a 256x256 heightmap both want bank 4. Raise \

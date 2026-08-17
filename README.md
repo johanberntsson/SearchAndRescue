@@ -40,7 +40,9 @@ generated worlds, both on the one disk**.
   the panel's 320x48 exactly. That takes the text off the 8-pixel character
   grid — the altitude and heading sit on the compass face — and it is *faster*
   than the characters it replaced, because a field that has not changed is not
-  redrawn and nothing has to be restored under it
+  redrawn and nothing has to be restored under it. It has **a font of its
+  own** -- Clairsys, off the disk -- while the game's pages keep the C65
+  ROM's
 - Altitude, heading, GPS coordinates and frame rate in those boxes, with an
   overview map of the whole world and a crosshair showing where you are
 - **Two missions over two different worlds, both on the one disk** — the first

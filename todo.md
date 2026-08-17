@@ -364,6 +364,24 @@ Do not re-litigate these without new measurements.
 
 ## Done
 
+- **The panel has a font of its own**, done 17 Aug 2026:
+  `font/ClairsysOzmoo-Regular-US.fnt`, 96 glyphs from space up, read off the
+  disk into bank 4. The game's pages keep the C65 ROM's set through `CHARPTR`,
+  which costs no RAM; the panel's text has not been characters since the
+  sprite plane landed, so its font is only a table `overlay.c` reads.
+  - it is in the **C64 screen-code layout**, where space through `Z` are where
+    ASCII puts them, so the glyph index is the character itself. Running it
+    through `vic4_screen_code` first drew every letter as its lowercase.
+  - **`load_far` hangs on it**, the same unexplained fault the palette has had
+    for months -- and it hangs *partway through a map*, nowhere near where the
+    font is read, which is what made it look like anything but the font. It is
+    read through the staging buffer instead, which is why only 96 glyphs ship:
+    768 bytes fits there and 2048 does not.
+  - **the make rule went above `all:` and became the default goal**, so `make`
+    built the font and stopped -- with a disk that looked current and a test
+    run that proved nothing. Worth remembering: the first explicit target in
+    the file wins.
+
 - **Two more things the terrain can be built out of**, done 17 Aug 2026:
   a `house` and a `road`, beside the pyramid that was there.
   - **a house** is a flat-topped rectangle: a ring of wall one map cell wide
