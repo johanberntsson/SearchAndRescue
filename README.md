@@ -12,7 +12,9 @@ aftershocks that reshape the landscape mid-flight. `documentation/vision.md` has
 
 ## Status
 
-`release/sar-latest.d81` is a disk you can boot -- built 15 Aug 2026.
+`release/sar-latest.d81` is a disk you can boot -- built 17 Aug 2026, with
+the instrument panel, the battery warning and the two new kinds of thing a
+map can be built out of.
 
 Two missions exist, end to end: a title screen, a mission list, a briefing, a
 flight, and a debrief. They are deliberately the same flight with different

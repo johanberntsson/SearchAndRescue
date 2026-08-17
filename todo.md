@@ -4,11 +4,18 @@ Made a logo in https://codepo8.github.io/logo-o-matic/#goto-unknown
 
 ## Where it is
 
-**Released 15 Aug 2026** -- `release/sar-latest.d81`, `PROFILE=0`, booted and
-checked to the title before it was copied. Today put sound in it (a tune under
-every page, an engine note under the flight, `M` to mute either), rebuilt the
-loading screen as the title screen, and took the missions out of the program
-and onto the disk.
+**Released 17 Aug 2026** -- `release/sar-latest.d81`. What went in since the
+15th: the panel became a painted instrument panel with its readouts on a plane
+of hardware sprites and a font of its own, the battery warns in yellow and red
+with a note on the engine's third voice, `P` shows the frame rate for whoever
+knows about it, and a map can be built out of houses and roads as well as
+pyramids.
+
+**Released 15 Aug 2026** -- `PROFILE=0`, booted and
+checked to the title before it was copied. That day put sound in it (a tune
+under every page, an engine note under the flight, `M` to mute either),
+rebuilt the loading screen as the title screen, and took the missions out of
+the program and onto the disk.
 
 Two missions, end to end: title, mission list, briefing, flight, debrief —
 **and each over its own generated world**, both resident at once on one disk.
