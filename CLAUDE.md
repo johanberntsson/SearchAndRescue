@@ -20,7 +20,8 @@ resident at once**, which one hand-drawn map pair could never be: two generated 
 costs 512 bytes of plane table. See Resources.
 
 Underneath is the voxel engine at about 12.5 fps — a 320x152 3D view over a
-six-row 40-column text panel, with 512x512 height and colour maps
+six-row instrument panel -- a picture, with its readouts on a plane of
+hardware sprites over it -- with 512x512 height and colour maps
 unpacked into attic RAM at boot, marching 160 rays and writing each to two
 neighbouring pixels; see Performance.
 

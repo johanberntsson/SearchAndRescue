@@ -23,7 +23,8 @@ hikers by a lake out on the plains, with only one EpiPen aboard and a failed
 mission if it goes down in the wrong place. The two fly over **different
 generated worlds, both on the one disk**.
 
-- 320x152 full-colour 3D view, double buffered, over a six-row 40-column text panel
+- 320x152 full-colour 3D view, double buffered, over a six-row painted
+  instrument panel
 - 512x512 height and colour maps, exomizer-crunched on the disk and
   unpacked into attic RAM at boot — two of them, one per mission, resident at
   once and switched between for 512 bytes of table

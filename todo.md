@@ -28,10 +28,11 @@ Three things happen to the drone whatever the pilot does: the wind blows it
 about and veers every few seconds, the battery runs down faster in sport, and
 mission two flies in rain under an overcast sky.
 
-Underneath: a 320x152 3D view over a six-row 40-column text panel with an
-overview map, 12.5 fps (`PROFILE=0`, default map sizes; the rain costs 0.68 ms
-of that on mission two). The march is 160 rays; each fills the two pixels it
-owns.
+Underneath: a 320x152 3D view over a six-row instrument panel -- a painted
+picture, with its readouts on a plane of six hardware sprites over it and an
+overview map among them -- at 12.5 fps (`PROFILE=0`, default map sizes; the
+rain costs 0.68 ms of that on mission two). The march is 160 rays; each fills
+the two pixels it owns.
 
 **Generating the maps on the MEGA65 was built, measured and removed** on 14
 Aug 2026. It worked and it was bit-exact; it is simply four times too slow at
@@ -87,6 +88,7 @@ Build knobs, all in the Makefile:
 | `make release` | not a knob but a target: the `PROFILE=0` disk, into `release/sar-latest.d81` |
 | `make checkmusic` | also a target: both assemblers over the tune, byte for byte. Needs `acme` |
 | `campaign.yaml` | not a knob but the disk: the missions, and through them the maps and sprite sheets that get built |
+| `make sprtest` | also a target: a standalone PRG that asks whether the VIC-IV's hardware sprites work in this display. They do, on the machine as well -- it is kept because it is how that was settled |
 
 Where a frame goes (the older 160-pixel framebuffer, h256 c512, 64.7 ms; the
 shape is the same at other settings):
