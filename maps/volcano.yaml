@@ -1,0 +1,34 @@
+general:
+  id: 2
+  seed: 1
+  type: island
+  climate: temperate
+  rivers: few
+  river-size: small
+  hills: few
+  hills-size: small
+  lakes: few
+  lakes-size: small
+  scale: medium
+  ruggedness: rolling
+
+# Things built into the terrain, placed by hand in the previewer, in map pixels
+# -- a quarter of a cell at the default 1024. A pyramid is part of the world,
+# so genmap.py terraforms it straight into the two maps.
+#
+# **Only terrain goes here.** This file describes a world; who is standing in
+# it, and why, belongs to a mission -- two rescues could be flown over this
+# same island. The missions are in missions/, one file each, listed by campaign.yaml.
+items:
+  - type: pyramid
+    x: 426
+    y: 274
+    size: medium
+  - type: house
+    x: 427
+    y: 503
+    size: large
+  - type: road
+    size: medium
+    from: 426,274
+    to: 427,503
