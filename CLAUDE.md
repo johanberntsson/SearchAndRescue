@@ -667,7 +667,9 @@ when the game starts and kept for the session like the mute. Deliberately
 undocumented in the game: it is a thing to watch while working on the
 renderer, not an instrument on a drone, and the briefing has no spare row for
 a line about it. It is row 5 of the matrix, which is why `input.c` scans six
-rows rather than five.
+rows rather than five. **Confirmed on the machine on 17 Aug 2026**: nothing
+headless can press a key, so the emulator could only ever prove the drawing
+half of it, which it did by defaulting the flag on for one build.
 
 **Sport mode has no terrain following, and that is the third way to fail.**
 `fly` has always clamped the camera to `GROUND_GAP` above the ground; now the
@@ -931,7 +933,10 @@ starts the motors cold at 30 Hz and they are heard to come up.
   sound at once and each sets what it wants as it starts.
 - **the battery warning borrows voice 3**, and it is the only thing in a
   flight that is not the motors: one note when the pack goes yellow at 25%
-  and a higher, longer one when it goes red at 10%. Voice 3 is the triangle
+  and a higher, longer one when it goes red at 10%. **Heard on the machine on
+  17 Aug 2026 and it is right** -- which is the only way it could be checked,
+  since nothing about a SID can be read back from a headless run. The colours
+  were confirmed with it. Voice 3 is the triangle
   an octave down, the quietest of the three and the least missed for the
   third of a second this takes; the other two carry the note straight
   through. `engine_beep_left` is shared with `engine_asm.s`, which leaves
@@ -969,6 +974,13 @@ those numbers before that showed up. What *is* trustworthy is ordinary RAM:
 the tune's `v_wave` proves what state it left the gates in. Reason from those
 and from the SID's documented behaviour; do not trust a register readback in
 the emulator.
+
+**So the last word on anything audible is Johan's.** Both things written here
+by reasoning alone -- the engine's gate handling and the battery warning
+borrowing voice 3 -- came back right the first time when he listened to them,
+which is what reasoning from the documented behaviour is worth. It is still
+worth saying plainly which half of a sound change has been seen and which has
+only been argued.
 
 ## The billboards
 

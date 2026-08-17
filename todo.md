@@ -425,7 +425,11 @@ Do not re-litigate these without new measurements.
     plains: items go in by hand in the previewer, and that is Johan's to
     place.
 
-- **Three things asked for after flying it**, done 17 Aug 2026.
+- **Three things asked for after flying it**, done 17 Aug 2026 and **all
+  three confirmed on the real MEGA65 the same day** -- the two that the
+  emulator could not answer at all, `P` (nothing headless can press a key) and
+  the warning note (nothing about a SID reads back), and the battery colours
+  with them.
   - **`P` shows the frame rate**, off to begin with and kept for the session
     like the mute. Nothing in the game says so: it is for working on the
     renderer, and the briefing has no spare row. It is row 5 of the key
