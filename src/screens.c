@@ -55,6 +55,17 @@ void screens_music(uint8_t on)
   music_line();
 }
 
+// What the briefing calls the mission's weather. A table would want keeping in
+// step with weather.h by hand; three names do not.
+static const char *weather_name(uint8_t weather)
+{
+  if (weather == WEATHER_RAIN)
+    return "RAIN";
+  if (weather == WEATHER_SNOW)
+    return "SNOW";
+  return "CLEAR";
+}
+
 // Right-aligned digits, zero padded, which is what both a percentage and a
 // clock want.
 static void put_digits(uint8_t col, uint8_t row, uint16_t value, uint8_t width,
@@ -283,7 +294,7 @@ void screens_briefing(uint8_t mission_no)
   vic4_puts(2, 7, "CARGO", PANEL_LABEL);
   vic4_puts(22, 7, mission_cargo_name(m), PANEL_INK);
   vic4_puts(2, 8, "WEATHER", PANEL_LABEL);
-  vic4_puts(22, 8, m->weather == WEATHER_RAIN ? "RAIN" : "CLEAR", PANEL_INK);
+  vic4_puts(22, 8, weather_name(m->weather), PANEL_INK);
 
   vic4_puts(2, 10, "OBJECTIVE", PANEL_LABEL);
   vic4_puts(4, 11, m->objective, PANEL_INK);

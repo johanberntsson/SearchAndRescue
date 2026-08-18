@@ -149,6 +149,13 @@ static uint8_t battery_step(void)
 // WIND_MIN..WIND_MAX becomes 1..5 m/s, a light air to a gentle breeze.
 #define WIND_MPS(s) ((uint8_t)((s) / 2))
 
+// What a wind of WIND_MAX does to a snowflake: 8.8 screen columns of sideways
+// drift for every row it falls, at full strength and full across the view. At
+// 70 a flake crossing the whole 152-row picture is carried about forty
+// columns of the hundred and sixty, which is a plain slant without being a
+// blizzard blowing horizontally. Rain does not use it -- see weather.h.
+#define SNOW_DRIFT 7
+
 // The direction it comes FROM, which is how a weather report, an airfield and
 // a drone controller all name a wind -- so 270 is a westerly and it pushes you
 // east.
@@ -245,6 +252,20 @@ static uint8_t fly(camera *cam, keymask held)
 
     cam->x += voxel_mul_shift8(voxel_sin((uint8_t)(to + 64)), wind_speed);
     cam->y += voxel_mul_shift8(voxel_sin(to), wind_speed);
+
+    // And what the same wind does to falling snow, which is not what it does
+    // to the drone. A flake is blown *across the picture*, so what matters is
+    // the wind's component along the camera's lateral axis rather than its
+    // whole vector -- and that axis is (-sin, cos) of the heading, exactly as
+    // src/sprite.c projects a figure, so the component of a wind blowing
+    // towards `to` is sin(to - angle). Fly into the wind and the snow comes
+    // straight down; turn across it and it streaks off to one side.
+    //
+    // Worked out every frame rather than when the wind veers, because turning
+    // the drone moves it just as much. Two table lookups and two multiplies.
+    weather_drift(voxel_mul_shift8(
+        voxel_sin((uint8_t)(to - cam->angle)),
+        (int16_t)(wind_speed * SNOW_DRIFT)));
   }
 
   // The same test does both jobs: below the gap you are in the hill. In the

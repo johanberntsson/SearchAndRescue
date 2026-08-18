@@ -6,7 +6,7 @@ with the renderer's inner loop in 45GS02 assembly.
 
 ![The engine over the pyramid in the VoxelSpace sample maps, with the flight panel and overview map below it](screenshots/screenshot-260810.png)
 
-![The thermal camera over the avalanche map: a cold blue mountainside, black sky, and the buried skier as a flat white heat signature](screenshots/screenshot-260818-thermal.png)
+![The thermal camera over the avalanche map: a cold blue mountainside, black sky, and the buried skier as a flat white heat signature](screenshots/screenshot-260818-snow-thermal.png)
 
 The eventual game is a post-earthquake drone search-and-rescue simulator: low-altitude
 flight over broken terrain, thermal and acoustic sensor modes, payload drops, and
@@ -26,8 +26,8 @@ engine is: **The Lost Hiker** wants a report filed on a hiker waving from a
 pyramid on an island; **First Aid** wants an EpiPen dropped to a pair of
 hikers by a lake out on the plains, with only one EpiPen aboard and a failed
 mission if it goes down in the wrong place; and **Under The Snow** wants a
-skier found who an avalanche has buried, and who the ordinary camera cannot
-see at all. The three fly over **different generated worlds, all on the one
+skier found who an avalanche has buried, in falling snow, and who the ordinary
+camera cannot see at all. The three fly over **different generated worlds, all on the one
 disk**.
 
 - 320x152 full-colour 3D view, double buffered, over a six-row painted
@@ -53,13 +53,19 @@ disk**.
   ROM's
 - Altitude, heading, GPS coordinates and frame rate in those boxes, with an
   overview map of the whole world and a crosshair showing where you are
+- **Weather a mission chooses**: clear, rain, or snow that drifts sideways on
+  the wind — and on the wind *across the view*, so flying into it makes the
+  snow fall straight and turning across it makes it slant. Snow is the rain
+  loop with different constants rather than a second system, and it knows to
+  read cold under the thermal camera
 - **A thermal camera**, on `T`, which is a palette swap and costs nothing per
   frame: the ground goes to a cold monochrome of its own shading, the sky to
   nearly black, and a person to one flat hot white. It is the whole point of
   the third mission — a skier under the snow is not drawn at all until it is
   armed, and no report can be filed on somebody you have not been shown
 - **Three missions over three different worlds, all on the one disk** — a
-  temperate island, hot plains in the rain, and a cold rugged mountain range.
+  temperate island, hot plains in the rain, and a cold rugged mountain range in
+  snow.
   All three are generated from a paragraph of YAML and resident in attic RAM
   at once, which hand-drawn map pairs could never be: one drawn pair is 661 KB
   crunched on its own, and all three of these come to 446 KB
@@ -92,10 +98,13 @@ disk**.
 - **`M` mutes whatever you are listening to** — the tune on a page, the motors
   in the air. Two settings rather than one, both remembered for the session
 - Weather per mission: mission two flies under an overcast sky with rain drawn
-  over the finished picture, leaning as it falls. It costs 0.68 ms a frame,
-  because the sky is sixteen palette entries rather than any pixels at all
-- **Boots in about ten seconds** in the emulator, twelve off SD and 25 off a
-  floppy, nearly all of it reading the two maps. The loading screen is the
+  over the finished picture, leaning as it falls, and mission three in snow
+  that the wind carries sideways. Rain costs 0.68 ms a frame and snow is the
+  same loop, because the sky is sixteen palette entries rather than any pixels
+  at all
+- **Boots in about twenty-five seconds** in the emulator, nearly all of it
+  reading the three maps -- of which the avalanche map is 268 KB against the
+  island's 60, a fact about mountains rather than about the generator. The loading screen is the
   title screen — same black, same white, same words in the same place — with
   LOADING and a progress bar where PRESS SPACE will be, so the machine can be
   seen to be alive and the boot is one picture from the first second to the

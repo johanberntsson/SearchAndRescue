@@ -14,36 +14,50 @@
 #define OVERCAST_HOR_G 184
 #define OVERCAST_HOR_B 190
 
-// The rain's two greys. Palette entries 240 and 241 are the ones
-// tools/convmap.py keeps clear of the terrain for a pixel-drawn overlay over
-// the 3D view (HUD_INK and HUD_PAPER there), and rain is exactly that. They
-// are written when the rain is armed rather than shipped in the palette, so a
-// clear mission leaves them for whatever wants them next.
-#define RAIN_NEAR 240
-#define RAIN_FAR  241
+// The two greys falling weather is drawn in. Palette entries 240 and 241 are
+// the ones tools/convmap.py keeps clear of the terrain for a pixel-drawn
+// overlay over the 3D view (HUD_INK and HUD_PAPER there), and rain and snow
+// are exactly that. They are written when the weather is armed rather than
+// shipped in the palette, so a clear mission leaves them for whatever wants
+// them next -- the overview crosshair is drawn in 240 and gets them back.
+//
+// **Rain and snow share the pair**, which is what settles the old question
+// about spending two more entries on snow: a flight has one weather, so there
+// is never a frame with both kinds on it.
+#define FALL_NEAR 240
+#define FALL_FAR  241
 
-#define RAIN_DROPS 48
+#define FALL_DROPS 48
 
-// How far right a streak leans over its whole length: one pixel every second
-// row, and the longest streak is six rows. Spawning is kept this far from the
-// right edge, because leaning off the end of the last strip would write past
-// the framebuffer and into the sky template at $1C000.
-#define RAIN_LEAN 3
-#define RAIN_COLS ((FB_WIDTH - RAIN_LEAN - 1) / VX_STEP)
-// The smallest all-ones mask that covers RAIN_COLS, so the fold above needs
+// How far right a rain streak leans over its whole length: one pixel every
+// second row, and the longest streak is six rows. Spawning is kept this far
+// from the right edge, because leaning off the end of the last strip would
+// write past the framebuffer and into the sky template at $1C000.
+#define FALL_LEAN 3
+#define FALL_COLS ((FB_WIDTH - FALL_LEAN - 1) / VX_STEP)
+// The smallest all-ones mask that covers FALL_COLS, so the fold above needs
 // at most a couple of turns.
 #if VX_STEP == 1
-#define RAIN_MASK 511
+#define FALL_MASK 511
 #else
-#define RAIN_MASK 255
+#define FALL_MASK 255
 #endif
 
-// Four layers of rain, by the low bits of the drop's index rather than by
-// stored fields: it costs nothing, it cannot get out of step with itself, and
-// it buys the depth that a single sheet of identical drops does not have.
-#define DROP_SPEED(i)  (4 + ((i) & 3) * 3)   // rows a frame
-#define DROP_LENGTH(i) (3 + ((i) & 3))       // pixels
-#define DROP_COLOUR(i) (((i) & 2) ? RAIN_NEAR : RAIN_FAR)
+// Four layers, by the low bits of the drop's index rather than by stored
+// fields: it costs nothing, it cannot get out of step with itself, and it
+// buys the depth that a single sheet of identical drops does not have.
+//
+// **These two tables are the whole difference between rain and snow.** Same
+// forty-eight drops, same four layers, same state, same loop -- snow falls at
+// about a third of the rate and a flake is a dot where a raindrop is a
+// streak. What is not in a table is the sideways drift below, which rain does
+// not have at all.
+#define FALL_KINDS 2   // indexed by weather - 1: 0 rain, 1 snow
+static const uint8_t fall_speed[FALL_KINDS][4]  = {{4, 7, 10, 13},
+                                                   {1, 2,  3,  4}};
+static const uint8_t fall_length[FALL_KINDS][4] = {{3, 4,  5,  6},
+                                                   {1, 1,  2,  2}};
+#define DROP_COLOUR(i) (((i) & 2) ? FALL_NEAR : FALL_FAR)
 
 // In the low free RAM at $1600 with the renderer's own tables -- rebuilt
 // every frame it rains and never touched while the disk is being read, which
@@ -53,10 +67,20 @@
 // 160, and the row it has fallen to. The framebuffer offset is not stored
 // because voxel_column_offset already has it in a table, and a lookup a frame
 // is cheaper than 96 more bytes of a budget this tight.
-LOW_FREE static uint8_t drop_col[RAIN_DROPS];
-LOW_FREE static uint8_t drop_y[RAIN_DROPS];
+LOW_FREE static uint8_t drop_col[FALL_DROPS];
+LOW_FREE static uint8_t drop_y[FALL_DROPS];
 
-static uint8_t raining;
+// WEATHER_CLEAR, _RAIN or _SNOW: what is falling, if anything.
+static uint8_t falling;
+
+// Whether the thermal camera is armed, which falling weather has to know
+// about -- see fall_colours.
+static uint8_t cold;
+
+// How far a flake is carried sideways for every row it falls, in 8.8 screen
+// columns, signed. The flight sets it every frame because it depends on where
+// the camera is pointing quite as much as on the wind.
+static int16_t drift;
 
 // xorshift16. The state must never be zero, which is the one value this
 // generator cannot leave.
@@ -112,18 +136,50 @@ static void drop_place(uint8_t i, uint8_t y)
   // a library call, and this runs for every drop that reaches the bottom. The
   // fold leaves the low columns very slightly likelier than the high ones,
   // which is not a thing anybody can see in falling rain.
-  uint16_t c = weather_rnd() & RAIN_MASK;
+  uint16_t c = weather_rnd() & FALL_MASK;
 
-  while (c >= RAIN_COLS)
-    c -= RAIN_COLS;
+  while (c >= FALL_COLS)
+    c -= FALL_COLS;
 
   drop_col[i] = (uint8_t)c;
   drop_y[i] = y;
 }
 
+// The two colours, which depend on what is falling and on whether the pilot is
+// looking through the thermal camera. **Snow under that camera is the thing
+// this exists for**: left in its own near-white it is the brightest thing on a
+// screen whose whole point is that a body is the brightest thing on it. Cold
+// weather reads cold.
+static void fall_colours(void)
+{
+  if (!falling)
+    return;
+  if (cold) {
+    vic4_set_entry(FALL_NEAR, 60, 72, 104);
+    vic4_set_entry(FALL_FAR, 36, 44, 68);
+  } else if (falling == WEATHER_SNOW) {
+    vic4_set_entry(FALL_NEAR, 252, 252, 255);
+    vic4_set_entry(FALL_FAR, 196, 200, 210);
+  } else {
+    vic4_set_entry(FALL_NEAR, 220, 226, 235);
+    vic4_set_entry(FALL_FAR, 150, 158, 170);
+  }
+}
+
+void weather_thermal(uint8_t on)
+{
+  cold = on;
+  fall_colours();
+}
+
+void weather_drift(int16_t sideways)
+{
+  drift = sideways;
+}
+
 void weather_sky(void)
 {
-  if (!raining) {
+  if (!falling) {
     // Straight out of the loaded palette rather than a blue written again
     // here: the shipped gradient comes from SKY_TOP and SKY_HORIZON in
     // tools/convmap.py, and a second copy of those numbers in C would drift
@@ -136,35 +192,40 @@ void weather_sky(void)
 
 void weather_set(uint8_t weather)
 {
-  raining = weather == WEATHER_RAIN;
+  falling = weather;
+  // A flight starts on the optical camera whatever the last one ended on, and
+  // the colours below have to agree with that.
+  cold = 0;
+  drift = 0;
 
   weather_sky();
-  if (!raining)
+  if (!falling)
     return;
 
-  vic4_set_entry(RAIN_NEAR, 220, 226, 235);
-  vic4_set_entry(RAIN_FAR, 150, 158, 170);
+  fall_colours();
 
-  // Scattered down the screen, or the first frame is one horizontal band of
-  // rain falling in step.
+  // Scattered down the screen, or the first frame is one horizontal band
+  // falling in step.
   {
     uint8_t i;
 
-    for (i = 0; i < RAIN_DROPS; i++)
+    for (i = 0; i < FALL_DROPS; i++)
       drop_place(i, (uint8_t)(weather_rnd() & 127));
   }
 }
 
-void weather_rain_draw(uint32_t base)
+void weather_draw(uint32_t base)
 {
-  uint8_t i;
+  uint8_t i, kind;
 
-  if (!raining)
+  if (!falling)
     return;
+  kind = (uint8_t)(falling - 1);
 
-  for (i = 0; i < RAIN_DROPS; i++) {
-    int16_t y = (int16_t)drop_y[i] + DROP_SPEED(i);
-    uint8_t xin, len, colour, k;
+  for (i = 0; i < FALL_DROPS; i++) {
+    uint8_t layer = (uint8_t)(i & 3);
+    int16_t y = (int16_t)drop_y[i] + fall_speed[kind][layer];
+    uint8_t xin, len, colour, k, col;
     uint8_t __far *p;
     int16_t at;
 
@@ -174,13 +235,35 @@ void weather_rain_draw(uint32_t base)
       drop_y[i] = (uint8_t)y;
 
     y = drop_y[i];
-    len = DROP_LENGTH(i);
+    len = fall_length[kind][layer];
     if (y + len > FB_HEIGHT)
       len = (uint8_t)(FB_HEIGHT - y);  // clipped at the bottom of the view
 
-    xin = (uint8_t)((drop_col[i] * VX_STEP) & 7);
+    col = drop_col[i];
+    // **Snow is blown sideways and rain is not**, which is the one thing here
+    // that is not a table. A flake is carried `drift` columns for every row it
+    // has fallen, so its column is a function of its row and needs no state of
+    // its own -- and with a length of one or two pixels there is nothing to
+    // lean *within*, which is why the streak lean below stays rain's.
+    //
+    // Wrapped rather than dropped at the edges: a snowfall that is only blown
+    // off one side leaves that side of the picture empty within a few seconds.
+    // The fold is a loop for the same reason drop_place's is: at the drift
+    // scale the flight sets it is one turn at most, and it stays right if
+    // anybody changes the scale.
+    if (kind) {
+      int16_t moved = (int16_t)col + voxel_mul_shift8(drift, y);
+
+      while (moved < 0)
+        moved += FALL_COLS;
+      while (moved >= FALL_COLS)
+        moved -= FALL_COLS;
+      col = (uint8_t)moved;
+    }
+
+    xin = (uint8_t)((col * VX_STEP) & 7);
     colour = DROP_COLOUR(i);
-    p = (uint8_t __far *)(base + voxel_column_offset(drop_col[i]));
+    p = (uint8_t __far *)(base + voxel_column_offset(col));
     at = y * 8;
 
     for (k = 0; k < len; k++) {
@@ -189,7 +272,7 @@ void weather_rain_draw(uint32_t base)
       // The lean. Column strips put the next pixel across in the very next
       // byte until the strip ends, which is the same step src/sprite.c makes
       // along a figure's width.
-      if (k & 1) {
+      if (!kind && (k & 1)) {
         if (xin == 7) {
           at += FB_STRIDE - 7;
           xin = 0;

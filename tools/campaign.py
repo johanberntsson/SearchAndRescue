@@ -60,7 +60,10 @@ MAP_LAT_SOUTH = 46500
 MAP_LON_WEST = 8000
 MAP_CELLS = 256
 
-WEATHER = {"clear": 0, "rain": 1}   # WEATHER_CLEAR / WEATHER_RAIN, weather.h
+# WEATHER_CLEAR / _RAIN / _SNOW in src/weather.h. The two falling kinds have
+# to stay contiguous above clear: weather_draw indexes its constant tables by
+# the value less one.
+WEATHER = {"clear": 0, "rain": 1, "snow": 2}
 
 # Whether the figure can be seen at all with the optical camera. `no` is every
 # mission that has ever existed: somebody standing in the open, and the job is

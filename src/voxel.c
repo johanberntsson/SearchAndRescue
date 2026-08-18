@@ -422,7 +422,7 @@ void voxel_render(uint32_t base, const camera *cam)
     // Last, so the rain is in front of the terrain and the figure both. It
     // needs no clearing pass of its own: the sky DMA at the top of the next
     // frame repaints every pixel before anything reads it.
-    weather_rain_draw(base);
+    weather_draw(base);
     PROF_ADD(P_SPRITE, t0);
   }
 

@@ -106,6 +106,9 @@ void thermal_set(uint8_t on)
     // overcast and the file it was loaded from is not.
     weather_sky();
   }
+  // Falling weather is the weather's to colour either way -- snow left white
+  // under this camera outshines the body it exists to find.
+  weather_thermal(on);
   // Last, because it is the only half of this that touches pixels rather than
   // palette entries.
   sprite_thermal(on);

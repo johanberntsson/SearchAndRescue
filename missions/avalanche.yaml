@@ -25,7 +25,7 @@ fix:
   lon: 8.177
 
 figure: resources/skier_sprite.png
-weather: clear
+weather: snow
 hidden: thermal
 
 done: Casualty located under the snow

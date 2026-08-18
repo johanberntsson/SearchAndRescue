@@ -762,10 +762,10 @@ every ninth frame.
 
 ## The weather
 
-`src/weather.c` owns an overcast sky, the rain, and the one pseudo-random
-stream the weather uses (the wind's gusts come out of it too). Which weather a
-flight gets is a `weather` field in the mission table, like its cargo and its
-figure; mission two rains.
+`src/weather.c` owns an overcast sky, the rain, the snow, and the one
+pseudo-random stream the weather uses (the wind's gusts come out of it too).
+Which weather a flight gets is a `weather` field in the mission table, like its
+cargo and its figure; mission two rains and mission three snows.
 
 **The sky costs nothing per frame.** `voxel_init` bakes only the *shape* of
 the gradient into the template it DMAs across the buffer — `SKY_BASE + y *
@@ -796,6 +796,44 @@ of a budget that tight, and it avoids `FB_COLUMN`'s 657-cycle multiply.
 
 **Measured cost, frozen camera, `PROFILE=0`: 0.68 ms a frame, 12.2 fps to
 12.1.**
+
+**Snow is that same loop with different constants**, which is all it was ever
+meant to be: the same forty-eight drops, the same four layers, the same two
+bytes of state each, the same drawing loop. Two 4-entry tables hold the whole
+difference — snow falls at about a third of the rate and a flake is a dot
+where a raindrop is a streak — and they are indexed by `weather - 1`, which is
+why the falling kinds have to stay contiguous above `WEATHER_CLEAR`. Its cost
+over rain's is one multiply a flake a frame, about 4000 cycles or a tenth of a
+millisecond; that is arithmetic rather than a measurement.
+
+Three things are not in a table:
+
+- **snow is blown sideways and rain is not.** A raindrop falls too fast to be
+  carried anywhere and keeps the fixed one-pixel-per-two-rows lean it always
+  had. A flake is carried `drift` columns for every row it has fallen, so its
+  column is a function of its row and needs **no state of its own** — and at a
+  length of one or two pixels there is nothing to lean *within*, which is why
+  the two mechanisms do not collide. The column is folded back into range
+  rather than dropped at the edges, because a snowfall blown off one side
+  leaves that side of the picture empty within seconds.
+- **the drift is the wind across the *view*, not the wind.** The flight works
+  it out every frame in `fly`, because turning the drone moves it quite as
+  much as the wind veering does: the lateral axis is `(-sin, cos)` of the
+  heading, exactly as `src/sprite.c` projects a figure, so a wind blowing
+  towards `to` contributes `sin(to - angle)`. Fly into the wind and the snow
+  comes straight down; turn across it and it streaks off to one side.
+  `SNOW_DRIFT` in `main.c` is the whole scale, and at 7 a flake crossing the
+  full picture is carried about forty of the hundred and sixty columns.
+- **snow has to know about the thermal camera**, which rain never did. Left in
+  its own near-white it is the brightest thing on a screen whose entire point
+  is that a body is the brightest thing on it — so `weather_thermal` recolours
+  the pair cold while the camera is armed. This is the one place the two
+  features touch, and it is exactly the mission that has both.
+
+**Rain and snow share palette entries 240/241**, which settles the old question
+about spending two more on snow: a flight has one weather, so there is never a
+frame with both kinds on it. A clear flight still leaves the pair to the
+overview crosshair.
 
 A report counts only if the survivor was **on screen in the frame just
 drawn** and within ten map cells (`sprite_reportable`). On screen is half the
@@ -840,9 +878,14 @@ renderer learning there is a second mode at all.
   than to the palette, so stowing the camera calls `weather_sky()` -- a rainy
   flight is overcast and the file it was loaded from is not.
 - **the panel is not something the camera is pointed at**, so its artwork
-  (242..255), its ink (1..5) and the rain's pair (240/241) are all untouched
-  and stay readable. **The overview map does go cold**, because it is drawn in
-  the colourmap's own indices; that is a consequence and not a decision.
+  (242..255), its ink (1..5) and the precipitation pair (240/241) are all
+  outside the sweep and stay readable. **The overview map does go cold**,
+  because it is drawn in the colourmap's own indices; that is a consequence
+  and not a decision.
+- **falling weather is recoloured by the weather and not here.** The pair is
+  outside the sweep on purpose — 240 is the overview crosshair on a clear
+  flight and must stay white — so `thermal_set` tells `weather_thermal`
+  instead, and snow goes cold only when there is snow. See The weather.
 
 **The briefing names `T` on every mission**, in the `CONTROLS` list it already
 drew `1 2 3` on — a control the game does not name is a control nobody has,

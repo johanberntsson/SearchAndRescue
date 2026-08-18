@@ -194,15 +194,6 @@ CLAUDE.md. Read the Open note on `cstack` before starting anything large.
   is there and chaining. The awkward part is that the engine owns all three
   voices for the whole flight, so an effect has to borrow one and give it
   back — voice 3, the octave-down body, is the one to take.
-- **Snow, as a third weather.** It should be the rain loop with different
-  constants rather than a second system: `weather.c` already has 48 drops in
-  four layers, their state in `LOW_FREE`, and speed/length/colour derived from
-  `i & 3`. Snow is slower, shorter, paler, and drifts sideways — with the
-  *wind's* direction, ideally, which rain does not currently use. The overcast
-  sky it wants is already there. Watch the two budgets: it must reuse the
-  drop arrays (the low free RAM is down to 80 bytes) and it wants its own
-  palette entries, which is where rain's use of 240/241 — the pair reserved for
-  a HUD — has to be settled.
 - **A mission flown in a gale.** The wind is already a launch-time roll of
   `WIND_MIN..WIND_MAX` (3..10, printed as 1..5 m/s) in `main.c`; a mission
   that is *hard because of the weather* wants those as a mission-table field,
@@ -362,6 +353,31 @@ Do not re-litigate these without new measurements.
   sample.
 
 ## Done
+
+- **Snow, the third weather**, done 18 Aug 2026, and mission three flies in
+  it. It is the rain loop with different constants, which is what the entry
+  asked for: same forty-eight drops, same four layers, same two bytes of state
+  each in `LOW_FREE`, same drawing loop. Two 4-entry tables are the whole
+  difference.
+  - **it drifts with the wind, which rain does not.** A flake is carried
+    `drift` columns for every row it has fallen, so its column is a function
+    of its row and costs **no state at all** — and with a flake one or two
+    pixels long there is nothing to lean within, so rain keeps its fixed lean
+    and the two never collide.
+  - **the drift is the wind across the view**, worked out every frame in
+    `fly`, because turning the drone moves it as much as the wind veering
+    does. Fly into the wind and the snow falls straight; turn across it and it
+    slants. Verified by pinning every flake to one spawn column, which turns
+    the slant into a line you can see in a single frame.
+  - **240/241 are shared and that is the answer** to the entry's question
+    about spending two more entries: a flight has one weather, so no frame
+    ever carries both kinds. A clear flight still leaves the pair to the
+    overview crosshair.
+  - **snow had to learn about the thermal camera.** Left in its own near-white
+    it is the brightest thing on a screen whose whole point is that a body is;
+    `weather_thermal` recolours the pair cold while the camera is armed. The
+    one place the two features touch, on the one mission that has both.
+  - about 295 bytes of the 32K, which is down to 2228 free.
 
 - **The thermal camera, and a mission that needs it**, done 18 Aug 2026.
   `T` arms it, `src/thermal.c` is the whole of it, and mission three --
