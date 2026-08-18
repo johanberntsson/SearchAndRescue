@@ -234,7 +234,8 @@ of whatever is in the bay: release it anywhere else and the mission is lost.
 **And on Under The Snow there is nothing on screen to report until the thermal
 camera is armed.** The skier is under the avalanche: the ordinary camera shows
 an empty snow slope however close you fly, and `SPACE` is refused, because a
-report means you have seen somebody.
+report means you have seen somebody. Every briefing lists the keys, `T`
+included, so none of this has to be read here first.
 
 ## Layout
 

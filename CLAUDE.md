@@ -844,10 +844,19 @@ renderer learning there is a second mode at all.
   and stay readable. **The overview map does go cold**, because it is drawn in
   the colourmap's own indices; that is a consequence and not a decision.
 
-**Nothing on any screen says `T`, except the mission that needs it.** The
-whole picture going cold is what an instrument would have said, and the panel
-has no spare box; arming it puts `THERMAL CAMERA ON` on the message row, the
-way the mute and sport mode do.
+**The briefing names `T` on every mission**, in the `CONTROLS` list it already
+drew `1 2 3` on — a control the game does not name is a control nobody has,
+and mission three cannot be finished without this one. Mission three's brief
+says it a second time in its own words. Arming it in the air puts
+`THERMAL CAMERA ON` on the panel's message row, the way the mute and sport
+mode do; there is no persistent readout for it and it needs none, since the
+whole picture going cold says it better than a box could.
+
+**The briefing page starts on row 0 now**, which no other screen does. It was
+already full — four labelled blocks, each with a blank row before it, and the
+controls ending on the row above the prompt — so the seventeenth key had
+nowhere to go but the top margin, and the display's own border is the margin.
+The separators are rows 1, 5, 9 and 12, and there are no others.
 
 **A figure can be hidden from the optical camera**, which is what makes the
 sensor a thing you need rather than a thing you can look through.

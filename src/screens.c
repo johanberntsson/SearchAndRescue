@@ -261,32 +261,43 @@ void screens_briefing(uint8_t mission_no)
   uint8_t i;
 
   vic4_text_mode();
-  vic4_puts(2, 1, "MISSION", PANEL_LABEL);
-  put_digits(10, 1, (uint16_t)(mission_no + 1), 1, PANEL_LABEL);
-  vic4_puts(13, 1, m->name, PANEL_INK);
+  vic4_puts(2, 0, "MISSION", PANEL_LABEL);
+  put_digits(10, 0, (uint16_t)(mission_no + 1), 1, PANEL_LABEL);
+  vic4_puts(13, 0, m->name, PANEL_INK);
 
-  // The brief sits a row higher than it reads like it should, so that the
-  // weather line below fits without eating the blank row before OBJECTIVE.
-  // The page is full: rows 2, 6, 10 and 13 are the only separators left.
+  // **The page starts on row 0**, which no other screen does and which is what
+  // paid for the thermal camera's line. The page was already full -- four
+  // labelled blocks, each with a blank row before it, and the controls list
+  // ending on the row above the prompt -- so the seventeenth key had nowhere
+  // to go but the top margin. The display's own border is the margin now.
+  //
+  // **A control the game does not name is a control nobody has**, and mission
+  // three cannot be finished without this one, so this was not optional.
+  //
+  // The separators are rows 1, 5, 9 and 12, and there are no others.
   for (i = 0; i < BRIEF_LINES; i++)
-    vic4_puts(2, (uint8_t)(3 + i), m->brief[i], PANEL_INK);
+    vic4_puts(2, (uint8_t)(2 + i), m->brief[i], PANEL_INK);
 
-  vic4_puts(2, 7, "LAST KNOWN POSITION", PANEL_LABEL);
-  put_position(22, 7, m, PANEL_INK);
-  vic4_puts(2, 8, "CARGO", PANEL_LABEL);
-  vic4_puts(22, 8, mission_cargo_name(m), PANEL_INK);
-  vic4_puts(2, 9, "WEATHER", PANEL_LABEL);
-  vic4_puts(22, 9, m->weather == WEATHER_RAIN ? "RAIN" : "CLEAR", PANEL_INK);
+  vic4_puts(2, 6, "LAST KNOWN POSITION", PANEL_LABEL);
+  put_position(22, 6, m, PANEL_INK);
+  vic4_puts(2, 7, "CARGO", PANEL_LABEL);
+  vic4_puts(22, 7, mission_cargo_name(m), PANEL_INK);
+  vic4_puts(2, 8, "WEATHER", PANEL_LABEL);
+  vic4_puts(22, 8, m->weather == WEATHER_RAIN ? "RAIN" : "CLEAR", PANEL_INK);
 
-  vic4_puts(2, 11, "OBJECTIVE", PANEL_LABEL);
-  vic4_puts(4, 12, m->objective, PANEL_INK);
+  vic4_puts(2, 10, "OBJECTIVE", PANEL_LABEL);
+  vic4_puts(4, 11, m->objective, PANEL_INK);
 
-  vic4_puts(2, 14, "CONTROLS", PANEL_LABEL);
-  vic4_puts(4, 15, "W S      FORWARD    BACK", PANEL_INK);
-  vic4_puts(4, 16, "A D      TURN LEFT  RIGHT", PANEL_INK);
-  vic4_puts(4, 17, "R F      CLIMB      DESCEND", PANEL_INK);
-  vic4_puts(4, 18, "Q E      CAMERA UP  DOWN", PANEL_INK);
-  vic4_puts(4, 19, "1 2 3    SPEED  SLOW NORMAL SPORT", PANEL_INK);
+  vic4_puts(2, 13, "CONTROLS", PANEL_LABEL);
+  vic4_puts(4, 14, "W S      FORWARD    BACK", PANEL_INK);
+  vic4_puts(4, 15, "A D      TURN LEFT  RIGHT", PANEL_INK);
+  vic4_puts(4, 16, "R F      CLIMB      DESCEND", PANEL_INK);
+  vic4_puts(4, 17, "Q E      CAMERA UP  DOWN", PANEL_INK);
+  vic4_puts(4, 18, "1 2 3    SPEED  SLOW NORMAL SPORT", PANEL_INK);
+  // Named on every briefing and not only on the mission that needs it: the
+  // camera works over any of them, and a sensor nobody knows about is not a
+  // sensor. The key column is nine wide, as below.
+  vic4_puts(4, 19, "T        THERMAL CAMERA", PANEL_INK);
   // The one line that differs between the two kinds of mission, and it comes
   // out of the mission's cargo bay rather than out of a branch here.
   vic4_puts(4, 20, mission_action_name(m), PANEL_INK);

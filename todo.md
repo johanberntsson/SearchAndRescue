@@ -389,6 +389,10 @@ Do not re-litigate these without new measurements.
     report can be filed on somebody the pilot has not been shown.
   - **it cost the key mask its sixteenth bit.** Every one was taken, so
     `keymask` is 32 bits now; the whole feature is about 820 bytes of the 32K.
+  - **and it cost the briefing its top margin.** `T` goes in the `CONTROLS`
+    list, which was full, so the page starts on row 0 and the display's border
+    is the margin. A control the game does not name is a control nobody has --
+    the first version shipped without it and the mission was unfinishable.
   - **verified by diffing frames**: a flight that armed the camera and stowed
     it again renders the 3D view pixel-identical to one that never touched it.
 
