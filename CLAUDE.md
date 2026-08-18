@@ -93,6 +93,38 @@ between batches, which is enough to invent a boundary that is not there.
 
 `-sleepless` is fine here — see Performance for why it must never be used to time anything from the outside.
 
+### Getting a screenshot of the thing you meant to photograph
+
+**The screenshot is written when xemu exits, and xemu takes its time about
+exiting** — ten to sixty seconds after the `SIGINT`, in practice. Meanwhile it
+keeps emulating. With `-sleepless` a four-minute flight is over in fifteen
+seconds of wall clock, so a sleep-then-kill almost always photographs the
+*debrief* and not the flight: three runs in a row came back with BATTERY EMPTY
+on them before this was understood. Poll for the process to go rather than
+guessing a wait, and expect the frame to be later than the kill.
+
+The way to photograph a flight is to **stop the flight from ending**, with a
+temporary block in `flight()` that is not for committing:
+
+- hold the battery at `BATTERY_FULL` and force `flat` to 0, so the loop runs
+  for ever and any exit lands mid-flight;
+- pin `cam.x` / `cam.y` / `cam.height` / `cam.angle` at the top of the loop
+  and skip `wind_drift`, so the picture is the same one however late the
+  screenshot is taken. `FIX_TO_X` / `FIX_TO_Y` are the way to write a camera
+  position — **`(cell << 8)` overflows a 16-bit `int`** and silently parks the
+  drone somewhere else, which is the trap under Performance and it was walked
+  into writing exactly this;
+- default any key-driven state on, since nothing headless can press one. That
+  is how `P`, the thermal camera and the snow were each first seen.
+
+**And a still cannot show motion.** The snow's wind drift is invisible in one
+frame, because a flake's column is its spawn column plus a shift that grows
+with its row — so the columns stay uniformly spread whatever the drift is.
+Pinning every flake to *one* spawn column turned the slant into a diagonal
+line that a single screenshot proves, and the endpoints could be predicted
+from the arithmetic beforehand. Look for the equivalent trick rather than
+concluding a thing works because it does not look broken.
+
 `-dumpmem` writes 384 KB of **chip RAM only**, so it cannot see attic RAM and cannot see either map at the default sizes; `mem.bin[0x40000]` is the heightmap only when `HGT_SIZE=256` keeps it in chip RAM. `mem.bin[0x10000]` onwards is framebuffer A. Note that a dump catches whichever buffer is mid-render, so it is no good for judging a finished frame — compare screenshots for that. Reading a framebuffer back and de-swizzling it with the column-strip formula below is the fastest way to tell "the renderer is wrong" apart from "the display is wrong"; both have happened. There are no tests and no linter.
 
 ## Toolchain
@@ -206,9 +238,10 @@ room came from, in the order it was taken:
 **And it was spent again the same day** — 2652 on the tune, 583 on the engine
 note and 1449 on the campaign buffer, net of the C mission table it replaced.
 That was the point of the reclaim. The thermal camera and its 32-bit key mask
-then took about 820 more, so a default build is **92.2% used with 2556 bytes
-free**, and a `PROFILE=0` release 91.0% and 2949. The next thing of any size
-wants the banking below before it wants anything else.
+then took about 820 more and snow about 295, so a default build is **93.2%
+used with 2228 bytes free**, and a `PROFILE=0` release 92.1% and 2589.
+**That is the tightest this has been**, and the next thing of any size wants
+the `HIGH_BSS` banking above before it wants anything else.
 
 Next after that would be the 512-byte bounce buffer itself, or the sprite's
 1028.

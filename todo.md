@@ -4,6 +4,11 @@ Made a logo in https://codepo8.github.io/logo-o-matic/#goto-unknown
 
 ## Where it is
 
+**Unreleased, 18 Aug 2026.** `release/sar-latest.d81` is still the 17th's disk
+and does not have any of the day's work on it: a **thermal camera** on `T`, a
+**third mission** over a third generated world, and **snow**. Build a fresh
+disk to see them.
+
 **Released 17 Aug 2026** -- `release/sar-latest.d81`. What went in since the
 15th: the panel became a painted instrument panel with its readouts on a plane
 of hardware sprites and a font of its own, the battery warns in yellow and red
@@ -17,13 +22,16 @@ under every page, an engine note under the flight, `M` to mute either),
 rebuilt the loading screen as the title screen, and took the missions out of
 the program and onto the disk.
 
-Two missions, end to end: title, mission list, briefing, flight, debrief —
-**and each over its own generated world**, both resident at once on one disk.
-Mission one finds the lost hiker on the step pyramid of the island at 46.687N
-8.106E — get within ten cells with them on screen and press `SPACE`. Mission
-two drops an EpiPen to a pair of hikers by a lake on the plains at 46.658N
-8.149E — get within five cells and press `RETURN`. The briefing gives the fix
-and the panel gives your own.
+Three missions, end to end: title, mission list, briefing, flight, debrief —
+**and each over its own generated world**, all three resident at once on one
+disk. Mission one finds the lost hiker on the step pyramid of the island at
+46.687N 8.106E — get within ten cells with them on screen and press `SPACE`.
+Mission two drops an EpiPen to a pair of hikers by a lake on the plains at
+46.658N 8.149E — get within five cells and press `RETURN`. Mission three finds
+a skier an avalanche has buried at 46.584N 8.177E, in snow, and **the optical
+camera has nothing to show**: `T` arms the thermal camera, and until it is
+armed the billboard is not drawn and no report can be filed. The briefing
+gives the fix and names every key; the panel gives your own fix.
 
 A flight can end four ways. The job done; the one EpiPen released in the wrong
 place; the drone flown into a hill, which only sport mode allows; or the
@@ -33,13 +41,23 @@ words on it, the same way the two missions are the same flight.
 
 Three things happen to the drone whatever the pilot does: the wind blows it
 about and veers every few seconds, the battery runs down faster in sport, and
-mission two flies in rain under an overcast sky.
+the weather is the mission's -- mission two flies in rain and mission three in
+snow, both under an overcast sky. The snow is carried sideways by the same
+wind, on its component *across the view*, so which way it slants depends on
+where the drone is pointed.
 
 Underneath: a 320x152 3D view over a six-row instrument panel -- a painted
 picture, with its readouts on a plane of six hardware sprites over it and an
 overview map among them -- at 12.5 fps (`PROFILE=0`, default map sizes; the
-rain costs 0.68 ms of that on mission two). The march is 160 rays; each fills
-the two pixels it owns.
+rain costs 0.68 ms of that on mission two, and the snow about the same). The
+march is 160 rays; each fills the two pixels it owns. **The thermal camera
+costs nothing per frame at all**, being a palette swap.
+
+**The 32K is down to 2228 bytes free** in a default build, 2589 in a
+`PROFILE=0` one, which is the tightest it has been. The next thing of any size
+wants the `HIGH_BSS` banking first -- see the Memory map notes in CLAUDE.md.
+**The disk is down to 1246 blocks free**, nearly all of it the avalanche map's
+268 KB.
 
 **Generating the maps on the MEGA65 was built, measured and removed** on 14
 Aug 2026. It worked and it was bit-exact; it is simply four times too slow at

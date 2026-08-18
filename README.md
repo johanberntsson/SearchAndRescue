@@ -16,8 +16,8 @@ aftershocks that reshape the landscape mid-flight. `documentation/vision.md` has
 
 `release/sar-latest.d81` is a disk you can boot -- built 17 Aug 2026, with
 the instrument panel, the battery warning and the two new kinds of thing a
-map can be built out of. The thermal camera and the third mission below landed
-after it and are not on that disk yet.
+map can be built out of. **The thermal camera, the third mission and the snow
+below all landed after it**, so `make release` is what it takes to see them.
 
 Three missions exist, end to end: a title screen, a mission list, a briefing, a
 flight, and a debrief. They are deliberately the same flight with different
