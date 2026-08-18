@@ -47,6 +47,7 @@ static uint8_t campaign[CAMPAIGN_BYTES];
 #define REC_FIGURE    20
 #define REC_WEATHER   21
 #define REC_MAP       22
+#define REC_HIDDEN    23
 
 mission missions[MISSION_MAX];
 
@@ -131,11 +132,12 @@ const char *campaign_load(void)
     m->figure = rec[REC_FIGURE];
     m->weather = rec[REC_WEATHER];
     m->map = rec[REC_MAP];
+    m->hidden = rec[REC_HIDDEN];
   }
   return 0;
 }
 
-uint16_t mission_action_key(const mission *m)
+keymask mission_action_key(const mission *m)
 {
   return m->cargo ? KEY_RETURN : KEY_SPACE;
 }

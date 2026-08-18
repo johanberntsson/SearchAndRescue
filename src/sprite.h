@@ -26,8 +26,21 @@
 const char *sprite_load(uint8_t figures);
 
 // Bring one figure down into the drawing buffer, for the flight about to
-// start. Nothing is drawn until this has been called.
+// start. Nothing is drawn until this has been called. It also puts the figure
+// back in its own colours and back on screen, so a flight starts optical
+// whatever the one before it ended on.
 void sprite_select(uint8_t figure);
+
+// Whether the figure can be seen at all. A mission whose `hidden` is
+// HIDDEN_THERMAL turns it off at launch and the thermal camera turns it on:
+// somebody under the snow is not drawn, and -- because this is asked before
+// the projection rather than after it -- cannot be reported on either.
+void sprite_show(uint8_t shown);
+
+// Paint the figure in the thermal camera's one hot colour, or put its own
+// colours back. Called by thermal_set rather than by a flight, so that the
+// two halves of what the camera looks like stay in one place.
+void sprite_thermal(uint8_t hot);
 
 // Stand the figure at an 8.8 map position, feet on the terrain there.
 void sprite_place(uint16_t x, uint16_t y);

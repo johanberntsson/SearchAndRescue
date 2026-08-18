@@ -1,0 +1,31 @@
+# A camera mission that the optical camera cannot finish. `hidden: thermal`
+# says the figure is under the snow: sprite_show keeps the billboard off the
+# screen entirely, and since a report needs the survivor *on screen* rather
+# than merely near, SPACE is refused until `T` arms the thermal camera. That is
+# the whole mechanic -- see src/thermal.h.
+
+name: Under The Snow
+
+brief: >
+  A slab took a skier off the piste.
+  Nothing shows on the surface. Fly
+  the thermal camera.
+
+objective: Find the heat and file a report
+
+# 46.584N 008.177E is a snow slope on the north face, three quarters of the
+# way up its own mountain: height 150 where the country around it averages
+# 120, and the top of the colour ramp, which in a cold climate is snow.
+#
+# **A fix moves when its map is re-rolled.** Check it against the PNGs after
+# anything that changes the generator; tools/preview.py will fly you to it.
+map: maps/avalance.yaml
+fix:
+  lat: 46.584
+  lon: 8.177
+
+figure: resources/skier_sprite.png
+weather: clear
+hidden: thermal
+
+done: Casualty located under the snow

@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "input.h"
 #include "panel.h"
 #include "weather.h"
 
@@ -25,6 +26,11 @@
 #define FIX_TO_Y(lat) ((uint16_t)(255 - ((lat) - MAP_LAT_SOUTH)) << 8 | 0x80)
 
 #define BRIEF_LINES 3
+
+// What `hidden:` in a mission file comes to. Keep in sync with HIDDEN in
+// tools/campaign.py.
+#define HIDDEN_NO      0
+#define HIDDEN_THERMAL 1
 
 typedef struct {
   const char *name;
@@ -41,6 +47,12 @@ typedef struct {
   const char *lost;   // ... and when the cargo goes down in the wrong place
   uint8_t figure;     // which billboard stands at the fix; see sprite.h
   uint8_t weather;    // WEATHER_CLEAR or WEATHER_RAIN; see weather.h
+  // Whether the optical camera can see the figure at all. HIDDEN_THERMAL is
+  // somebody the ground is over -- buried by an avalanche -- and it is the
+  // whole of what makes the thermal camera a thing you need rather than a
+  // thing you can look through: the billboard is not drawn and no report can
+  // be filed until it is armed. See src/thermal.h.
+  uint8_t hidden;
   // Which of the maps resident in attic RAM this mission is flown over. The
   // fix below is a cell of *that* map, so the two travel together: change one
   // and the target is in the sea. See MAP_SLOT in loader.h.
@@ -73,7 +85,7 @@ uint8_t campaign_figures(void);  // billboards to read; see SPRITE_MAX
 // The key that carries out the mission, and its name for the briefing and the
 // panel. Derived from the cargo bay rather than stored, so that a mission
 // cannot say one thing and do another.
-uint16_t mission_action_key(const mission *m);
+keymask mission_action_key(const mission *m);
 const char *mission_action_name(const mission *m);
 const char *mission_action_verb(const mission *m);
 

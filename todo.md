@@ -186,16 +186,6 @@ CLAUDE.md. Read the Open note on `cstack` before starting anything large.
   scaled by frame time — and that is **withdrawn**, not deferred. Two things
   survive it, both in Open and both later: a joystick *beside* the keyboard,
   and speed changes that accelerate and brake rather than snapping.
-- **A heat camera.** A view mode that makes a person stand out from the
-  terrain, which is the actual job of a search drone and something this
-  renderer can do for almost nothing: the shared ramp means terrain owns known
-  indices (water 16..23, land 24..149, masonry above that) and each figure owns
-  fifteen of its own, so a thermal view is a **palette swap** — the terrain
-  ramp to a cold gradient, the figure's fifteen to white-hot — and not a
-  drawing change. `vic4_set_range` at the toggle, nothing per frame, and the
-  march never learns about it. Keep the loaded palette to restore from, the way
-  `weather_set` restores a clear sky rather than recomputing one. A key to arm
-  it, and the panel should say so, as sport mode does.
 - **The moments worth hearing.** The menus have a tune and the flight has an
   engine note (both in Done); what has no sound at all is anything that
   *happens*. The four endings, the cargo release, the report filed, the low
@@ -372,6 +362,35 @@ Do not re-litigate these without new measurements.
   sample.
 
 ## Done
+
+- **The thermal camera, and a mission that needs it**, done 18 Aug 2026.
+  `T` arms it, `src/thermal.c` is the whole of it, and mission three --
+  **Under The Snow**, over a new avalanche map -- is a skier buried where the
+  optical camera has nothing to show at all.
+  - it is a **palette swap and nothing per frame**, which is what the shared
+    ramp bought: terrain owns 16..173 and every figure's fifteen are above
+    them, so the two recolour apart. Terrain becomes a cold monochrome of its
+    own luminance -- the sun's shading is the shape a pilot flies by, and a
+    flat silhouette has nothing to fly at -- and the sky goes nearly black.
+  - **the figure is not tinted, it is replaced**: every non-zero pixel of the
+    drawing buffer becomes one reserved hot index, so what is drawn is a heat
+    signature and not a person in a coat. A kilobyte at the toggle against a
+    test per pixel in a loop that already costs 170 cycles each, and
+    `sprite_draw` never learns the mode exists. Putting it back is the DMA out
+    of bank 1 that `sprite_select` already does.
+  - **the hot entry has to be left out of the sweep.** It sits at the top of
+    the same run, and the first version painted it cold along with the ground:
+    the figure was drawn perfectly and came out the same blue as the hillside
+    it was lying on. Leaving it alone is also what makes the restore one call.
+  - **`hidden: thermal` in a mission file** is what makes the camera a thing
+    you need rather than a thing you can look through. `sprite_show` keeps the
+    billboard off the screen, and it is asked in `sprite_prepare` rather than
+    in `sprite_draw` so that a buried figure is not "on screen" either -- no
+    report can be filed on somebody the pilot has not been shown.
+  - **it cost the key mask its sixteenth bit.** Every one was taken, so
+    `keymask` is 32 bits now; the whole feature is about 820 bytes of the 32K.
+  - **verified by diffing frames**: a flight that armed the camera and stowed
+    it again renders the 3D view pixel-identical to one that never touched it.
 
 - **The panel has a font of its own**, done 17 Aug 2026:
   `font/ClairsysOzmoo-Regular-US.fnt`, 96 glyphs from space up, read off the

@@ -31,9 +31,9 @@ static uint8_t scan_row(uint8_t row)
 }
 
 // What was held at the previous scan, for the edge detector.
-static uint16_t was_held;
+static keymask was_held;
 
-static uint16_t scan(void)
+static keymask scan(void)
 {
   uint8_t r0 = scan_row(0xFE);
   uint8_t r1 = scan_row(0xFD);
@@ -41,7 +41,7 @@ static uint16_t scan(void)
   uint8_t r4 = scan_row(0xEF);
   uint8_t r5 = scan_row(0xDF);
   uint8_t r7 = scan_row(0x7F);
-  uint16_t keys = 0;
+  keymask keys = 0;
 
   if (r1 & 0x02)
     keys |= KEY_W;
@@ -75,18 +75,20 @@ static uint16_t scan(void)
     keys |= KEY_M;
   if (r5 & 0x02)
     keys |= KEY_P;
+  if (r2 & 0x40)
+    keys |= KEY_T;
 
   return keys;
 }
 
-void input_scan(uint16_t *held, uint16_t *pressed)
+void input_scan(keymask *held, keymask *pressed)
 {
-  uint16_t keys = scan();
+  keymask keys = scan();
 
   if (held)
     *held = keys;
   if (pressed)
-    *pressed = keys & (uint16_t)~was_held;
+    *pressed = keys & ~was_held;
   was_held = keys;
 }
 

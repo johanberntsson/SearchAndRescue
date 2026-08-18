@@ -6,6 +6,8 @@ with the renderer's inner loop in 45GS02 assembly.
 
 ![The engine over the pyramid in the VoxelSpace sample maps, with the flight panel and overview map below it](screenshots/screenshot-260810.png)
 
+![The thermal camera over the avalanche map: a cold blue mountainside, black sky, and the buried skier as a flat white heat signature](screenshots/screenshot-260818-thermal.png)
+
 The eventual game is a post-earthquake drone search-and-rescue simulator: low-altitude
 flight over broken terrain, thermal and acoustic sensor modes, payload drops, and
 aftershocks that reshape the landscape mid-flight. `documentation/vision.md` has the full design.
@@ -14,22 +16,25 @@ aftershocks that reshape the landscape mid-flight. `documentation/vision.md` has
 
 `release/sar-latest.d81` is a disk you can boot -- built 17 Aug 2026, with
 the instrument panel, the battery warning and the two new kinds of thing a
-map can be built out of.
+map can be built out of. The thermal camera and the third mission below landed
+after it and are not on that disk yet.
 
-Two missions exist, end to end: a title screen, a mission list, a briefing, a
+Three missions exist, end to end: a title screen, a mission list, a briefing, a
 flight, and a debrief. They are deliberately the same flight with different
 words on it — fly to somebody and press a key — because that is where the
 engine is: **The Lost Hiker** wants a report filed on a hiker waving from a
-pyramid on an island, and **First Aid** wants an EpiPen dropped to a pair of
+pyramid on an island; **First Aid** wants an EpiPen dropped to a pair of
 hikers by a lake out on the plains, with only one EpiPen aboard and a failed
-mission if it goes down in the wrong place. The two fly over **different
-generated worlds, both on the one disk**.
+mission if it goes down in the wrong place; and **Under The Snow** wants a
+skier found who an avalanche has buried, and who the ordinary camera cannot
+see at all. The three fly over **different generated worlds, all on the one
+disk**.
 
 - 320x152 full-colour 3D view, double buffered, over a six-row painted
   instrument panel
 - 512x512 height and colour maps, exomizer-crunched on the disk and
-  unpacked into attic RAM at boot — two of them, one per mission, resident at
-  once and switched between for 512 bytes of table
+  unpacked into attic RAM at boot — three of them, one per mission, resident
+  at once and switched between for 512 bytes of table
 - Front-to-back ray march with a y-buffer, fixed point throughout, inner loop in
   assembly. It marches 160 rays and each fills the two pixels it owns, which keeps
   the panel's characters a readable 8 pixels wide without paying for twice the march
@@ -48,15 +53,20 @@ generated worlds, both on the one disk**.
   ROM's
 - Altitude, heading, GPS coordinates and frame rate in those boxes, with an
   overview map of the whole world and a crosshair showing where you are
-- **Two missions over two different worlds, both on the one disk** — the first
-  over a temperate island, the second over hot plains in the rain. Both are
-  generated from a paragraph of YAML and resident in attic RAM at once, which
-  a hand-drawn map pair could never be: two generated maps come to 186 KB
-  crunched against 661 KB for one drawn one, leaving room on the disk for
-  several more
-- Two software billboards — a lost hiker waving from the step pyramid on the
-  island's northern headland at 46.687N 8.106E, and a casualty and their
-  friend on the lake shore at 46.658N 8.149E — drawn over the finished terrain: scaled by distance, and clipped
+- **A thermal camera**, on `T`, which is a palette swap and costs nothing per
+  frame: the ground goes to a cold monochrome of its own shading, the sky to
+  nearly black, and a person to one flat hot white. It is the whole point of
+  the third mission — a skier under the snow is not drawn at all until it is
+  armed, and no report can be filed on somebody you have not been shown
+- **Three missions over three different worlds, all on the one disk** — a
+  temperate island, hot plains in the rain, and a cold rugged mountain range.
+  All three are generated from a paragraph of YAML and resident in attic RAM
+  at once, which hand-drawn map pairs could never be: one drawn pair is 661 KB
+  crunched on its own, and all three of these come to 446 KB
+- Three software billboards — a lost hiker waving from the step pyramid on the
+  island's northern headland at 46.687N 8.106E, a casualty and their
+  friend on the lake shore at 46.658N 8.149E, and a fallen skier on a snow
+  slope at 46.584N 8.177E — drawn over the finished terrain: scaled by distance, and clipped
   against the heightfield with the same y-buffer the ray march already keeps, so
   a ridge in front of them hides their feet
 - Drone controls modelled on a real one: yaw, climb, camera gimbal and a
@@ -205,6 +215,7 @@ After the title screen and the briefing, `SPACE` launches the flight.
 | `1` / `2` / `3` | speed limiter: cinematic, normal, sport |
 | `SPACE` | file a report, and go on from any screen |
 | `RETURN` | release the cargo |
+| `T` | arm the thermal camera: cold ground, black sky, and anybody alive a flat hot white |
 | `RUN/STOP` | abandon the mission, and back out of the list or a briefing |
 | `M` | mute: the engine in the air, the music on every other screen. Two settings, both remembered |
 | `P` | show the frame rate. Off to begin with, remembered for the session, and **nothing in the game mentions it** — it is for working on the renderer, not for flying |
@@ -219,6 +230,11 @@ A report only counts with the lost hiker on screen and within about ten map
 cells — near enough to have actually seen them. A cargo drop does not care
 where the camera is pointing but wants you within five, and there is only one
 of whatever is in the bay: release it anywhere else and the mission is lost.
+
+**And on Under The Snow there is nothing on screen to report until the thermal
+camera is armed.** The skier is under the avalanche: the ordinary camera shows
+an empty snow slope however close you fly, and `SPACE` is refused, because a
+report means you have seen somebody.
 
 ## Layout
 

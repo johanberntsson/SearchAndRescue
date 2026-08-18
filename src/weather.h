@@ -15,6 +15,12 @@
 // scatters the first drops.
 void weather_set(uint8_t weather);
 
+// Put this flight's sky back, without touching the rain. The thermal camera
+// takes the sky over while it is armed and this is what it hands back -- which
+// has to be the *weather's* sky, since a rainy flight is overcast and the
+// palette on disk is not.
+void weather_sky(void);
+
 // Draw this frame's rain over the finished picture. voxel_render calls it
 // after the terrain and the billboard, so rain is in front of everything; it
 // returns immediately when it is not raining.

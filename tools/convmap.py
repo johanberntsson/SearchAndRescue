@@ -152,6 +152,18 @@ SKY_HORIZON = (170, 200, 230)
 HUD_INK = 240
 HUD_PAPER = 241
 
+# The one colour a figure is drawn in while the thermal camera is armed.  It is
+# not part of any sheet's fifteen: the camera does not tint a figure, it
+# replaces it, because what a thermal camera shows of a person is a heat
+# signature and not their coat.  src/thermal.c rewrites the drawing buffer's
+# non-zero pixels to this index at the toggle and puts the figure back at the
+# next one, so the drawing loop never learns the mode exists.
+#
+# It sits at the top of the free pool, immediately under the sky, and is kept
+# out of that pool by the reservation below.  Keep in sync with THERMAL_HOT in
+# src/thermal.h.
+THERMAL_HOT = SKY_BASE - 1
+
 # The information panel is ordinary text characters, and a text character
 # takes its colour from colour RAM -- which in 16-bit character mode is only
 # a four-bit field. So panel ink has to be one of the first sixteen palette
@@ -276,11 +288,13 @@ def to_overview(indices):
 
 
 # The billboards, out of the sprite sheets in resources/: a title strip over a
-# grid of poses, drawn on a checkerboard rather than with real alpha, so the
+# grid of poses, drawn on a background rather than with real alpha, so the
 # figure has to be cut out. The renderer scales one stored pose to whatever the
 # distance calls for; the eight directions are for later, when the figure faces
 # the drone.
-SPRITE_GRID = (2, 4)   # poses down and across, below the title strip
+SPRITE_COLS = 4        # poses across. The rows are *not* a constant: the
+                       # skier's sheet is one row of four and the other two are
+                       # two of four, so sheet_grid counts them off the sheet.
 SPRITE_POSE = 0        # reading order within the grid: 0 is the front view
 SPRITE_MAX = 32        # the box a stored figure is scaled to fit, longest side
                        # first, so a scene of two people is as welcome as one
@@ -290,16 +304,41 @@ SPRITE_COLOURS = 15    # palette entries each may claim. Sprite pixel value 0
                        # is transparent, so it is not one of them.
 
 
+def sheet_grid(a):
+    """Where the grid of poses starts, and how many rows of it there are.
+
+    The title strip is separated from the poses by a solid rule: three or so
+    rows that are dark across the *whole* width, which the title's own
+    lettering never is however dense the row looks -- the three sheets in
+    resources/ have that rule at rows 58..60 and title text as low as row 21.
+    A sheet may also carry a border along its very top; a band starting at row
+    0 is that and not a separator, so it is skipped.
+
+    The rows are counted rather than assumed because a cell is square: the
+    skier's sheet is one row of four poses and the other two are two of four.
+    """
+    band = (a.max(2) < 150).mean(1) > 0.95
+    rule = 0
+    for i, dark in enumerate(band):
+        if not dark:
+            continue
+        if i == rule:       # still walking the sheet's own top border
+            rule = i + 1
+            continue
+        while i < len(band) and band[i]:
+            i += 1
+        return i, max(1, int(round((a.shape[0] - i) /
+                                   (a.shape[1] / SPRITE_COLS))))
+    return 0, max(1, int(round(a.shape[0] / (a.shape[1] / SPRITE_COLS))))
+
+
 def sheet_cell(a, pose):
     """One pose's cell of the sheet, inside its grid lines."""
-    # The title strip is separated by a solid dark rule; the poses below it are
-    # on an even grid. The last few per cent of each cell are dropped so that a
-    # grid line can never be mistaken for part of the figure.
-    rule = [i for i, v in enumerate((a.max(2) < 110).mean(1)) if v > 0.5]
-    top = rule[0] + 1 if rule else 0
-    rows, cols = SPRITE_GRID
-    ch, cw = (a.shape[0] - top) // rows, a.shape[1] // cols
-    r, c = divmod(pose, cols)
+    # The last few per cent of each cell are dropped so that a grid line can
+    # never be mistaken for part of the figure.
+    top, rows = sheet_grid(a)
+    ch, cw = (a.shape[0] - top) // rows, a.shape[1] // SPRITE_COLS
+    r, c = divmod(pose, SPRITE_COLS)
     my, mx = ch // 25, cw // 25
     return a[top + r * ch + my:top + (r + 1) * ch - my, c * cw + mx:(c + 1) * cw - mx]
 
@@ -312,6 +351,13 @@ def cut_figure(cell):
     Its outline is black and reaches a pixel or two past them, hence the pad,
     and its dark and grey insides -- hair, backpack, boots -- are recovered by
     filling everything the background cannot reach from the edge.
+
+    **The same test cuts the skier off his snow**, which is a painted
+    background and not a checkerboard at all: snow is light and very nearly
+    grey. It is the closest of the three, though -- the shaded snow runs to a
+    saturation of 38 against the 40 the fill treats as figure -- so a sheet on
+    a bluer background is where this would first need a threshold rather than
+    a rule.
     """
     ys, xs = np.nonzero((cell.max(2) - cell.min(2)) > 60)
     pad = 4
@@ -548,7 +594,8 @@ def main():
     rgb[0] = (0, 0, 0)
 
     used = set(np.unique(indices).tolist())
-    for entry, colour in ((HUD_INK, (255, 255, 255)), (HUD_PAPER, (0, 0, 0))):
+    for entry, colour in ((HUD_INK, (255, 255, 255)), (HUD_PAPER, (0, 0, 0)),
+                          (THERMAL_HOT, (255, 245, 210))):
         if entry in used:
             sys.exit(f"colourmap uses HUD palette index {entry}")
         rgb[entry] = colour
@@ -560,7 +607,7 @@ def main():
             sys.exit(f"colourmap uses panel artwork palette indices {clash}")
         panel_art = to_panel(panel_png, rgb)
 
-    reserved = ({0, HUD_INK, HUD_PAPER}
+    reserved = ({0, HUD_INK, HUD_PAPER, THERMAL_HOT}
                 | set(range(SKY_BASE, SKY_BASE + SKY_SHADES))
                 | set(range(PANEL_ART_BASE, 256))
                 | {entry for entry, _ in PANEL_COLOURS})

@@ -6,17 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A MEGA65 heightfield voxel flight simulator / drone search-and-rescue game, written in C (Calypsi) with the rendering inner loop in 45GS02 assembly. `documentation/vision.md` holds the full technical and gameplay design; `todo.md` is the authoritative "what's next" and should be updated as work lands.
 
-Currently: two missions, end to end, **each over its own generated world**. A
+Currently: three missions, end to end, **each over its own generated world**. A
 title screen, a mission list, a briefing, a flight, and a debrief — the lost
 hiker on the step pyramid of the island at 46.687N 8.106E to be found and
-reported, and an EpiPen to be dropped to a pair of hikers by a lake on the
-plains at 46.658N 8.149E. A flight also carries a wind that blows the drone
+reported, an EpiPen to be dropped to a pair of hikers by a lake on the
+plains at 46.658N 8.149E, and a skier buried by an avalanche at 46.584N
+8.177E who cannot be seen at all until the **thermal camera** is armed. A
+flight also carries a wind that blows the drone
 about, a battery that runs it out, and per-mission weather; it can end four
 ways, all of them the same debrief page with different words on it.
 
-**Both maps are generated from a paragraph of YAML on the PC and both are
-resident at once**, which one hand-drawn map pair could never be: two generated maps are
-186 KB crunched against 661 KB for one drawn one, and switching between them
+**All three maps are generated from a paragraph of YAML on the PC and all
+three are resident at once**, which hand-drawn map pairs could never be: one
+drawn pair is 661 KB crunched on its own, and switching between them
 costs 512 bytes of plane table. See Resources.
 
 Underneath is the voxel engine at about 12.5 fps — a 320x152 3D view over a
@@ -32,7 +34,7 @@ make run          # build build/sar.d81 and boot it in xemu
 make prg          # skip the disk, run the game PRG directly
 make PROFILE=0    # without the per-column instrumentation; use this for timing
 make FLYNOW=1     # skip the title and menus, launch straight into mission 1
-make FLYNOW=2     # ... or mission 2, the only headless way to reach its map
+make FLYNOW=n     # ... or mission n, the only headless way to reach its map
 make REPORT=n     # hold the startup benchmark report n seconds; 0 by default
 make COL_SIZE=1024                  # the finer colourmap; sizes are 256..1024
 make release      # PROFILE=0 disk, copied to release/sar-latest.d81
@@ -60,11 +62,16 @@ python3 tools/profread.py mem.bin
 **`FLYNOW=1` is what makes a headless run measure anything.** The game now
 waits for a keypress on the title screen, then two more through the menus, and
 nothing headless can press one; without it the dump has no frames in it and
-`profread` says so. **`FLYNOW=2` is the same for mission two**, and the only
-way a headless run ever reaches the second map.
+`profread` says so. **`FLYNOW=n` is the same for mission n**, and the only
+way a headless run ever reaches that mission's map.
 
-Budget about ten seconds before the title in xemu: two of ROM boot and the
-game's own 20 KB, then both maps at 186 KB crunched. The startup benchmark
+**A headless run cannot press `T` either**, so the thermal camera was checked
+by defaulting it on for one build -- the same trick the frame-rate key needed.
+See The thermal camera.
+
+Budget about twenty-five seconds before the title in xemu: two of ROM boot and
+the game's own 20 KB, then three maps at 446 KB crunched. **That is nearly all
+the avalanche map**, which is 268 KB of the 446 -- see Resources. The startup benchmark
 report no longer holds the boot up -- `REPORT_SECONDS` is 0, which now means
 it does not print either; `make REPORT=120` to read it at the machine.
 **Kill the run by PID and wait for it**, not with a bare `sleep` in the same
@@ -198,8 +205,10 @@ room came from, in the order it was taken:
 
 **And it was spent again the same day** — 2652 on the tune, 583 on the engine
 note and 1449 on the campaign buffer, net of the C mission table it replaced.
-The program area is 83.8% used with 5297 bytes free in a default build, 82.1%
-and 5863 in a `PROFILE=0` release. That was the point of the reclaim.
+That was the point of the reclaim. The thermal camera and its 32-bit key mask
+then took about 820 more, so a default build is **92.2% used with 2556 bytes
+free**, and a `PROFILE=0` release 91.0% and 2949. The next thing of any size
+wants the banking below before it wants anything else.
 
 Next after that would be the 512-byte bounce buffer itself, or the sprite's
 1028.
@@ -495,8 +504,9 @@ the duration of a flight. Palette entries 240 and 241 are `convmap.py`'s
 overlay pair, for things drawn *over* a picture rather than sampled out of a
 map — and both are taken: 240 is the overview crosshair and the two together
 are the rain's near and far depths. **242 to 255 are the panel artwork's** and
-were free until it existed. A further overlay needs entries out of the free
-pool, not any of these.
+were free until it existed. **223 is the thermal camera's hot white**, taken
+out of the free pool by `convmap.py` rather than from any of these — which is
+what a further overlay should do too.
 
 ## The game
 
@@ -504,10 +514,10 @@ pool, not any of these.
 title, mission list, briefing, fly, debrief, back to the list. `src/screens.c`
 draws the pages, `src/mission.c` holds what there is to be sent on.
 
-**The two missions are the same flight with different words on it** — and, as
-of the two-map disk, over different country. The shape is deliberate: fly to a
-figure standing at a fix and press a key. The mission table is what differs,
-and the one field the rest hangs off is `cargo`:
+**The three missions are the same flight with different words on it** — and,
+as of the several-map disk, over different country. The shape is deliberate:
+fly to a figure standing at a fix and press a key. The mission table is what
+differs, and the one field the rest hangs off is `cargo`:
 
 - **empty bay** — the job is to look. `SPACE` files a report, it needs the
   figure *on screen* and within ten cells, and getting it wrong costs nothing
@@ -527,8 +537,13 @@ strings, for the same reason.
 **A mission names its map**, and the fix is a cell of *that* map, so the two
 travel together and cannot be edited apart: mission one is flown over
 `maps/island.yaml` and stands its hiker on the step pyramid there; mission two
-over `maps/plains.yaml`, by the largest lake. See Resources for what a map
-slot is and what switching costs.
+over `maps/plains.yaml`, by the largest lake; mission three over
+`maps/avalance.yaml`, on a snow slope three quarters of the way up a mountain.
+See Resources for what a map slot is and what switching costs.
+
+**And a mission can say the figure is not visible at all.** `hidden: thermal`
+is what mission three adds, and it is the whole of what makes the second
+sensor a thing you need — see The thermal camera.
 
 **Adding a mission is a file in `missions/` and a line in `campaign.yaml`**,
 and nothing else at all — see The campaign below. The palette budget in
@@ -571,7 +586,7 @@ same two lines of text, so `SEARCH AND RESCUE` does not move by a pixel when
 the game's own display takes over. It is a VIC-III register the ROM has
 already unlocked and it is the **only** display register touched before
 loading — the rest of `vic4_init` still has to wait, because something in it
-leaves the Kernal unable to open a file. Verified by booting: both maps load
+leaves the Kernal unable to open a file. Verified by booting: every map loads
 and the title comes up.
 
 The editor goes on believing the display is eighty wide, which costs nothing
@@ -647,6 +662,11 @@ checkable.
 a camera mission, present is a delivery. There is no `type:` field, because
 two fields that can disagree is exactly what the game's own design avoids.
 
+**`hidden:` is the one other field a mission can carry**, and `thermal` is the
+only value beyond `no`: the figure is under the snow and is not drawn until
+the thermal camera is armed. It rides in the record's byte 23, which was spare
+until it existed. See The thermal camera.
+
 **Bank 1 is full to the byte now.** `SPRITE_MAX` figures at 1028 bytes each
 from `$1DC00`, then `MAP_SLOTS` overview maps from `$1EC00`, which end exactly
 at the colour RAM alias — `OVERVIEW_STORE` moved up a kilobyte to make room
@@ -658,7 +678,8 @@ This is them, under one name.
 Controls, which follow a real drone's (see `documentation/real-drones/`):
 `W`/`S` forward and back, `A`/`D` yaw, `R`/`F` climb and descend, `Q`/`E`
 gimbal up and down, `1`/`2`/`3` the speed limiter (cinematic, normal, sport),
-`SPACE` to file a report, `RETURN` to release the cargo, `RUN/STOP` to abandon
+`SPACE` to file a report, `RETURN` to release the cargo, `T` to arm the
+thermal camera, `RUN/STOP` to abandon
 the mission, and `M` to mute the engine — see Sound, where the same key mutes
 the tune on every screen that is not a flight.
 
@@ -683,10 +704,12 @@ with the other exits so that frame reaches the screen first. Arming sport puts
 deliberately does not carry one, because the page has no spare row and the
 panel says it at the moment the pilot chooses.
 
-`src/input.c` scans four matrix rows now — row 0 for `RETURN`, row 7 bit 7 for
+`src/input.c` scans six matrix rows — row 0 for `RETURN`, row 7 bit 7 for
 `RUN/STOP` — and returns held keys and fresh presses from one scan, because an
 edge only means anything against the scan before it and two scans in a frame
-would see none.
+would see none. `T` is row 2 bit 6, a row it already read, so the seventeenth
+key cost a probe of nothing — but it did cost the mask its width: see
+`keymask` under The thermal camera.
 
 `RUN/STOP` reads the same on the briefing and in the mission list as it does
 in the air: this is not the job, take me back.
@@ -778,6 +801,72 @@ A report counts only if the survivor was **on screen in the frame just
 drawn** and within ten map cells (`sprite_reportable`). On screen is half the
 test on purpose: a report should mean you looked at them, not that you flew
 past with the camera pointed somewhere else.
+
+## The thermal camera
+
+`T` arms the drone's second sensor and `src/thermal.c` is the whole of it.
+Nothing about the picture changes: the march samples the same maps, the
+billboard is projected the same way, the framebuffer holds the same bytes.
+What changes is what the palette entries *behind* those bytes are. It costs
+`vic4_set_entry` at the toggle and **not one cycle a frame**.
+
+That is only affordable because the shared ramp gave terrain and figures
+separate indices (see Resources). A map's colours are 16..173 and every
+figure's fifteen are above them, so the two recolour apart without the
+renderer learning there is a second mode at all.
+
+- **the ground becomes a cold monochrome of its own luminance**, not a flat
+  silhouette. The sun's shading is the shape a pilot flies by, and there is
+  nothing to fly at in a silhouette -- taking the luminance carries all of it
+  across. It is read back out of the loaded palette rather than computed from
+  `maps/palette.yaml`'s band boundaries, so a new band needs no change here;
+  that is the same reasoning that has the clear sky restored from the palette
+  rather than recomputed. Nine or ten distinct colours survive the VIC-IV's
+  four bits per channel, blue nybble 1..7 on all three maps.
+- **the figure is not tinted, it is replaced.** Every non-zero pixel of the
+  drawing buffer becomes one reserved hot index, so what is drawn is a heat
+  signature and not a person in a coat. A kilobyte at the toggle against a
+  test per pixel in a loop that already costs 170 cycles each -- and
+  `sprite_draw` never learns the mode exists. Putting it back is the DMA out
+  of bank 1 that `sprite_select` already does, so nothing remembers what any
+  pixel used to be.
+- **`THERMAL_HOT` has to be left out of the sweep, and this is the trap.** It
+  sits at the top of the same run of entries, so the first version painted it
+  cold along with the ground: the figure was projected correctly, clipped
+  correctly, drawn correctly -- and came out **the same blue as the hillside
+  it was lying on**. Leaving it alone is also what makes the restore a single
+  `vic4_set_range`.
+- **the sky goes nearly black**, and the sky belongs to the weather rather
+  than to the palette, so stowing the camera calls `weather_sky()` -- a rainy
+  flight is overcast and the file it was loaded from is not.
+- **the panel is not something the camera is pointed at**, so its artwork
+  (242..255), its ink (1..5) and the rain's pair (240/241) are all untouched
+  and stay readable. **The overview map does go cold**, because it is drawn in
+  the colourmap's own indices; that is a consequence and not a decision.
+
+**Nothing on any screen says `T`, except the mission that needs it.** The
+whole picture going cold is what an instrument would have said, and the panel
+has no spare box; arming it puts `THERMAL CAMERA ON` on the message row, the
+way the mute and sport mode do.
+
+**A figure can be hidden from the optical camera**, which is what makes the
+sensor a thing you need rather than a thing you can look through.
+`hidden: thermal` in a mission file turns `sprite_show` off at launch, and it
+is asked in `sprite_prepare` rather than in `sprite_draw` **so that a buried
+figure is not "on screen" either** -- `sprite_reportable` is false, and no
+report can be filed on somebody the pilot has not been shown. Mission three
+is the one that uses it.
+
+**It cost the key mask its sixteenth bit.** All sixteen were taken, so
+`keymask` in `input.h` is `uint32_t` now. `T` is row 2 bit 6, a row `input.c`
+already scanned, so the scan itself did not grow. The whole feature is about
+820 bytes of the 32K, which is what took a default build from 89.7% of the
+program area to 92.2%.
+
+**Verified by diffing frames**, since nothing headless can press a key: a
+flight that armed the camera and stowed it again renders the 3D view
+**pixel-identical** to one that never touched it. Only the wind readout
+differed between the two runs, and that is seeded off the clock.
 
 ## Sound
 
@@ -989,7 +1078,8 @@ the terrain, scaled by distance and clipped against the heightfield. It is the
 software sprite `documentation/vision.md` asks for, and the mechanism is meant
 to carry the rest of them — campfires, crates, hazards.
 
-There are two figures now and the flight draws one of them. **Every figure is
+There are three figures now and the flight draws one of them — or none, if
+the mission says the ground is over it; see The thermal camera. **Every figure is
 parked in bank 1 at load time and `sprite_select` DMAs the mission's own down
 into the one near buffer**, because the 32K has room for a kilobyte of pixels
 and not for two — and a kilobyte of DMA once a flight is nothing, while a far
@@ -1107,9 +1197,22 @@ the maps loosened it. Each figure claims fifteen entries, and what is left
 over depends on the colourmap: the hand-drawn one uses about 170 of the 224
 indices below the sky and left **12 free** after two figures, while a
 generated map under `--shared` reserves the ramp's 150 and the system's low
-sixteen and leaves **32** — two more figures' worth. `convmap.py` prints the
-figure at the end of every run, and refuses rather than quietly painting
-terrain in a sprite colour.
+sixteen. Three figures and the thermal camera's one reserved hot entry leave
+**4 free**, which `convmap.py` prints at the end of every run; it refuses
+rather than quietly painting terrain in a sprite colour. A fourth figure needs
+eleven entries that are not there.
+
+**The sprite sheets are not all the same shape**, and `sheet_grid` counts the
+rows off the sheet rather than assuming them: a cell is square, so the row
+count is what makes it so. The skier's sheet is one row of four poses and the
+other two are two of four. It finds the title strip by the solid rule under
+it — three or so rows dark across the *whole* width, which the title's own
+lettering never is however dense a row of it looks — and skips a band starting
+at row 0, which is a sheet's own border and not a separator. **The old version
+of this got the survivor and medical sheets wrong and it did not show**: it
+took the first row that was merely half dark, which put the cell window
+thirty pixels high and clipped the medical figure's feet off. Fixing the
+detection is what changed that figure from 32x31 to 30x32.
 
 **Maps can also be generated rather than drawn.** `tools/genmap.py` turns a
 map file in `maps/` into `hmapNN.png`/`cmapNN.png` — the same two shapes
@@ -1227,19 +1330,34 @@ the same island, and the map file would not change. The missions live in
 `missions/`, one YAML file each, and `campaign.yaml` lists them -- see The
 campaign.
 
-**Several maps fit only because they are generated.** Two of them are 186 KB
-crunched against 661 KB for the one hand-drawn pair, so a disk that used to
-hold one world now holds two with **2314 blocks free** — room for several more
-at about 90 KB each — and loading both takes about eight seconds in xemu and
-25 off a floppy. Two thirds of that reduction is `COL_SIZE`: see the note under
-Performance about why 512 is the default.
+**Several maps fit only because they are generated.** The hand-drawn pair was
+661 KB crunched on its own; the three generated ones are 446 KB together, so a
+disk that used to hold one world now holds three with **1246 blocks free**.
+Two thirds of that reduction is `COL_SIZE`: see the note under Performance
+about why 512 is the default.
+
+**How well a map crunches is a fact about the country, not about the
+generator**, and the spread is wide enough to plan around:
+
+| | crunched | |
+|---|---|---|
+| `island.yaml` | 60 KB | flat sea and gentle land |
+| `plains.yaml` | 117 KB | |
+| **`avalance.yaml`** | **268 KB** | a mountain range with no water in it |
+
+That one map is 60% of the disk and 60% of the boot — about twenty-five
+seconds in xemu now against eight for two maps. Ruggedness is part of it and
+not the whole: the same map at `ruggedness: rolling` comes to 187 KB, a saving
+of 80 KB, and is still three times the island. **What actually crunches is
+flat ground**, and a mountain range has none. If the boot ever has to come
+back down, that is the lever — a map with water or plains in it, not a knob.
 
 **Switching between them is 512 bytes of table.** A map's whole location lives
 in the renderer's plane lookups: the march reads a bank byte out of
 `vx_hplane_y`/`vx_cplane_y` on every sample, so `voxel_set_map(slot)` rebuilds
 those and the march is looking at another world. `map_use(slot)` wraps that
 with the two other things a map is — **its palette, because a climate *is* a
-palette** (the shared ramp means both maps hold the same indices and put
+palette** (the shared ramp means every map holds the same indices and puts
 different colours behind them), and the panel's overview — and a flight calls
 it once at launch. No pixels move and nothing reloads: everything the game
 will ever need is resident after the one load at boot, which is what lets the
@@ -1254,10 +1372,12 @@ Three things to know before adding a third map:
   in the same place for all of them and the sprite files come out
   byte-identical — one set serves every map. It also settles the old question
   about sprites taking indices below 16: they no longer can.
-- attic RAM is cut into **three** 2 MB slots (`MAP_SLOT` in `loader.h`), so
-  there is room for one more without moving anything. Nothing has to be kept
-  in step by hand any more: `MAP_SLOTS` is the ceiling, the count comes off
-  the disk with the campaign, and `tools/campaign.py` refuses a fourth.
+- attic RAM is cut into **three** 2 MB slots (`MAP_SLOT` in `loader.h`), and
+  the avalanche map took the third. **All three are full now**, as are all
+  three figure slots in bank 1, so a fourth of either needs the ceiling raised
+  rather than a spare filled. Nothing has to be kept in step by hand:
+  `MAP_SLOTS` is the ceiling, the count comes off the disk with the campaign,
+  and `tools/campaign.py` refuses a fourth.
 - **`FLYNOW=n` launches straight into mission n**, and it is the only way a
   headless run reaches the second map — nothing else can press a key. Both
   maps were flown that way before the arrangement was believed.

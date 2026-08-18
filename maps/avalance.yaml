@@ -1,0 +1,24 @@
+# An avalanche slope: a cold, rugged, near-scale mountain range with no lakes
+# and a couple of per cent of water at the very bottom. Heights run 16..196 of
+# 120, so this is the steepest country on the disk -- which is what an
+# avalanche wants, and what makes sport mode a real risk over it.
+#
+# Nothing is built into it. The one thing that happened here is not terrain
+# and cannot be: a skier is under the snow at 46.584N 008.177E, and who is
+# lying where belongs to a mission and not to a world. See
+# missions/avalanche.yaml.
+general:
+  id: 6
+  seed: 22
+  type: mountains
+  climate: cold
+  rivers: many
+  river-size: small
+  hills: many
+  hills-size: large
+  lakes: none
+  lakes-size: large
+  scale: near
+  ruggedness: rugged
+
+items: []

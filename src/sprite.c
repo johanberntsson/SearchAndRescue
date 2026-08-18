@@ -2,6 +2,7 @@
 
 #include "dma.h"
 #include "loader.h"
+#include "thermal.h"
 #include "vic4.h"
 
 // The figure's world height, in heightmap units -- of which there are four to
@@ -68,6 +69,17 @@ static uint8_t spr_count;
 
 static uint8_t spr_w, spr_h;
 
+// Which figure sprite_select brought down, so that sprite_thermal can put the
+// unburnt pixels back by fetching it again.
+static uint8_t spr_chosen;
+static uint8_t spr_hot;
+
+// A figure the optical camera cannot see: buried, and drawn only while the
+// thermal camera is armed. It is checked in sprite_prepare rather than in
+// sprite_draw so that a buried figure is not "on screen" either -- no report
+// can be filed on somebody the pilot has not been shown.
+static uint8_t spr_hidden;
+
 static uint16_t spr_x, spr_y;  // 8.8 map position
 static int16_t spr_ground;     // heightmap units under it
 
@@ -125,14 +137,50 @@ const char *sprite_load(uint8_t figures)
 
 void sprite_select(uint8_t figure)
 {
+  spr_hot = 0;
+  spr_hidden = 0;
   if (figure >= spr_count) {
     spr_w = 0;  // draws nothing, rather than drawing the wrong thing
+    spr_chosen = SPRITE_MAX;
     return;
   }
+  spr_chosen = figure;
   dma_copy(SPRITE_STORE + (uint32_t)figure * SPR_SLOT,
            (uint32_t)(uint16_t)spr_file, SPR_SLOT);
   spr_w = spr_file[0];
   spr_h = spr_file[1];
+}
+
+void sprite_show(uint8_t shown)
+{
+  spr_hidden = !shown;
+}
+
+// What the thermal camera does to a figure, and it is not a tint: every pixel
+// that is not the transparent 0 becomes the one hot index, so what is drawn is
+// a heat signature and not a person in a coat. Putting it back is the DMA out
+// of bank 1 that sprite_select already does, so nothing here has to remember
+// what any pixel used to be.
+//
+// A kilobyte a toggle, against a test per pixel in a drawing loop that already
+// costs 170 cycles each -- and the loop never learns the camera exists.
+void sprite_thermal(uint8_t hot)
+{
+  uint8_t *pixels = spr_file + 4;
+  uint16_t n, count = (uint16_t)spr_w * spr_h;
+
+  if (!spr_w || !hot == !spr_hot)
+    return;
+  spr_hot = hot;
+
+  if (!hot) {
+    dma_copy(SPRITE_STORE + (uint32_t)spr_chosen * SPR_SLOT,
+             (uint32_t)(uint16_t)spr_file, SPR_SLOT);
+    return;
+  }
+  for (n = 0; n < count; n++)
+    if (pixels[n])
+      pixels[n] = THERMAL_HOT;
 }
 
 void sprite_place(uint16_t x, uint16_t y)
@@ -166,7 +214,7 @@ uint8_t sprite_prepare(const camera *cam, int16_t cs, int16_t sn)
 
   spr_shown = 0;
   spr_near = 0;
-  if (!spr_w)
+  if (!spr_w || spr_hidden)
     return VOXEL_NO_STEP;
 
   // How near, before anything is projected: a delivery is judged on this and

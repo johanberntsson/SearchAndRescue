@@ -10,6 +10,7 @@
 #include "profile.h"
 #include "screens.h"
 #include "sprite.h"
+#include "thermal.h"
 #include "vic4.h"
 #include "voxel.h"
 #include "weather.h"
@@ -73,7 +74,7 @@ static uint8_t fps_wanted;
 
 // The mute key on every screen that is not a flight. The flight has its own,
 // two lines of it, down in the loop.
-static void music_key(uint16_t pressed)
+static void music_key(keymask pressed)
 {
   if (!(pressed & KEY_M))
     return;
@@ -186,7 +187,7 @@ static void wind_drift(void)
 
 // Fly one frame. Returns non-zero if the drone has hit the hillside, which
 // only sport mode lets happen.
-static uint8_t fly(camera *cam, uint16_t held)
+static uint8_t fly(camera *cam, keymask held)
 {
   int16_t speed = 0;
   uint8_t ground;
@@ -266,7 +267,7 @@ static uint8_t fly(camera *cam, uint16_t held)
 // is nothing to repeat, so pressing it twice is the same as pressing it once.
 // Returns non-zero when the pilot has just armed sport mode, which is worth
 // saying out loud because it takes the terrain following away.
-static uint8_t set_speed(uint16_t held)
+static uint8_t set_speed(keymask held)
 {
   uint8_t mode = speed_mode;
 
@@ -297,9 +298,9 @@ static uint16_t elapsed(uint32_t since)
 
 // Sit on a finished screen until the pilot presses one of `keys`, and say
 // which it was.
-static uint16_t wait_for_key(uint16_t keys)
+static keymask wait_for_key(keymask keys)
 {
-  uint16_t pressed;
+  keymask pressed;
 
   input_flush();
   do {
@@ -322,7 +323,7 @@ static uint8_t choose_mission(uint8_t selected)
   input_flush();
 
   for (;;) {
-    uint16_t pressed;
+    keymask pressed;
     uint8_t moved = selected;
 
     input_scan(0, &pressed);
@@ -349,7 +350,7 @@ static uint8_t choose_mission(uint8_t selected)
 static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
 {
   const mission *m = &missions[mission_no];
-  const uint16_t action = mission_action_key(m);
+  const keymask action = mission_action_key(m);
   camera cam;
   uint8_t back = 1;
   uint16_t fps10 = 0;
@@ -375,6 +376,13 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
   // before the wind because arming the rain scatters its first drops.
   weather_seed((uint16_t)profile_now32());
   weather_set(m->weather);
+  // Every flight starts on the optical camera, whatever the last one ended
+  // on: thermal is a thing the pilot reaches for. After the weather, because
+  // stowing the camera hands the sky back to it. A figure the ground is over
+  // is therefore not on the screen at all until the pilot reaches -- and
+  // sprite_show is what the report button ends up asking.
+  thermal_set(0);
+  sprite_show(m->hidden != HIDDEN_THERMAL);
 
   // Both after panel_init, which would otherwise blank the readouts they set.
   battery = BATTERY_FULL;
@@ -396,7 +404,7 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
   for (;;) {
     uint32_t frame_start = profile_now32();
     uint16_t t0 = PROF_NOW();
-    uint16_t held, pressed;
+    keymask held, pressed;
     uint8_t hit, flat;
 
     input_scan(&held, &pressed);
@@ -422,6 +430,18 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
       engine_wanted = !engine_wanted;
       engine_set(engine_wanted);
       panel_message(engine_wanted ? "ENGINE SOUND ON" : "ENGINE SOUND OFF");
+      message_left = MESSAGE_FRAMES;
+    }
+    // The second camera. There is no readout for it and it needs none -- the
+    // whole picture goes cold, which no instrument could say better -- so
+    // this is a message like the mute's and nothing more. A figure the ground
+    // is over comes and goes with it.
+    if (pressed & KEY_T) {
+      thermal_set(!thermal_on());
+      if (m->hidden == HIDDEN_THERMAL)
+        sprite_show(thermal_on());
+      panel_message(thermal_on() ? "THERMAL CAMERA ON"
+                                 : "THERMAL CAMERA OFF");
       message_left = MESSAGE_FRAMES;
     }
     PROF_ADD(P_OTHER, t0);

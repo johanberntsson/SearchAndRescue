@@ -121,10 +121,8 @@ static void drop_place(uint8_t i, uint8_t y)
   drop_y[i] = y;
 }
 
-void weather_set(uint8_t weather)
+void weather_sky(void)
 {
-  raining = weather == WEATHER_RAIN;
-
   if (!raining) {
     // Straight out of the loaded palette rather than a blue written again
     // here: the shipped gradient comes from SKY_TOP and SKY_HORIZON in
@@ -133,8 +131,17 @@ void weather_set(uint8_t weather)
     vic4_set_range(loaded_palette(map_current), SKY_BASE, SKY_SHADES);
     return;
   }
-
   sky_overcast();
+}
+
+void weather_set(uint8_t weather)
+{
+  raining = weather == WEATHER_RAIN;
+
+  weather_sky();
+  if (!raining)
+    return;
+
   vic4_set_entry(RAIN_NEAR, 220, 226, 235);
   vic4_set_entry(RAIN_FAR, 150, 158, 170);
 

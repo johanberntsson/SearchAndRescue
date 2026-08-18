@@ -17,3 +17,4 @@ name: SEARCH AND RESCUE
 missions:
   - missions/lost-hiker.yaml
   - missions/first-aid.yaml
+  - missions/avalanche.yaml

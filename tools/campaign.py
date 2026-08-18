@@ -62,11 +62,19 @@ MAP_CELLS = 256
 
 WEATHER = {"clear": 0, "rain": 1}   # WEATHER_CLEAR / WEATHER_RAIN, weather.h
 
+# Whether the figure can be seen at all with the optical camera. `no` is every
+# mission that has ever existed: somebody standing in the open, and the job is
+# to find them. `thermal` is somebody the ground is over -- buried by an
+# avalanche -- who is not drawn at all until the thermal camera is armed, and
+# cannot be reported on until then either. HIDDEN_NO / HIDDEN_THERMAL in
+# src/mission.h.
+HIDDEN = {"no": 0, "thermal": 1}
+
 # A mission record, by byte offset. Spelled out because the reader in
 # src/mission.c has to agree with it exactly, and once did not:
 #
 #   0 name   2 brief[0..2]   8 objective   10 cargo   12 done   14 lost
-#  16 lat   18 lon           20 figure     21 weather 22 map    23 spare
+#  16 lat   18 lon           20 figure     21 weather 22 map    23 hidden
 #
 # Every sixteen-bit field but the last two is an offset into the string pool,
 # and offset 0 means there is none -- nothing can live at 0, which is where
@@ -190,6 +198,14 @@ def read_mission(path, maps, figures):
                     % (who, weather, ", ".join(sorted(WEATHER))))
     m["weather"] = WEATHER[weather]
 
+    # Absent is the ordinary case and the one every mission had before there
+    # was a second camera, so it is not a `need`.
+    hidden = str(doc.get("hidden", "no")).lower()
+    if hidden not in HIDDEN:
+        raise Error("%s: hidden `%s` is not one of %s"
+                    % (who, hidden, ", ".join(sorted(HIDDEN))))
+    m["hidden"] = HIDDEN[hidden]
+
     # Collected in the order they are first used, which is the order the disk
     # carries them in and the slot number the game flies.
     m["map"] = slot(maps, os.path.normpath(need("map")), MAP_SLOTS,
@@ -223,7 +239,7 @@ def build_bin(missions):
         offs += [m["lat"], m["lon"]]
         for n in offs:
             records += n.to_bytes(2, "little")
-        records += bytes([m["figure"], m["weather"], m["map"], 0])
+        records += bytes([m["figure"], m["weather"], m["map"], m["hidden"]])
 
     assert len(records) == len(missions) * RECORD_BYTES, len(records)
     header = MAGIC + bytes([len(missions), 0, 0, 0])   # counts patched below
@@ -360,9 +376,10 @@ def main():
     print("campaign: %d missions, %d maps, %d figures, %d of %d bytes"
           % (len(missions), len(maps), len(figures), len(blob), CAMPAIGN_BYTES))
     for n, m in enumerate(missions):
-        print("  %d %-24s map %d  figure %d  %s"
+        print("  %d %-24s map %d  figure %d  %s%s"
               % (n + 1, m["name"], m["map"], m["figure"],
-                 "cargo: " + m["cargo"] if m["cargo"] else "camera"))
+                 "cargo: " + m["cargo"] if m["cargo"] else "camera",
+                 "  (thermal only)" if m["hidden"] else ""))
 
 
 if __name__ == "__main__":
