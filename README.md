@@ -267,6 +267,11 @@ included, so none of this has to be read here first.
     CLAUDE.md       memory map, display conventions, hardware notes, measurements
     todo.md         what is next
 
+## Licensing
+
+- **Source Code:** Distributed under the [MIT License](LICENSE-CODE).
+- **Game Assets (Graphics, Music, Story Text):** Distributed under [Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/).
+
 ## Credits
 
 The sample height and colour maps come from Sebastian Macke's
