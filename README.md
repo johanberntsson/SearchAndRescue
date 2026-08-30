@@ -269,7 +269,7 @@ included, so none of this has to be read here first.
 
 ## Licensing
 
-- **Source Code:** Distributed under the [MIT License](LICENSE-CODE).
+- **Source Code:** Distributed under the [MIT License](LICENSE).
 - **Game Assets (Graphics, Music, Story Text):** Distributed under [Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/).
 
 ## Credits
