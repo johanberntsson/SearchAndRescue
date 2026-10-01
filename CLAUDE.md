@@ -630,7 +630,7 @@ at `LOGO` (`$5D800`, bank 5 above the second screen table) and their palette,
 3.9 KB crunched. `tools/convlogo.py` makes it out of `screenshots/logo.png`,
 rounding to four bits a channel before quantising, mapping black to pixel 0
 (the screen colour) and the rest to **32 entries borrowed from the sky and the
-panel artwork, 224..255**, which no page shows. `title_lines` in `screens.c`
+panel artwork, 224..254**, which no page shows. `title_lines` in `screens.c`
 loads those entries every time it draws the logo, because a flight's
 `map_use()` puts the whole map palette back over them. If the file is
 missing, the title falls back to the words `SEARCH AND RESCUE`. It cost 64
@@ -2010,5 +2010,18 @@ the title music fires fifty times a second and one hit inside the calibration
 window scales everything the profiler reports. If a timing figure ever moves
 for no reason, check that whatever was added to the interrupt is outside these
 two.
+
+**A cell's colour byte is four bits of colour and four of attributes, even
+on a full-colour character.** Blink, reverse, bold and underline are bits 4-7
+of colour RAM's second byte in 16-bit character mode, and the VIC-IV applies
+them to full-colour tiles too. The logo commit wrote ink `$FF` for picture
+cells and put a **blinking one-pixel underline on every tile of the logo and
+the panel artwork** -- thin horizontal lines coming and going on a real
+MEGA65, and nothing whatever in xemu, which ignores the attributes there.
+Picture cells take ink 0 (`vic4_tile`), and nothing on any page may ask for an
+ink above 15. Whether a full-colour pixel of `$FF` is drawn in the cell's ink
+rather than from the palette is **still not known**: the logo stays off entry
+255 in case, and the panel artwork has 126 pixels of it that have never been
+looked at closely on the machine.
 
 The Makefile deliberately makes every object depend on every header. Without it, changing a layout constant in `vic4.h` leaves stale objects built against the old memory map, and the result looks like a hardware fault rather than a build problem.

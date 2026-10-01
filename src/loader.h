@@ -126,8 +126,8 @@
 // writes it; keep the three numbers in step with that.
 //
 // **Bank 5 above the second screen table**, which ends at $5D7D0 -- the first
-// 64-byte boundary after it is $5D800, and 9728 bytes of characters and 96 of
-// palette reach $5FE60, under the top of the bank. It is the one resource read
+// 64-byte boundary after it is $5D800, and 9728 bytes of characters and 93 of
+// palette reach $5FE5D, under the top of the bank. It is the one resource read
 // *before* the boot screen is drawn, so that the boot screen can carry it: see
 // screens_boot.
 #define LOGO          0x5D800UL
@@ -137,7 +137,7 @@
 #define LOGO_BYTES    (LOGO_COLS * LOGO_ROWS * 64)
 #define LOGO_PALETTE  (LOGO + LOGO_BYTES)
 #define LOGO_BASE     224  // the sky's and the panel artwork's entries
-#define LOGO_COLOURS  (256 - LOGO_BASE)
+#define LOGO_COLOURS  31   // 224..254: see tools/convlogo.py for why not 255
 
 #if LOGO_PALETTE + 3 * LOGO_COLOURS > 0x60000UL
 #error "the logo has outgrown bank 5"

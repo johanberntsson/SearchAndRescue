@@ -68,10 +68,13 @@ void vic4_panel_char(uint8_t col, uint8_t row, uint8_t ch, uint8_t colour)
 
 void vic4_tile(uint8_t col, uint8_t row, uint16_t charnum)
 {
-  // Ink 255 rather than 0: a full-colour character takes no ink, except that
-  // the VIC-IV may draw a pixel of $FF in the cell's foreground colour. Naming
-  // 255 as that colour makes the two the same whichever it does.
-  put_cell((uint16_t)row * FB_COLS + col, charnum, charnum, 0xFF);
+  // **Ink 0, and never anything above 15.** The top four bits of a cell's
+  // colour byte are the VIC-III's attributes -- blink, reverse, bold and
+  // underline -- and they apply to full-colour characters as well. Ink $FF
+  // put a blinking underline on the last row of every tile of the logo and
+  // the panel artwork: thin lines coming and going on a real MEGA65, and
+  // nothing at all in xemu, which ignores the attributes there.
+  put_cell((uint16_t)row * FB_COLS + col, charnum, charnum, 0);
 }
 
 void vic4_panel_tile(uint8_t col, uint8_t row, uint16_t charnum)

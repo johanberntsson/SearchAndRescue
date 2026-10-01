@@ -16,14 +16,14 @@ do. This writes them, the way `convmap.py --panel` writes the panel artwork:
     in the screen colour -- black on every page -- so the background costs no
     entry at all;
   - the rest go in LOGO_COLOURS entries from LOGO_BASE. Those are the sky's
-    and the panel artwork's (224..255), which no page shows: the logo borrows
+    and the panel artwork's (224..254), which no page shows: the logo borrows
     them while a page is up, and a flight's map_use() puts the whole palette
     back.
 
 The file, once decrunched, is the characters in reading order and then the
 palette as three planes of LOGO_COLOURS bytes, nybble-swapped for the
 registers. It is crunched and padded like every other resource on the disk.
-Keep the constants in step with src/screens.h.
+Keep the constants in step with src/loader.h.
 """
 
 import argparse
@@ -39,7 +39,11 @@ from convmap import TAIL_PAD, crunch, find_exomizer, nybswap  # noqa: E402
 LOGO_COLS = 38
 LOGO_ROWS = 4
 LOGO_BASE = 224
-LOGO_COLOURS = 256 - LOGO_BASE
+# 31 and not 32: entry 255 is left out. A full-colour pixel of $FF may be
+# drawn in the cell's foreground colour rather than from the palette, and the
+# cell's colour byte cannot be 255 -- its top four bits are attributes, which
+# put a blinking underline on every tile on a real MEGA65.
+LOGO_COLOURS = 31
 W, H = LOGO_COLS * 8, LOGO_ROWS * 8
 
 
