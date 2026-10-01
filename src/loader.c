@@ -201,6 +201,11 @@ int load_logo(void)
   return load_crunched("LOGO.LGO", LOGO, 0, 0);
 }
 
+int load_drone(void)
+{
+  return load_crunched("DRONE.DRN", DRONE_DATA, 0, 0);
+}
+
 // MAP0.HGT, MAP0.COL and so on: the digit is the map slot. One buffer, patched
 // in place, because a printf here would want the Kernal's screen editor and
 // the display is already the game's.

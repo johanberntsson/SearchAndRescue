@@ -20,9 +20,11 @@ map can be built out of. **The thermal camera, the third mission and the snow
 below all landed after it**, so `make release` is what it takes to see them.
 
 **Since then (1 Oct 2026):** a full-colour logo on the loading and title
-screens, **joystick support in either port** (the stick is `W` `A` `S` `D`,
+screens, with a drone hovering under it while the disk loads and flying about
+the title once it has, **joystick support in either port** (the stick is `W` `A` `S` `D`,
 fire is `SPACE` on the pages and the mission's own key in the air), a silent
-loading screen, and the debrief now returns to the title.
+loading screen, the debrief now returns to the title, and every key on a
+page of its own behind `HELP` or `F1`, which in the air is also the pause.
 
 Three missions exist, end to end: a title screen, a mission list, a briefing, a
 flight, and a debrief. They are deliberately the same flight with different

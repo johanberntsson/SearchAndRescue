@@ -148,6 +148,24 @@
 // progress on.
 int load_logo(void);
 
+// The title screen's drone, in bank 4 above the panel font: a list of sprite
+// pointers, then the file tools/convdrone.py writes -- two frames of a left
+// and a right 16-colour sprite, eight bytes a row, then sixteen colours as
+// three planes. Keep these in step with that tool; src/drone.c draws it.
+#define DRONE_PTRS  0x44C00UL
+#define DRONE_DATA  (DRONE_PTRS + 64)
+#define DRONE_ROWS  24
+#define DRONE_BLOCK (8 * DRONE_ROWS)
+#define DRONE_PAL   (DRONE_DATA + 4 * DRONE_BLOCK)
+
+#if DRONE_PTRS < PANEL_FONT + PANEL_FONT_BYTES
+#error "the drone runs into the panel font in bank 4"
+#endif
+
+// Read it into DRONE_DATA, right after the logo and for the same reason: the
+// boot screen carries it. Returns 0 on success.
+int load_drone(void);
+
 #if HGT_SIZE <= 256
 #error "the panel artwork and a 256x256 heightmap both want bank 4. Raise \
 HGT_SIZE, or find the artwork 15 KB somewhere else the VIC-IV can read."

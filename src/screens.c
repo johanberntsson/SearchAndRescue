@@ -2,6 +2,7 @@
 
 #include <mega65.h>
 
+#include "drone.h"
 #include "loader.h"
 #include "mission.h"
 #include "panel.h"
@@ -222,12 +223,18 @@ void screens_boot(void)
   // it: four kilobytes crunched, a moment's read.
   logo_ok = !load_logo();
   title_lines();
+
+  // And the drone, hovering in the middle of the screen while the rest
+  // loads. Its rotors turn as the bar grows; the title sets it flying.
+  drone_load();
+  drone_show();
 }
 
 void screens_loading(uint8_t percent)
 {
   uint8_t want;
 
+  drone_tick(0);
   if (percent > 100)
     percent = 100;
   want = (uint8_t)((uint16_t)percent * BAR_WIDTH / 100);
@@ -267,6 +274,7 @@ void screens_title(void)
 {
   vic4_text_mode();
   title_lines();
+  drone_show();
   centre(PROMPT_ROW, "PRESS SPACE OR FIRE", PANEL_INK);
   sound_line();
 }

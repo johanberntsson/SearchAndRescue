@@ -171,6 +171,8 @@ Only banks 1, 4 and 5 are free: `$20000-$3FFFF` holds the C65 ROM, and **colour 
 | `$1F800-$1FFFF` | 2 KB | Colour RAM alias — **do not write** |
 | `$40000` | 15360 | The panel's background artwork, 40x6 full-colour characters |
 | `$43C00` | 16 + 1920 | The panel's text plane: eight sprite pointers, then five 64x48 sprites |
+| `$44800` | 768 | The panel's font, 96 glyphs |
+| `$44C00` | 64 + 816 | The title's drone: sprite pointers, four 16-colour sprites, sixteen colours |
 | `$40000-$4FFFF` | 64 KB | Heightmap, only when it is 256x256 — **which no longer builds**, see The panel |
 | `$8000000-$81FFFFF` | 2 MB | Map slot 0: colourmap planes, then heightmap |
 | `$8200000-$83FFFFF` | 2 MB | Map slot 1 — mission two's world |
@@ -250,8 +252,9 @@ room came from, in the order it was taken:
 **And it was spent again the same day** — 2652 on the tune, 583 on the engine
 note and 1449 on the campaign buffer, net of the C mission table it replaced.
 That was the point of the reclaim. The thermal camera and its 32-bit key mask
-then took about 820 more, snow about 295 and the controls page about 880, so
-a default build is **95.9% used with 1350 bytes free**.
+then took about 820 more, snow about 295, the controls page about 880 and
+the title's drone about 700, so a default build is **98.0% used with 653
+bytes free**.
 **That is the tightest this has been**, and the next thing of any size wants
 the `HIGH_BSS` banking above before it wants anything else.
 
@@ -648,6 +651,37 @@ loads those entries every time it draws the logo, because a flight's
 `map_use()` puts the whole map palette back over them. If the file is
 missing, the title falls back to the words `SEARCH AND RESCUE`. It cost 64
 bytes of the 32K.
+
+**A drone flies about the title, and hovers on the loading screen first.**
+`DRONE.DRN` is read straight after the logo, so the boot screen carries it
+too: `tools/convdrone.py` turns `resources/drone.png` -- two 32x24 frames
+side by side, differing only in the rotors -- into four 16-colour hardware
+sprites at `DRONE_DATA` in bank 4, and `src/drone.c` shows a frame as
+sprites 6 and 7 side by side. Four things about it:
+
+- **sprites 6 and 7 because of their colours.** A 16-colour sprite takes
+  pixel *p* from palette entry *sprite* x 16 + *p* (with bitplane mode off,
+  which `drone_show` makes sure of), so these two land on 96..127 -- terrain
+  ramp, which no page shows. `drone_show` writes the fifteen colours into both
+  ranges every time, for the same reason `title_lines` reloads the logo's: a
+  flight's `map_use()` puts the map palette back over them. It also points
+  `SPRPALSEL` at the bank the pages draw from.
+- **it keeps inside the band without testing an edge.** It flies a Lissajous
+  figure -- a slow sweep across and a bob three times as fast, phases in 8.8
+  -- about the middle of the rows between the subtitle and the prompt, and
+  phase 0 is the middle, which is where the loading screen left it.
+- **`page_scan` ticks it on every page**, a frame at a time, because every
+  page comes through there; off the title its sprites are disabled and it
+  moves where nobody can see. The loading bar spins its rotors in place, one
+  step per progress report.
+- **the panel's text plane resets what the two share** -- the pointer list
+  address and `SPRHGHT` -- at every launch, so neither has to know about the
+  other. The Kernal reads the disk happily with the two sprites up; the boot
+  screen proved it.
+
+Seen in xemu on the loading screen, at two places on the title, and in the
+air afterwards with the panel's colours untouched. **Not yet seen on the
+machine**, where 16-colour sprite palettes have never been tried.
 
 `screens_boot_restore()` puts the ROM's 8-bit eighty-column screen back for
 the one thing that still prints, the startup benchmark report

@@ -109,7 +109,12 @@ FNT_RES = $(BUILD)/panel.fnt
 LOGO_PNG = screenshots/logo.png
 LOGO_RES = $(BUILD)/logo.lgo
 
-RES      = $(LOGO_RES) $(BUILD)/campaign.bin $(CONV_RES) $(FNT_RES)
+# The drone that flies about the title: see tools/convdrone.py. Read right
+# after the logo, so the boot screen has it too.
+DRONE_PNG = resources/drone.png
+DRONE_RES = $(BUILD)/drone.drn
+
+RES      = $(LOGO_RES) $(DRONE_RES) $(BUILD)/campaign.bin $(CONV_RES) $(FNT_RES)
 
 all: $(D81)
 
@@ -140,6 +145,9 @@ $(FNT_RES): $(PANEL_FNT) | $(BUILD)
 
 $(LOGO_RES): $(LOGO_PNG) tools/convlogo.py tools/convmap.py | $(BUILD)
 	python3 tools/convlogo.py $< $@
+
+$(DRONE_RES): $(DRONE_PNG) tools/convdrone.py tools/convmap.py | $(BUILD)
+	python3 tools/convdrone.py $< $@
 
 # Both compiler and assembler see these, so changing either has to force a
 # rebuild. Without it, `make PROFILE=0` and then `make` leaves every object

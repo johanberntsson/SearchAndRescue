@@ -16,6 +16,11 @@
   tune on hardware; it now starts at the title. **Not yet heard on the
   machine since.**
 - **The debrief goes back to the title**, and the title on to the list.
+- **A drone flies about the title**, and hovers in the middle of the loading
+  screen first: two 16-colour hardware sprites, out of `resources/drone.png`
+  (drawn here, and meant to be replaced by something better if anybody has
+  it). **Still to see on the machine**: 16-colour sprites have not been tried
+  on it. About 700 bytes; **the 32K is down to 653 free**.
 - **The controls have a page of their own**, on `HELP` or `F1` from the
   briefing and from the air, where it pauses the flight and the pause is left
   out of the flight time. The briefing is only the job now, with
@@ -86,7 +91,7 @@ rain costs 0.68 ms of that on mission two, and the snow about the same). The
 march is 160 rays; each fills the two pixels it owns. **The thermal camera
 costs nothing per frame at all**, being a palette swap.
 
-**The 32K is down to 1350 bytes free** in a default build, which is the tightest it has been. The next thing of any size
+**The 32K is down to 653 bytes free** in a default build, which is the tightest it has been. The next thing of any size
 wants the `HIGH_BSS` banking first -- see the Memory map notes in CLAUDE.md.
 **The disk is down to 1246 blocks free**, nearly all of it the avalanche map's
 268 KB.

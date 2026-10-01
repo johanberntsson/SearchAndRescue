@@ -1,6 +1,7 @@
 #include <stdio.h>
 
 #include "audio.h"
+#include "drone.h"
 #include "engine.h"
 #include "input.h"
 #include "loader.h"
@@ -326,6 +327,10 @@ static keymask page_scan(void)
   keymask pressed;
 
   input_frame();
+  // The title's drone flies on. Every page comes through here a frame at a
+  // time, and on any page but the title its sprites are off, so this moves
+  // something nobody can see -- cheaper than every page saying which it is.
+  drone_tick(1);
   input_scan(0, &pressed);
   if (pressed & KEY_FIRE)
     pressed |= KEY_SPACE;
