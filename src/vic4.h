@@ -94,6 +94,12 @@
 // text display and only the title screen after it is on this one.
 void vic4_init(void);
 
+// The same display with none of the rest: forty columns of text and full
+// colour over the screen tables, for the boot screen to draw on while the
+// disk is still being read. Only VIC-IV registers the Kernal does not use --
+// vic4_init does the rest once the last file is in.
+void vic4_boot(void);
+
 // Put one character anywhere on the 25-row display. Character numbers below
 // $100 are ordinary 8x8 text -- FCLRHI is set and FCLRLO is not, so only the
 // framebuffer's own character numbers are full colour. Both screen tables get
@@ -121,6 +127,9 @@ void vic4_view_mode(void);
 // mixes the overview map's tiles in among the panel's text: the mode is
 // chosen per character number, so the two cost the same screen RAM.
 void vic4_panel_tile(uint8_t col, uint8_t row, uint16_t charnum);
+
+// The same at an absolute row, for a picture on a page: the title logo.
+void vic4_tile(uint8_t col, uint8_t row, uint16_t charnum);
 
 // Take the copy of the overview map that vic4_crosshair restores from. Call
 // it once the map has been loaded and before the first crosshair.

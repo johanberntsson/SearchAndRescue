@@ -1,6 +1,9 @@
 # What's next
 
-Made a logo in https://codepo8.github.io/logo-o-matic/#goto-unknown
+**The logo is on the boot and title screens**, 1 Oct 2026. Made in
+https://codepo8.github.io/logo-o-matic/#goto-unknown; 38x4 full-colour
+characters out of `screenshots/logo.png`, see the boot screen in CLAUDE.md.
+Seen headless on both screens; **not yet seen on the machine**.
 
 ## Where it is
 

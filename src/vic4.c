@@ -66,9 +66,17 @@ void vic4_panel_char(uint8_t col, uint8_t row, uint8_t ch, uint8_t colour)
   vic4_text_char(col, (uint8_t)(FB_ROWS + row), ch, colour);
 }
 
+void vic4_tile(uint8_t col, uint8_t row, uint16_t charnum)
+{
+  // Ink 255 rather than 0: a full-colour character takes no ink, except that
+  // the VIC-IV may draw a pixel of $FF in the cell's foreground colour. Naming
+  // 255 as that colour makes the two the same whichever it does.
+  put_cell((uint16_t)row * FB_COLS + col, charnum, charnum, 0xFF);
+}
+
 void vic4_panel_tile(uint8_t col, uint8_t row, uint16_t charnum)
 {
-  put_cell((uint16_t)(FB_ROWS + row) * FB_COLS + col, charnum, charnum, 0);
+  vic4_tile(col, (uint8_t)(FB_ROWS + row), charnum);
 }
 
 // Screen codes are not ASCII: in the uppercase character set the letters run
@@ -196,35 +204,29 @@ void vic4_crosshair(uint8_t px, uint8_t py)
   cross_plot(tiles, x, y + 2);
 }
 
-void vic4_init(void)
+// What the boot screen and the game both want: forty columns of 16-bit
+// character numbers out of the screen tables in bank 5, text below $100 and
+// full colour above it, all of it showing text. None of it stops the Kernal
+// reading a disk -- every map loads after it -- which is what lets the boot
+// screen have it before the first file is open; see screens_boot. What
+// vic4_init adds on top of it is what does.
+void vic4_boot(void)
 {
   uint16_t i;
   uint8_t __far *cram = (uint8_t __far *)COLOUR_RAM;
-
-  CPU_PORTDDR = 0x41;  // 40 MHz
 
   VICIV.key = 0x47;  // unlock the VIC-IV registers
   VICIV.key = 0x53;
 
   VICIV.ctrlb &= (uint8_t)~0x80;  // H320, not H640
 
-  // Turn off the hot registers, or a stray write to a legacy VIC-II register
-  // makes the VIC-IV recompute the layout and undo everything below.
-  VICIV.sdbdrwd_msb &= (uint8_t)~VIC4_HOTREG_MASK;
-
-  // Whatever the ROM left enabled: the sprite pointers come from screen+$3F8,
-  // which in this layout is somebody else's data, so any enabled sprite draws
-  // confetti. Safe to write now that the hot registers are off.
-  *(volatile uint8_t *)0xD015 = 0;
-
   VICIV.ctrlc |= VIC4_CHR16_MASK    // 16-bit character numbers
-                 | VIC4_FCLRHI_MASK // full colour for characters above $FF
-                 | VIC4_VFAST_MASK;
+                 | VIC4_FCLRHI_MASK; // full colour for characters above $FF
 
   // Character data for the panel's text rows. Nothing had set this before the
-  // panel existed, and whatever the ROM left behind draws a horizontal line
+  // panel existed, and whatever the ROM leaves behind draws a horizontal line
   // for a space. The C65 ROM's 8x8 set sits at $2D000 and the VIC-IV can read
-  // it where it is, so the panel costs no RAM for a font. Written a byte at a
+  // it where it is, so the pages cost no RAM for a font. Written a byte at a
   // time: the 32-bit field runs over $D06B, which is not part of the pointer.
   VICIV.charptr_lsb = 0x00;
   VICIV.charptr_msb = 0xD0;
@@ -252,6 +254,23 @@ void vic4_init(void)
   // view asks for it with vic4_view_mode.
   vic4_text_mode();
   vic4_show(0);
+}
+
+void vic4_init(void)
+{
+  CPU_PORTDDR = 0x41;  // 40 MHz
+
+  // Turn off the hot registers, or a stray write to a legacy VIC-II register
+  // makes the VIC-IV recompute the layout and undo everything below.
+  VICIV.sdbdrwd_msb &= (uint8_t)~VIC4_HOTREG_MASK;
+
+  // Whatever the ROM left enabled: the sprite pointers come from screen+$3F8,
+  // which in this layout is somebody else's data, so any enabled sprite draws
+  // confetti. Safe to write now that the hot registers are off.
+  *(volatile uint8_t *)0xD015 = 0;
+
+  VICIV.ctrlc |= VIC4_VFAST_MASK;
+  vic4_boot();
 }
 
 

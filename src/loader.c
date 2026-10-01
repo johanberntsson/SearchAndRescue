@@ -196,6 +196,11 @@ static int load_far(const char *name, uint32_t dest, uint32_t length)
   return r;
 }
 
+int load_logo(void)
+{
+  return load_crunched("LOGO.LGO", LOGO, 0, 0);
+}
+
 // MAP0.HGT, MAP0.COL and so on: the digit is the map slot. One buffer, patched
 // in place, because a printf here would want the Kernal's screen editor and
 // the display is already the game's.

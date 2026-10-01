@@ -2,6 +2,7 @@
 
 #include <mega65.h>
 
+#include "loader.h"
 #include "mission.h"
 #include "panel.h"
 #include "vic4.h"
@@ -102,76 +103,72 @@ static void put_position(uint8_t col, uint8_t row, const mission *m,
 }
 
 // ---------------------------------------------------------------------------
+// The title: the logo, and the line under it.
+//
+// The logo is LOGO_COLS x LOGO_ROWS full-colour characters at LOGO in bank 5,
+// written by tools/convlogo.py, and putting it on a page is naming their
+// numbers -- the display picks text or full colour per character number, so a
+// picture among the letters costs what the letters do. Its colours are
+// LOGO_COLOURS entries borrowed from the sky and the panel artwork, which no
+// page shows; a flight's map_use() puts the whole palette back, so every page
+// that draws the logo has to load its colours again, and this does.
+//
+// If the logo did not load, the title is the words it always was: a disk
+// that has lost one file should still say what it is.
+#define LOGO_ROW (TITLE_ROW - LOGO_ROWS + 1)  // its foot on the title row
+#define LOGO_COL ((PANEL_COLS - LOGO_COLS) / 2)
+
+static uint8_t logo_ok;
+
+static void title_lines(void)
+{
+  if (logo_ok) {
+    const uint8_t __far *pal = (const uint8_t __far *)LOGO_PALETTE;
+    uint8_t row, col, i;
+
+    for (i = 0; i < LOGO_COLOURS; i++) {
+      PALETTE.red[LOGO_BASE + i] = pal[i];
+      PALETTE.green[LOGO_BASE + i] = pal[LOGO_COLOURS + i];
+      PALETTE.blue[LOGO_BASE + i] = pal[2 * LOGO_COLOURS + i];
+    }
+    for (row = 0; row < LOGO_ROWS; row++)
+      for (col = 0; col < LOGO_COLS; col++)
+        vic4_tile((uint8_t)(LOGO_COL + col), (uint8_t)(LOGO_ROW + row),
+                  (uint16_t)(LOGO_CHAR + row * LOGO_COLS + col));
+  } else {
+    centre(TITLE_ROW, TITLE_TEXT, PANEL_INK);
+  }
+  centre(TITLE_ROW + 2, TITLE_SUB, PANEL_LABEL);
+}
+
+// ---------------------------------------------------------------------------
 // The boot screen.
 //
-// Loading has to happen before vic4_init -- a Kernal open fails outright
-// afterwards -- so this is the ROM's own text display and not the game's. It
-// is dressed to look like screens_title anyway: same forty columns, same rows,
-// same words, white on black. The pilot sees one picture that gains a progress
-// bar and then loses it again, rather than a BASIC screen followed by a title.
+// It is the title screen with a loading bar under it, and since the logo it
+// is drawn on the game's own display rather than the ROM's: a picture needs
+// full-colour characters, and those need 16-bit character numbers, which the
+// ROM's 8-bit screen at $0800 cannot name. vic4_boot sets up only the part of
+// the display a page needs -- forty columns of the two screen tables in bank
+// 5 -- and leaves the rest of vic4_init, which the Kernal cannot read a disk
+// after, until the last file is in.
 //
-// **Nothing here prints.** printf goes through the ROM's screen editor, which
-// lays a row out eighty bytes wide whatever the display is doing, offers no
-// cursor addressing to put a word at row 8 with, and can only ever add to the
-// bottom of the screen -- so the LOADING line could never be taken away again.
-// Writing screen RAM directly answers all three, and it is not a hard thing to
-// do: the C65's screen is 1000 bytes at $0800 with the colour for each cell at
-// the same index into colour RAM.
-//
-// It also settles the old business of the invisible bar. The solid block is
-// screen code 160 and printing it produced *nothing* for months -- Calypsi's
-// output path drops that byte -- while storing 160 into screen RAM is just a
-// byte, and draws the block it always should have.
-#define BOOT_SCREEN ((uint8_t *)0x0800)  // the ROM's; ours starts at $2001
-#define BOOT_CRAM   0xFF80000UL
-#define BOOT_COLS   40
-#define BOOT_ROWS   25
+// **Nothing here prints**, and nothing could: printf goes through the ROM's
+// screen editor, which still believes the screen is the one at $0800. Every
+// word is a store into the screen tables, exactly as on every other page.
 #define BOOT_BLOCK  160  // reverse space: the solid block, as a screen code
-
-// The C65's default palette is still up here -- the game's own arrives with
-// the first map -- so these are C64 colour numbers rather than the panel's.
-// 15 is the nearest light grey to the (150,160,170) tools/convmap.py gives
-// PANEL_LABEL, so the subtitle stays the quieter of the two lines.
-#define BOOT_WHITE  1
-#define BOOT_GREY   15
 
 // The bar sits under the word, on the row the title screen puts PRESS SPACE
 // on, so that finishing the load simply swaps one for the other in place.
 #define BAR_ROW    (PROMPT_ROW + 1)
 #define BAR_WIDTH  30
-#define BAR_COL    ((BOOT_COLS - BAR_WIDTH) / 2)
+#define BAR_COL    ((PANEL_COLS - BAR_WIDTH) / 2)
 
-static void boot_cell(uint8_t col, uint8_t row, uint8_t code, uint8_t colour)
-{
-  uint16_t cell = (uint16_t)row * BOOT_COLS + col;
-
-  BOOT_SCREEN[cell] = code;
-  ((uint8_t __far *)BOOT_CRAM)[(int16_t)cell] = colour;
-}
-
-static void boot_puts(uint8_t col, uint8_t row, const char *s, uint8_t colour)
-{
-  while (*s && col < BOOT_COLS) {
-    boot_cell(col, row, vic4_screen_code(*s), colour);
-    col++;
-    s++;
-  }
-}
-
-static void boot_centre(uint8_t row, const char *s, uint8_t colour)
-{
-  uint8_t w = width_of(s);
-
-  boot_puts(w >= BOOT_COLS ? 0 : (uint8_t)((BOOT_COLS - w) / 2), row, s,
-            colour);
-}
-
-static void boot_clear_row(uint8_t row)
+static void clear_row(uint8_t row)
 {
   uint8_t col;
 
-  for (col = 0; col < BOOT_COLS; col++)
-    boot_cell(col, row, ' ', BOOT_WHITE);
+  for (col = 0; col < PANEL_COLS; col++)
+    vic4_text_char(col, row, ' ', PANEL_INK);
 }
 
 // How many blocks of the loading bar are up. The bar only ever grows, so a
@@ -180,28 +177,20 @@ static uint8_t bar_drawn;
 
 void screens_boot(void)
 {
-  uint8_t row;
+  vic4_boot();
 
-  // Forty columns, so the boot screen is the shape the title screen is. This
-  // is a VIC-III register the ROM has already unlocked and the only display
-  // register touched before loading: the whole of vic4_init has to wait until
-  // the last file is read, and something in it leaves the Kernal unable to
-  // open one at all.
-  //
-  // The editor goes on believing the display is eighty wide, which costs
-  // nothing while nothing prints -- see screens_boot_restore for the one
-  // thing that still does.
-  VICIV.ctrlb &= (uint8_t)~0x80;  // H320
-  VICIV.bordercol = 0;
-  VICIV.screencol = 0;
+  // The C65's palette is still up -- the game's arrives with the first map --
+  // so the page's two inks are given the colours tools/convmap.py gives them.
+  vic4_set_entry(PANEL_INK, 255, 255, 255);
+  vic4_set_entry(PANEL_LABEL, 150, 160, 170);
 
-  for (row = 0; row < BOOT_ROWS; row++)
-    boot_clear_row(row);
-
-  boot_centre(TITLE_ROW, TITLE_TEXT, BOOT_WHITE);
-  boot_centre(TITLE_ROW + 2, TITLE_SUB, BOOT_GREY);
-  boot_centre(PROMPT_ROW, "LOADING", BOOT_WHITE);
+  centre(PROMPT_ROW, "LOADING", PANEL_INK);
   bar_drawn = 0;
+
+  // The logo is the first thing off the disk, so the boot screen can carry
+  // it: four kilobytes crunched, a moment's read.
+  logo_ok = !load_logo();
+  title_lines();
 }
 
 void screens_loading(uint8_t percent)
@@ -213,35 +202,40 @@ void screens_loading(uint8_t percent)
   want = (uint8_t)((uint16_t)percent * BAR_WIDTH / 100);
 
   while (bar_drawn < want) {
-    boot_cell((uint8_t)(BAR_COL + bar_drawn), BAR_ROW, BOOT_BLOCK, BOOT_WHITE);
+    vic4_text_char((uint8_t)(BAR_COL + bar_drawn), BAR_ROW, BOOT_BLOCK,
+                   PANEL_INK);
     bar_drawn++;
   }
 }
 
 void screens_loaded(void)
 {
-  boot_clear_row(PROMPT_ROW);
-  boot_clear_row(BAR_ROW);
+  clear_row(PROMPT_ROW);
+  clear_row(BAR_ROW);
 }
 
 void screens_load_failed(const char *why, const char *file)
 {
-  boot_clear_row(PROMPT_ROW);
-  boot_clear_row(BAR_ROW);
-  boot_centre(PROMPT_ROW, why ? why : "CANNOT READ", BOOT_WHITE);
-  boot_centre(BAR_ROW, file ? file : "", BOOT_WHITE);
+  screens_loaded();
+  centre(PROMPT_ROW, why ? why : "CANNOT READ", PANEL_INK);
+  centre(BAR_ROW, file ? file : "", PANEL_INK);
 }
 
+// Back to the ROM's own eighty-column screen at $0800, for the one thing
+// left that prints: the benchmark report, when REPORT_SECONDS asks for it.
 void screens_boot_restore(void)
 {
+  VICIV.ctrlc &= (uint8_t)~(VIC4_CHR16_MASK | VIC4_FCLRHI_MASK);
+  VICIV.scrnptr = 0x0800;
+  VICIV.linestep = 80;
+  VICIV.chrcount = 80;
   VICIV.ctrlb |= 0x80;  // H640, which is what the ROM's editor writes for
 }
 
 void screens_title(void)
 {
   vic4_text_mode();
-  centre(TITLE_ROW, TITLE_TEXT, PANEL_INK);
-  centre(TITLE_ROW + 2, TITLE_SUB, PANEL_LABEL);
+  title_lines();
   centre(PROMPT_ROW, "PRESS SPACE", PANEL_INK);
   music_line();
 }

@@ -105,7 +105,7 @@ disk**.
 - **Boots in about twenty-five seconds** in the emulator, nearly all of it
   reading the three maps -- of which the avalanche map is 268 KB against the
   island's 60, a fact about mountains rather than about the generator. The loading screen is the
-  title screen — same black, same white, same words in the same place — with
+  title screen — same black, same logo, same words in the same place — with
   LOADING and a progress bar where PRESS SPACE will be, so the machine can be
   seen to be alive and the boot is one picture from the first second to the
   menu

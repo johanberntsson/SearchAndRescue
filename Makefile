@@ -104,8 +104,12 @@ CONV_RES = $(MAP_RES) $(SPR_RES) $(PNL_RES)
 PANEL_FNT = font/ClairsysOzmoo-Regular-US.fnt
 FNT_RES = $(BUILD)/panel.fnt
 
+# The title logo, as full-colour characters: see tools/convlogo.py. It is
+# read before anything else, so that the boot screen can carry it.
+LOGO_PNG = screenshots/logo.png
+LOGO_RES = $(BUILD)/logo.lgo
 
-RES      = $(BUILD)/campaign.bin $(CONV_RES) $(FNT_RES)
+RES      = $(LOGO_RES) $(BUILD)/campaign.bin $(CONV_RES) $(FNT_RES)
 
 all: $(D81)
 
@@ -133,6 +137,9 @@ $(BUILD):
 $(FNT_RES): $(PANEL_FNT) | $(BUILD)
 	python3 -c "import sys; f = open(sys.argv[1], 'rb').read(); \
 	    open(sys.argv[2], 'wb').write(f[32 * 8:128 * 8] + bytes(512))" $< $@
+
+$(LOGO_RES): $(LOGO_PNG) tools/convlogo.py tools/convmap.py | $(BUILD)
+	python3 tools/convlogo.py $< $@
 
 # Both compiler and assembler see these, so changing either has to force a
 # rebuild. Without it, `make PROFILE=0` and then `make` leaves every object

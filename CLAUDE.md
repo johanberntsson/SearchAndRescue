@@ -166,6 +166,7 @@ Only banks 1, 4 and 5 are free: `$20000-$3FFFF` holds the C65 ROM, and **colour 
 | `$8400000-$85FFFFF` | 2 MB | Map slot 2, spare |
 | `$8600000-` | | Staging for the crunched stream being unpacked |
 | `$5C000`, `$5D000` | 2000 each | The two screen tables |
+| `$5D800` | 9728 + 96 | The title logo: 38x4 full-colour characters, then its palette |
 | `$8700000` | 768 each | One palette per map slot, until a flight uploads its own |
 
 **The 32 KB is `mega65-plain.scm`'s choice, not the machine's.** The stock
@@ -595,52 +596,57 @@ unable to open a file at all:
 
 - **`profile_init` takes CIA2's two timers** for its clock, and the Kernal
   needs them to talk to a disk.
-- **`vic4_init`** does it too. Which register was not worth isolating —
-  `CPU_PORTDDR`, `VFAST` and the sprite enable were each ruled out on their
-  own run — because loading has to come first for the timer reason anyway.
+- **`vic4_init`** does it too. `CPU_PORTDDR`, `VFAST` and the sprite enable
+  were each ruled out on their own run, and since the logo the whole text
+  display is ruled out as well -- which leaves the hot-register bit; see
+  below.
 
-So the sequence is: loading, then the benchmarks, then the display. The
-loading screen is therefore the ROM's text display and not the game's — but
-it is dressed to look exactly like the title screen that follows it, and that
-took giving up on printing.
+So the sequence is: loading, then the benchmarks, then the display. **But
+not all of the display has to wait**, and the logo is what found that out.
 
-**The boot screen writes screen RAM directly, and nothing in it prints.**
-`printf` goes through the ROM's screen editor, which can only add to the
-bottom of the screen: it cannot put a word on row 8, cannot centre one, and
-cannot take a line away again — so a bar it had drawn could never be cleared.
-Writing the screen is not a hard thing to do instead. The C65's is **1000
-bytes at `$0800`**, one screen code a cell, with that cell's colour at the
-same index into colour RAM (`$FF80000`, which is the `$1F800` alias the game
-uses later). `screens.c`'s `boot_cell` is those two stores.
+**The boot screen is on the game's own display since the logo.** A picture
+needs full-colour characters, those need 16-bit character numbers, and the
+ROM's 8-bit screen at `$0800` cannot name one. So `vic4_init` is split:
+`vic4_boot` is the part a page needs -- the VIC-IV unlock, forty columns,
+`CHR16` and `FCLRHI`, `CHARPTR`, `LINESTEP`, `CHRCOUNT`, `CHRXSCL`, colour RAM
+cleared, the screen tables in bank 5 -- and `screens_boot` calls it before the
+first file is opened. **Every map still loads after it**, verified by booting
+to the title. What `vic4_init` adds on top is `CPU_PORTDDR`, `VFAST`, the
+sprite enable and **turning the hot registers off**; the first three were
+ruled out on their own runs, so by elimination the hot-register bit is what
+stops the Kernal opening a file. That last step is inference and has not been
+run on its own.
 
-**`VICIV.ctrlb &= ~0x80` puts the boot screen in forty columns**, which is
-what makes it the same shape as the title screen: same rows, same columns,
-same two lines of text, so `SEARCH AND RESCUE` does not move by a pixel when
-the game's own display takes over. It is a VIC-III register the ROM has
-already unlocked and it is the **only** display register touched before
-loading — the rest of `vic4_init` still has to wait, because something in it
-leaves the Kernal unable to open a file. Verified by booting: every map loads
-and the title comes up.
+So the boot screen is now drawn exactly the way every page is, with
+`vic4_puts` and `vic4_text_char`, and it *is* the title screen with LOADING and
+a bar under it. Its two inks are set with `vic4_set_entry` because the C65's
+palette is still up, and the bar's block is screen code 160 stored into the
+table. **Nothing in it prints**: the ROM's editor still believes the screen is
+the one at `$0800`, and anything it wrote would go there, unseen.
 
-The editor goes on believing the display is eighty wide, which costs nothing
-while nothing prints. The one thing that still does is the startup benchmark
-report, so `screens_boot_restore()` hands the eighty columns back before it
-(`main.c`, under `#if REPORT_SECONDS`) — and **the report is not printed at
-all when `REPORT_SECONDS` is 0**, because scribbling a table over a title
-screen nobody asked to read is worse than not printing it. `profread` takes
-the same figures out of memory either way.
+**The logo is the first file read**, before the campaign, so the boot screen
+can carry it from its first second: `LOGO.LGO`, 38x4 full-colour characters
+at `LOGO` (`$5D800`, bank 5 above the second screen table) and their palette,
+3.9 KB crunched. `tools/convlogo.py` makes it out of `screenshots/logo.png`,
+rounding to four bits a channel before quantising, mapping black to pixel 0
+(the screen colour) and the rest to **32 entries borrowed from the sky and the
+panel artwork, 224..255**, which no page shows. `title_lines` in `screens.c`
+loads those entries every time it draws the logo, because a flight's
+`map_use()` puts the whole map palette back over them. If the file is
+missing, the title falls back to the words `SEARCH AND RESCUE`. It cost 64
+bytes of the 32K.
+
+`screens_boot_restore()` puts the ROM's 8-bit eighty-column screen back for
+the one thing that still prints, the startup benchmark report
+(`main.c`, under `#if REPORT_SECONDS`). **The report is not printed at all
+when `REPORT_SECONDS` is 0**, because scribbling a table over a title screen
+nobody asked to read is worse than not printing it. `profread` takes the same
+figures out of memory either way.
 
 That also **freed 6.5 KB of the 32 K**: with nothing in the default build
 calling `printf`, the whole formatting machinery drops out at link time and
 the PRG went from 26728 bytes to 20219. A `REPORT=120` build pulls it back in
 and still fits.
-
-The old note here said the bar's block had to be `#` because *160 prints
-nothing* — the shifted space went out through `putchar` for months and drew
-thirty invisible characters on every boot. That is still true of Calypsi's
-output path, and worth knowing if anything is ever printed again. It stopped
-mattering the moment the bar became a store: **160 written into screen RAM is
-the solid block it always should have been.**
 
 **Once the game's display is up, nothing may `printf`** whatever the boot did:
 the Kernal's screen editor writes colour RAM, and the game is using it.
