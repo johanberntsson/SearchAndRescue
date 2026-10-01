@@ -213,7 +213,7 @@ against.
 
 ## Controls
 
-After the title screen and the briefing, `SPACE` launches the flight.
+After the title screen and the briefing, `SPACE` (or fire) launches the flight.
 
 | Key | |
 |---|---|
@@ -227,6 +227,7 @@ After the title screen and the briefing, `SPACE` launches the flight.
 | `T` | arm the thermal camera: cold ground, black sky, and anybody alive a flat hot white |
 | `RUN/STOP` | abandon the mission, and back out of the list or a briefing |
 | `M` | mute: the engine in the air, the music on every other screen. Two settings, both remembered |
+| joystick | either port: the stick is `W` `A` `S` `D`, in the air and up and down the mission list; fire is `SPACE` on every screen and the mission's own key in the air |
 | `P` | show the frame rate. Off to begin with, remembered for the session, and **nothing in the game mentions it** — it is for working on the renderer, not for flying |
 
 **Sport mode has no terrain following.** In the two slower modes the drone

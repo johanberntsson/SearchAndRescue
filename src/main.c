@@ -317,6 +317,22 @@ static uint16_t elapsed(uint32_t since)
   return (uint16_t)(ticks / profile_ticks_per_second());
 }
 
+// One scan of a page: a frame apart, so the joystick's button settles (see
+// input_frame), and with the button standing in for SPACE, which is what "go
+// on" is on every page. The stick needs nothing here -- it already arrives as
+// W and S.
+static keymask page_scan(void)
+{
+  keymask pressed;
+
+  input_frame();
+  input_scan(0, &pressed);
+  if (pressed & KEY_FIRE)
+    pressed |= KEY_SPACE;
+  music_key(pressed);
+  return pressed;
+}
+
 // Sit on a finished screen until the pilot presses one of `keys`, and say
 // which it was.
 static keymask wait_for_key(keymask keys)
@@ -325,8 +341,7 @@ static keymask wait_for_key(keymask keys)
 
   input_flush();
   do {
-    input_scan(0, &pressed);
-    music_key(pressed);
+    pressed = page_scan();
   } while (!(pressed & keys));
   return pressed & keys;
 }
@@ -344,11 +359,9 @@ static uint8_t choose_mission(uint8_t selected)
   input_flush();
 
   for (;;) {
-    keymask pressed;
+    keymask pressed = page_scan();
     uint8_t moved = selected;
 
-    input_scan(0, &pressed);
-    music_key(pressed);
     if (pressed & KEY_SPACE)
       return selected;
     if (pressed & KEY_STOP)
@@ -429,6 +442,11 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
     uint8_t hit, flat;
 
     input_scan(&held, &pressed);
+    // The joystick's button is whichever of SPACE and RETURN this mission
+    // wants, so a stick can fly any of them -- and it can never be the other
+    // one, the cargo bay's door on a camera mission.
+    if (pressed & KEY_FIRE)
+      pressed |= action;
     engine_beep_step();
     wind_drift();
     flat = battery_step();

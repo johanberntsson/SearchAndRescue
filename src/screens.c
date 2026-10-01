@@ -236,7 +236,7 @@ void screens_title(void)
 {
   vic4_text_mode();
   title_lines();
-  centre(PROMPT_ROW, "PRESS SPACE", PANEL_INK);
+  centre(PROMPT_ROW, "PRESS SPACE OR FIRE", PANEL_INK);
   music_line();
 }
 
@@ -256,7 +256,7 @@ void screens_missions(uint8_t selected)
     vic4_puts(11, row, missions[i].name, ink);
   }
 
-  centre(PROMPT_ROW, "W S   CHOOSE      SPACE   BRIEF", PANEL_LABEL);
+  centre(PROMPT_ROW, "W S   CHOOSE      SPACE OR FIRE   BRIEF", PANEL_LABEL);
   music_line();
 }
 
@@ -294,8 +294,13 @@ void screens_briefing(uint8_t mission_no)
   vic4_puts(4, 11, m->objective, PANEL_INK);
 
   vic4_puts(2, 13, "CONTROLS", PANEL_LABEL);
+  // A third column for the joystick, at 31 where it clears the longest of
+  // the three lines it shares: the stick is W A S D and the button is the
+  // mission's own key, whichever of SPACE and RETURN that is.
   vic4_puts(4, 14, "W S      FORWARD    BACK", PANEL_INK);
+  vic4_puts(31, 14, "STICK", PANEL_LABEL);
   vic4_puts(4, 15, "A D      TURN LEFT  RIGHT", PANEL_INK);
+  vic4_puts(31, 15, "STICK", PANEL_LABEL);
   vic4_puts(4, 16, "R F      CLIMB      DESCEND", PANEL_INK);
   vic4_puts(4, 17, "Q E      CAMERA UP  DOWN", PANEL_INK);
   vic4_puts(4, 18, "1 2 3    SPEED  SLOW NORMAL SPORT", PANEL_INK);
@@ -307,13 +312,14 @@ void screens_briefing(uint8_t mission_no)
   // out of the mission's cargo bay rather than out of a branch here.
   vic4_puts(4, 20, mission_action_name(m), PANEL_INK);
   vic4_puts(13, 20, mission_action_verb(m), PANEL_INK);
+  vic4_puts(31, 20, "FIRE", PANEL_LABEL);
   // Split rather than one string, so the verb lines up with every row above
   // it. The key column is nine wide because RUN/STOP is eight and would
   // otherwise touch its verb.
   vic4_puts(4, 21, "RUN/STOP", PANEL_INK);
   vic4_puts(13, 21, "ABANDON MISSION", PANEL_INK);
 
-  centre(PROMPT_ROW, "SPACE   LAUNCH", PANEL_LABEL);
+  centre(PROMPT_ROW, "SPACE OR FIRE   LAUNCH", PANEL_LABEL);
   music_line();
 }
 
@@ -349,6 +355,6 @@ void screens_debrief(uint8_t mission_no, flight_outcome how, uint16_t seconds)
   vic4_text_char(26, 13, ':', PANEL_INK);
   put_digits(27, 13, seconds % 60, 2, PANEL_INK);
 
-  centre(PROMPT_ROW, "SPACE   RETURN TO MISSIONS", PANEL_LABEL);
+  centre(PROMPT_ROW, "SPACE OR FIRE   RETURN TO MISSIONS", PANEL_LABEL);
   music_line();
 }

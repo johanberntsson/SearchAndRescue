@@ -28,8 +28,14 @@ typedef uint32_t keymask;
 #define KEY_M      0x4000  // mute: the music on a page, the engine in the air
 #define KEY_P      0x8000  // performance: show the frame rate. Undocumented
 #define KEY_T    0x010000  // arm the thermal camera; see src/thermal.h
+// A joystick's button, in either control port. The stick's four directions
+// are not keys of their own: they arrive as KEY_W, KEY_S, KEY_A and KEY_D,
+// so everything that reads those already answers to it. The button cannot do
+// the same, because what it means depends on where you are -- SPACE on a
+// page, the mission's own action key in the air -- so main.c says.
+#define KEY_FIRE 0x020000
 
-// Scan the matrix once. `held` gets every key down now, which is what flight
+// Scan the matrix and both joysticks once. `held` gets every key down now, which is what flight
 // wants; `pressed` gets the ones that went down since the last scan, which is
 // what a menu wants and what the report button wants, since holding it must
 // not file twice. Either may be null.
@@ -42,5 +48,11 @@ void input_scan(keymask *held, keymask *pressed);
 // Forget what is held, so that a key still down from the last screen does not
 // read as a fresh press on the next one.
 void input_flush(void);
+
+// Wait for the next frame. The pages call it before every scan: a joystick's
+// button bounces, and a loop with nothing else to do scans thousands of times
+// a second, which would see one push as several. Paced to the frame, the
+// settle count in input.c is a time.
+void input_frame(void);
 
 #endif

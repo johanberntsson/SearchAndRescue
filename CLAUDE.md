@@ -753,6 +753,44 @@ key cost a probe of nothing — but it did cost the mask its width: see
 `RUN/STOP` reads the same on the briefing and in the mission list as it does
 in the air: this is not the job, take me back.
 
+### The joystick
+
+**Either control port, and it is WASD and the mission's own button.** The
+stick's four directions come out of `input_scan` as `KEY_W`, `KEY_S`, `KEY_A`
+and `KEY_D`, so flying and choosing a mission needed no change at all; the
+button is `KEY_FIRE`, and `main.c` says what it means, because that depends on
+where you are -- `SPACE` on every page (`page_scan`), and in the air the
+mission's own action key, so it can never open the cargo bay on a camera
+mission. Climb, gimbal, speed, the thermal camera and `RUN/STOP` are still
+keyboard only. The briefing names it in a third column of `CONTROLS`, at
+column 31, and every page's prompt says `SPACE OR FIRE`.
+
+Three things about reading it, all because the sticks share CIA1 with the
+keyboard (the same trap `~/commodore/mega65/hexgame` worked through):
+
+- **a stick in port 1 reads as keys.** It pulls the column lines, `$DC01`,
+  low, so pushed up it is `3` in row 1 and `1` in row 7 -- sport and
+  cinematic at once. `read_sticks` reads the columns with every row
+  deselected, where no key can pull one, and `scan_row` masks out whatever
+  port 1 is holding. Port 2 pulls the *row* lines, which only matters if a
+  key on that row is also down, so it needs nothing.
+- **the button is debounced, the keys are not.** A microswitch chatters, and
+  the edge detector took one chattering push as two -- a page dismissed and
+  the next one with it. A joystick line counts as let go only after
+  `JOY_SETTLE` (3) released scans in a row.
+- **so the pages scan once a frame** (`input_frame`, waiting for raster line
+  240, which comes round once in a PAL frame). They used to spin as fast as
+  the CPU would go, at which three scans is microseconds and no debounce at
+  all. The flight already scans once a frame.
+
+**Tested headless by faking the stick in `read_sticks`**, since nothing
+headless can push one: with nothing faked the title waits untouched (no
+phantom presses); fire, down and then a fire that bounced on/off five times
+before settling landed on mission two's briefing, not launched past it; and
+fire four seconds into mission two released the EpiPen and failed the
+mission, which is `RETURN`. **A real stick has not been tried**, on the
+machine or in xemu -- port 1 above all.
+
 **The wind is the one thing in the flight model that is not the pilot's.**
 `wind_start` picks a direction and a strength at launch from a 16-bit
 xorshift seeded off the profiler's clock, `fly` adds the vector every frame
