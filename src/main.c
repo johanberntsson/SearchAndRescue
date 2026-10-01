@@ -660,5 +660,12 @@ int main(void)
 
     screens_debrief(mission_no, how, seconds);
     wait_for_space();
+#if !FLYNOW
+    // Back by way of the title rather than straight to the list: a flight is
+    // over, and the game goes round again from its front page. The list still
+    // opens on the mission just flown.
+    screens_title();
+    wait_for_space();
+#endif
   }
 }

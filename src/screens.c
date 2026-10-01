@@ -355,6 +355,6 @@ void screens_debrief(uint8_t mission_no, flight_outcome how, uint16_t seconds)
   vic4_text_char(26, 13, ':', PANEL_INK);
   put_digits(27, 13, seconds % 60, 2, PANEL_INK);
 
-  centre(PROMPT_ROW, "SPACE OR FIRE   RETURN TO MISSIONS", PANEL_LABEL);
+  centre(PROMPT_ROW, "SPACE OR FIRE   CONTINUE", PANEL_LABEL);
   music_line();
 }

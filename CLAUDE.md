@@ -545,7 +545,7 @@ what a further overlay should do too.
 ## The game
 
 `src/main.c` is a state machine over four full-screen pages and a flight:
-title, mission list, briefing, fly, debrief, back to the list. `src/screens.c`
+title, mission list, briefing, fly, debrief, back to the title. `src/screens.c`
 draws the pages, `src/mission.c` holds what there is to be sent on.
 
 **The three missions are the same flight with different words on it** — and,
