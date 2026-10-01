@@ -19,6 +19,11 @@ the instrument panel, the battery warning and the two new kinds of thing a
 map can be built out of. **The thermal camera, the third mission and the snow
 below all landed after it**, so `make release` is what it takes to see them.
 
+**Since then (1 Oct 2026):** a full-colour logo on the loading and title
+screens, **joystick support in either port** (the stick is `W` `A` `S` `D`,
+fire is `SPACE` on the pages and the mission's own key in the air), a silent
+loading screen, and the debrief now returns to the title.
+
 Three missions exist, end to end: a title screen, a mission list, a briefing, a
 flight, and a debrief. They are deliberately the same flight with different
 words on it — fly to somebody and press a key — because that is where the

@@ -1,14 +1,32 @@
 # What's next
 
-**Joystick support**, 1 Oct 2026: either port, the stick is WASD and fire is
-SPACE on the pages and the mission's action key in the air. Faked headless;
-**try a real stick on the machine, in port 1 especially** -- see The joystick
-in CLAUDE.md.
+## 1 Oct 2026
 
-**The logo is on the boot and title screens**, 1 Oct 2026. Made in
-https://codepo8.github.io/logo-o-matic/#goto-unknown; 38x4 full-colour
-characters out of `screenshots/logo.png`, see the boot screen in CLAUDE.md.
-Seen headless on both screens; **not yet seen on the machine**.
+- **The logo is on the boot and title screens.** Made in
+  https://codepo8.github.io/logo-o-matic/#goto-unknown; 38x4 full-colour
+  characters out of `screenshots/logo.png`, see the boot screen in CLAUDE.md.
+  **Seen on the machine**, after a fix: ink `$FF` on picture cells had set the
+  VIC-III blink and underline attributes, which drew flickering lines over the
+  logo and the panel artwork on hardware and nothing in xemu.
+- **Joystick support**, either port: the stick is WASD and fire is SPACE on
+  the pages and the mission's action key in the air. **Works on the machine.**
+  Still to check: a stick in **port 1** specifically, where the keyboard
+  masking is.
+- **The loading screen is silent.** The Kernal's disk routines chopped the
+  tune on hardware; it now starts at the title. **Not yet heard on the
+  machine since.**
+- **The debrief goes back to the title**, and the title on to the list.
+
+Open from today:
+
+- **Is a full-colour pixel of `$FF` drawn in the cell's ink?** The panel
+  artwork has 126 such pixels, drawn with ink 0. If they show black on the
+  machine, `convmap.py --panel` should keep off entry 255 as the logo does.
+- **Reading the disk without the Kernal** (F011 or SD directly) is the only way
+  to have music while loading, and might load faster too. A project, not a
+  tweak.
+- Climb, gimbal, speed and the thermal camera are keyboard only; fire plus a
+  direction could carry some of them if the joystick is to fly alone.
 
 ## Where it is
 

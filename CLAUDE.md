@@ -7,11 +7,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A MEGA65 heightfield voxel flight simulator / drone search-and-rescue game, written in C (Calypsi) with the rendering inner loop in 45GS02 assembly. `documentation/vision.md` holds the full technical and gameplay design; `todo.md` is the authoritative "what's next" and should be updated as work lands.
 
 Currently: three missions, end to end, **each over its own generated world**. A
-title screen, a mission list, a briefing, a flight, and a debrief — the lost
+title screen with a full-colour logo, a mission list, a briefing, a flight, and a debrief — the lost
 hiker on the step pyramid of the island at 46.687N 8.106E to be found and
 reported, an EpiPen to be dropped to a pair of hikers by a lake on the
 plains at 46.658N 8.149E, and a skier buried by an avalanche at 46.584N
-8.177E who cannot be seen at all until the **thermal camera** is armed. A
+8.177E who cannot be seen at all until the **thermal camera** is armed. Keyboard or joystick, either port. A
 flight also carries a wind that blows the drone
 about, a battery that runs it out, and per-mission weather; it can end four
 ways, all of them the same debrief page with different words on it.
@@ -617,6 +617,8 @@ ruled out on their own runs, so by elimination the hot-register bit is what
 stops the Kernal opening a file. That last step is inference and has not been
 run on its own.
 
+**Seen on the machine** (1 Oct 2026), after the attribute fix under Gotchas.
+
 So the boot screen is now drawn exactly the way every page is, with
 `vic4_puts` and `vic4_text_char`, and it *is* the title screen with LOADING and
 a bar under it. Its two inks are set with `vic4_set_entry` because the C65's
@@ -720,7 +722,9 @@ gimbal up and down, `1`/`2`/`3` the speed limiter (cinematic, normal, sport),
 `SPACE` to file a report, `RETURN` to release the cargo, `T` to arm the
 thermal camera, `RUN/STOP` to abandon
 the mission, and `M` to mute the engine — see Sound, where the same key mutes
-the tune on every screen that is not a flight.
+the tune on every screen that is not a flight. **A joystick in either port**
+is `W`/`A`/`S`/`D` and its button is `SPACE` on the pages and the mission's
+own key in the air; see The joystick below.
 
 **`P` shows the frame rate, and nothing on any screen says so.** It is off
 when the game starts and kept for the session like the mute. Deliberately
@@ -788,8 +792,14 @@ headless can push one: with nothing faked the title waits untouched (no
 phantom presses); fire, down and then a fire that bounced on/off five times
 before settling landed on mission two's briefing, not launched past it; and
 fire four seconds into mission two released the EpiPen and failed the
-mission, which is `RETURN`. **A real stick has not been tried**, on the
-machine or in xemu -- port 1 above all.
+mission, which is `RETURN`. **The faked-stick hack is the way to test any
+page flow headless**: a counter in `read_sticks` returning `JOY_FIRE` or a
+direction on chosen scans walks the menus, and a press at the end that opens
+the list proves which title a screenshot showed. Revert it before committing.
+
+**Works on a real MEGA65** (1 Oct 2026), menus and flight. Which port it was
+tried in was not said, so **port 1's masking is still unconfirmed** on the
+machine.
 
 **The wind is the one thing in the flight model that is not the pilot's.**
 `wind_start` picks a direction and a strength at launch from a 16-bit
