@@ -60,6 +60,10 @@
 
 void panel_init(void);
 
+// The panel back after a page has been over it mid-flight -- the controls
+// page, which is a pause. Its readouts were never touched, so none is redrawn.
+void panel_restore(void);
+
 // Write a string anywhere in the panel at all, in pixels rather than cells:
 // the text rides on a plane of hardware sprites over the artwork, which is
 // what took it off the 8-pixel character grid. See src/overlay.h.

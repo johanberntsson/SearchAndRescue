@@ -34,6 +34,9 @@ typedef uint32_t keymask;
 // the same, because what it means depends on where you are -- SPACE on a
 // page, the mission's own action key in the air -- so main.c says.
 #define KEY_FIRE 0x020000
+// The controls page, on the briefing and in the air: F1, or the MEGA65's own
+// HELP key, which is one key as far as anybody reading this mask is concerned.
+#define KEY_HELP 0x040000
 
 // Scan the matrix and both joysticks once. `held` gets every key down now, which is what flight
 // wants; `pressed` gets the ones that went down since the last scan, which is

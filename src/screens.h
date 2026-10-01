@@ -47,10 +47,16 @@ void screens_music(uint8_t on);
 // The mission list, with `selected` highlighted.
 void screens_missions(uint8_t selected);
 
-// What the pilot is being sent to do, and the controls to do it with. Both
-// come out of the mission rather than being spelled out here, so the two
-// kinds of flight read differently without being written twice.
+// What the pilot is being sent to do. It comes out of the mission rather than
+// being spelled out here, so the missions read differently without being
+// written twice.
 void screens_briefing(uint8_t mission);
+
+// Every key, on a page of its own: HELP or F1 from the briefing, and from the
+// air, where it is also the pause -- `paused` says which, and changes the
+// heading and the prompt. The mission is needed for its own button, which is
+// SPACE on a camera mission and RETURN on a delivery.
+void screens_controls(uint8_t mission, uint8_t paused);
 
 // How a flight ended. The three are one screen with different words on it,
 // which is all the difference there is between them.

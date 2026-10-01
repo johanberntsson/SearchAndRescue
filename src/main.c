@@ -351,6 +351,32 @@ static void wait_for_space(void)
   wait_for_key(KEY_SPACE);
 }
 
+// The controls page over a flight, which is the pause. Nothing in the flight
+// moves while it is up -- the loop is simply not running, so the battery, the
+// wind and the clock all stop with it -- and the motors go quiet, since the
+// page is not the air. Coming back puts the view and the panel back as they
+// were; neither was redrawn, only covered.
+//
+// Its own scan rather than page_scan, which would take M as the menus' mute
+// and start the tune over a paused flight.
+static void pause_flight(uint8_t mission_no)
+{
+  keymask pressed;
+
+  engine_set(0);
+  screens_controls(mission_no, 1);
+  input_flush();
+  do {
+    input_frame();
+    input_scan(0, &pressed);
+  } while (!(pressed & (KEY_SPACE | KEY_FIRE | KEY_HELP)));
+
+  vic4_view_mode();
+  panel_restore();
+  engine_set(engine_wanted);
+  input_flush();
+}
+
 // The mission list, until one is chosen or the pilot backs out to the title.
 // Returns which mission to brief, or mission_count() for "none of them".
 static uint8_t choose_mission(uint8_t selected)
@@ -442,6 +468,18 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
     uint8_t hit, flat;
 
     input_scan(&held, &pressed);
+
+    // HELP or F1: the controls, and the flight stands still under them. The
+    // time spent there is taken off the clock, and the frame is started over
+    // so the frame rate does not count it either.
+    if (pressed & KEY_HELP) {
+      uint32_t paused = profile_now32();
+
+      pause_flight(mission_no);
+      launched -= paused - profile_now32();  // the clock counts down
+      continue;
+    }
+
     // The joystick's button is whichever of SPACE and RETURN this mission
     // wants, so a stick can fly any of them -- and it can never be the other
     // one, the cargo bay's door on a camera mission.
@@ -638,11 +676,22 @@ int main(void)
       continue;
     }
 
-    screens_briefing(mission_no);
     // RUN/STOP reads the same on the briefing as it does in the air: this is
-    // not the job, take me back.
-    if (wait_for_key(KEY_SPACE | KEY_STOP) & KEY_STOP)
-      continue;
+    // not the job, take me back. HELP or F1 is the controls page, and back.
+    {
+      keymask key;
+
+      do {
+        screens_briefing(mission_no);
+        key = wait_for_key(KEY_SPACE | KEY_STOP | KEY_HELP);
+        if (key & KEY_HELP) {
+          screens_controls(mission_no, 0);
+          wait_for_key(KEY_SPACE | KEY_HELP);
+        }
+      } while (key & KEY_HELP);
+      if (key & KEY_STOP)
+        continue;
+    }
 #endif
 
     // **The flight is the one quiet place.** Every page has the tune under

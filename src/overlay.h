@@ -55,6 +55,11 @@ void overlay_on(void);
 // mission list.
 void overlay_off(void);
 
+// And bring them back exactly as they were, for a page that was a pause
+// rather than the end of a flight. overlay_off touches nothing but the enable
+// bits, so the plane, the positions and the battery's colour all survived it.
+void overlay_resume(void);
+
 // Blank a rectangle, to the pixel: the columns at either end are masked
 // rather than rounded out, so a field may be redrawn without eating whatever
 // shares its first and last byte columns. It always does share them -- text

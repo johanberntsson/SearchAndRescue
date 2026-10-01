@@ -207,3 +207,8 @@ void overlay_off(void)
 {
   SPRITE_ENABLE = 0;
 }
+
+void overlay_resume(void)
+{
+  SPRITE_ENABLE = (uint8_t)((1 << OVERLAY_SPRITES) - 1);
+}

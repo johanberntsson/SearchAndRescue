@@ -16,6 +16,13 @@
   tune on hardware; it now starts at the title. **Not yet heard on the
   machine since.**
 - **The debrief goes back to the title**, and the title on to the list.
+- **The controls have a page of their own**, on `HELP` or `F1` from the
+  briefing and from the air, where it pauses the flight and the pause is left
+  out of the flight time. The briefing is only the job now, with
+  `M MUSIC ON` and `HELP/F1 CONTROLS` under it. **Still to try on the
+  machine**: `HELP` itself, which is on the C65's extra keyboard row through
+  `$D607`/`$D608` and was worked out from xemu's source; `F1` is the ordinary
+  matrix and safe either way.
 
 Open from today:
 
@@ -79,8 +86,7 @@ rain costs 0.68 ms of that on mission two, and the snow about the same). The
 march is 160 rays; each fills the two pixels it owns. **The thermal camera
 costs nothing per frame at all**, being a palette swap.
 
-**The 32K is down to 2228 bytes free** in a default build, 2589 in a
-`PROFILE=0` one, which is the tightest it has been. The next thing of any size
+**The 32K is down to 1350 bytes free** in a default build, which is the tightest it has been. The next thing of any size
 wants the `HIGH_BSS` banking first -- see the Memory map notes in CLAUDE.md.
 **The disk is down to 1246 blocks free**, nearly all of it the avalanche map's
 268 KB.

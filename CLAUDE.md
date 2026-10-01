@@ -55,9 +55,20 @@ stamp working, not waste.
 make FLYNOW=1
 xemu-xmega65 -skipconfigfile -besure -headless -sleepless \
     -8 build/sar.d81 -screenshot out.png -dumpmem mem.bin &
-sleep 75; kill -INT $!          # xemu writes both files as it exits
+sleep 75; kill -TERM $!         # xemu writes both files as it exits
 python3 tools/profread.py mem.bin
 ```
+
+**Send `SIGTERM`, not `SIGINT`, from a script.** A job started with `&` by a
+non-interactive shell -- which is what an agent's shell and any script are --
+starts with SIGINT and SIGQUIT *ignored* (`SigIgn` in `/proc/<pid>/status`
+reads `...07`), so `kill -INT` does nothing at all and the emulator runs on
+for ever, writing no screenshot. xemu catches `SIGTERM` and exits through the
+same path, screenshot and dump included. The recipe used to say `-INT`, which
+only ever worked from an interactive terminal. And the scan counter of a
+faked key sequence (see The joystick) wants to stop counting rather than wrap:
+at `-sleepless` speed 65536 scans is about a minute of wall clock, and the
+presses replay.
 
 **`FLYNOW=1` is what makes a headless run measure anything.** The game now
 waits for a keypress on the title screen, then two more through the menus, and
@@ -96,7 +107,7 @@ between batches, which is enough to invent a boundary that is not there.
 ### Getting a screenshot of the thing you meant to photograph
 
 **The screenshot is written when xemu exits, and xemu takes its time about
-exiting** — ten to sixty seconds after the `SIGINT`, in practice. Meanwhile it
+exiting** — ten to sixty seconds after the signal, in practice. Meanwhile it
 keeps emulating. With `-sleepless` a four-minute flight is over in fifteen
 seconds of wall clock, so a sleep-then-kill almost always photographs the
 *debrief* and not the flight: three runs in a row came back with BATTERY EMPTY
@@ -239,8 +250,8 @@ room came from, in the order it was taken:
 **And it was spent again the same day** — 2652 on the tune, 583 on the engine
 note and 1449 on the campaign buffer, net of the C mission table it replaced.
 That was the point of the reclaim. The thermal camera and its 32-bit key mask
-then took about 820 more and snow about 295, so a default build is **93.2%
-used with 2228 bytes free**, and a `PROFILE=0` release 92.1% and 2589.
+then took about 820 more, snow about 295 and the controls page about 880, so
+a default build is **95.9% used with 1350 bytes free**.
 **That is the tightest this has been**, and the next thing of any size wants
 the `HIGH_BSS` banking above before it wants anything else.
 
@@ -721,8 +732,9 @@ Controls, which follow a real drone's (see `documentation/real-drones/`):
 gimbal up and down, `1`/`2`/`3` the speed limiter (cinematic, normal, sport),
 `SPACE` to file a report, `RETURN` to release the cargo, `T` to arm the
 thermal camera, `RUN/STOP` to abandon
-the mission, and `M` to mute the engine — see Sound, where the same key mutes
-the tune on every screen that is not a flight. **A joystick in either port**
+the mission, `M` to mute the engine — see Sound, where the same key mutes
+the tune on every screen that is not a flight — and `HELP` or `F1` for the
+controls page, which in the air is also the pause. See The controls page. **A joystick in either port**
 is `W`/`A`/`S`/`D` and its button is `SPACE` on the pages and the mission's
 own key in the air; see The joystick below.
 
@@ -757,6 +769,38 @@ key cost a probe of nothing — but it did cost the mask its width: see
 `RUN/STOP` reads the same on the briefing and in the mission list as it does
 in the air: this is not the job, take me back.
 
+### The controls page
+
+**Every key is on a page of its own, reached with `HELP` or `F1`** from the
+briefing and from the air (`screens_controls`). The briefing used to carry
+the list and was full to the last row with it; now it is only the job, and its
+bottom line says `M MUSIC ON` beside `HELP/F1 CONTROLS`. Only those two places
+reach it because the page names the mission's own button, `SPACE` or
+`RETURN`, and only they know which mission that is.
+
+- **In the air it is the pause.** `pause_flight` stops the motors, shows the
+  page and waits on its own scan rather than `page_scan`, which would take `M`
+  as the menus' mute and start the tune over a stopped flight. Nothing in the
+  flight moves while the loop is not running -- battery, wind, clock -- and
+  the time spent there comes off the flight time: `launched` is moved on by
+  the length of the pause, so the debrief does not count it. **Checked**:
+  five seconds flown, a minute paused, ten flown, and the debrief said 00:15.
+- **Coming back redraws nothing.** A page writes text numbers into the screen
+  tables and turns the sprites off, and that is all. `vic4_view_mode` puts the
+  framebuffer tiles back, and `panel_restore` puts back the artwork tiles and
+  turns the sprites on again (`overlay_resume`); the sprite plane, every
+  readout on it, the battery's colour, and a message still counting down were
+  never touched.
+- **`HELP` is not on the C64 matrix.** It is one of the C65's extra keys --
+  NO SCROLL, TAB, ALT, HELP, F9, F11, F13, ESC -- on a ninth row selected by
+  bit 1 of `$D607`, with its direction register at `$D608`, and read on
+  `$DC01` with every ordinary row deselected; HELP is bit 3. `scan_extra` in
+  `input.c` puts both registers back as it found them, since the ROM's own scan
+  drives them too. Worked out from xemu's source (`port_d607` in
+  `targets/mega65/`), which has no direction register, so the `$D608` half is
+  **still to be confirmed on a real MEGA65**. `F1` is row 0 bit 4 and needs
+  nothing special, which is why it is there as well.
+
 ### The joystick
 
 **Either control port, and it is WASD and the mission's own button.** The
@@ -766,7 +810,7 @@ button is `KEY_FIRE`, and `main.c` says what it means, because that depends on
 where you are -- `SPACE` on every page (`page_scan`), and in the air the
 mission's own action key, so it can never open the cargo bay on a camera
 mission. Climb, gimbal, speed, the thermal camera and `RUN/STOP` are still
-keyboard only. The briefing names it in a third column of `CONTROLS`, at
+keyboard only. The controls page names it in a third column, at
 column 31, and every page's prompt says `SPACE OR FIRE`.
 
 Three things about reading it, all because the sticks share CIA1 with the
@@ -974,19 +1018,12 @@ renderer learning there is a second mode at all.
   flight and must stay white — so `thermal_set` tells `weather_thermal`
   instead, and snow goes cold only when there is snow. See The weather.
 
-**The briefing names `T` on every mission**, in the `CONTROLS` list it already
-drew `1 2 3` on — a control the game does not name is a control nobody has,
+**The controls page names `T` on every mission**, beside `1 2 3` — a control the game does not name is a control nobody has,
 and mission three cannot be finished without this one. Mission three's brief
 says it a second time in its own words. Arming it in the air puts
 `THERMAL CAMERA ON` on the panel's message row, the way the mute and sport
 mode do; there is no persistent readout for it and it needs none, since the
 whole picture going cold says it better than a box could.
-
-**The briefing page starts on row 0 now**, which no other screen does. It was
-already full — four labelled blocks, each with a blank row before it, and the
-controls ending on the row above the prompt — so the seventeenth key had
-nowhere to go but the top margin, and the display's own border is the margin.
-The separators are rows 1, 5, 9 and 12, and there are no others.
 
 **A figure can be hidden from the optical camera**, which is what makes the
 sensor a thing you need rather than a thing you can look through.

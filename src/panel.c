@@ -170,7 +170,7 @@ void panel_puts(uint16_t x, uint8_t y, const char *s)
   overlay_text(x, y, s);
 }
 
-void panel_init(void)
+static void panel_tiles(void)
 {
   uint8_t col, row;
 
@@ -194,6 +194,11 @@ void panel_init(void)
     for (col = 0; col < OVERVIEW_CHARS; col++)
       vic4_panel_tile(PANEL_MAP_COL + col, PANEL_MAP_ROW + row,
                       (uint16_t)OVERVIEW_CHAR + row * OVERVIEW_CHARS + col);
+}
+
+void panel_init(void)
+{
+  panel_tiles();
 
   // And the text plane over the lot, wiped and empty. **Nothing is drawn
   // here**: every readout writes its own label with its own value, as one
@@ -207,6 +212,15 @@ void panel_init(void)
   // Nothing on the plane, so nothing that was drawn last time still holds.
   last_fix[0] = last_alt[0] = last_hdg[0] = last_fps[0] = 0;
   fps_shown = 0;
+}
+
+void panel_restore(void)
+{
+  // A page took the panel's rows for text and turned the sprites off, and
+  // that is all it did: the plane under them, every readout on it and what
+  // the moved() checks remember are as the flight left them.
+  panel_tiles();
+  overlay_resume();
 }
 
 // P, and nothing on the screen says so. The label is drawn once here rather

@@ -16,6 +16,11 @@
 //
 // A pressed key reads as 0.
 //
+// HELP is not in that matrix at all. It is one of the C65's extra keys --
+// NO SCROLL, TAB, ALT, HELP, F9, F11, F13, ESC -- which sit on a ninth row
+// selected by bit 1 of $D607 (port E of the C65's UART, with its direction
+// register at $D608) rather than by $DC00. See scan_extra().
+//
 // **The joysticks are on the same two registers**, which is the whole of what
 // makes reading them awkward. Port 2 pulls the *row select* lines low, $DC00,
 // and port 1 pulls the *column* lines low, $DC01 -- so a stick in port 1
@@ -36,6 +41,33 @@ static uint8_t scan_row(uint8_t row)
   __disable_interrupts();
   CIA1.pra = row;
   columns = CIA1.prb;
+  __restore_interrupt_state(state);
+
+  return (uint8_t)(~columns & ~port1_lines);
+}
+
+// The C65's extra row, read with every ordinary row deselected so that
+// nothing but it can pull a column low. HELP is bit 3. Both port E registers
+// are put back as they were found: the ROM's own keyboard scan drives them too.
+#define D607 (*(volatile uint8_t *)0xD607)
+#define D608 (*(volatile uint8_t *)0xD608)
+
+static uint8_t scan_extra(void)
+{
+  uint8_t columns, data, ddr, save;
+  __interrupt_state_t state = __get_interrupt_state();
+
+  __disable_interrupts();
+  save = CIA1.pra;
+  data = D607;
+  ddr = D608;
+  CIA1.pra = 0xFF;
+  D607 = (uint8_t)(data & ~0x02);
+  D608 = (uint8_t)(ddr | 0x02);
+  columns = CIA1.prb;
+  D608 = ddr;
+  D607 = data;
+  CIA1.pra = save;
   __restore_interrupt_state(state);
 
   return (uint8_t)(~columns & ~port1_lines);
@@ -116,6 +148,7 @@ static keymask scan(void)
   uint8_t r4 = scan_row(0xEF);
   uint8_t r5 = scan_row(0xDF);
   uint8_t r7 = scan_row(0x7F);
+  uint8_t extra = scan_extra();
   keymask keys = 0;
 
   if (r1 & 0x02)
@@ -152,6 +185,8 @@ static keymask scan(void)
     keys |= KEY_P;
   if (r2 & 0x40)
     keys |= KEY_T;
+  if ((r0 & 0x10) || (extra & 0x08))  // F1, or HELP
+    keys |= KEY_HELP;
 
   // The stick is WASD: forward, back and yaw in the air, up and down a list.
   if (joy & JOY_UP)

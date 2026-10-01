@@ -44,16 +44,47 @@ static void centre(uint8_t row, const char *s, uint8_t colour)
 // drawing it and only main knows when it changes.
 static uint8_t music_state = 1;
 
+// Where the line starts. Centred on its own; the briefing shares the row with
+// the key for the controls page and moves it left to make room, and the mute
+// key has to redraw it wherever the page put it.
+#define MUSIC_TEXT_W 13
+#define MUSIC_COL    ((PANEL_COLS - MUSIC_TEXT_W) / 2)
+static uint8_t music_col = MUSIC_COL;
+
 static void music_line(void)
 {
-  centre(SOUND_ROW, music_state ? "M   MUSIC ON " : "M   MUSIC OFF",
-         PANEL_LABEL);
+  vic4_puts(music_col, SOUND_ROW,
+            music_state ? "M   MUSIC ON " : "M   MUSIC OFF", PANEL_LABEL);
 }
 
 void screens_music(uint8_t on)
 {
   music_state = on;
   music_line();
+}
+
+// The line as every page but the briefing draws it.
+static void sound_line(void)
+{
+  music_col = MUSIC_COL;
+  music_line();
+}
+
+// And as the briefing does: the mute, then the key for the controls page,
+// which is reachable from here and from the air and nowhere else -- the
+// mission's own button is one of its lines, and only those two places know
+// which mission that is.
+#define HELP_TEXT   "HELP/F1   CONTROLS"
+#define SOUND_GAP   4
+#define HELP_COL    (MUSIC_COL_HELP + MUSIC_TEXT_W + SOUND_GAP)
+#define MUSIC_COL_HELP \
+  ((PANEL_COLS - MUSIC_TEXT_W - SOUND_GAP - (sizeof HELP_TEXT - 1)) / 2)
+
+static void sound_line_help(void)
+{
+  music_col = MUSIC_COL_HELP;
+  music_line();
+  vic4_puts(HELP_COL, SOUND_ROW, HELP_TEXT, PANEL_LABEL);
 }
 
 // What the briefing calls the mission's weather. A table would want keeping in
@@ -237,7 +268,7 @@ void screens_title(void)
   vic4_text_mode();
   title_lines();
   centre(PROMPT_ROW, "PRESS SPACE OR FIRE", PANEL_INK);
-  music_line();
+  sound_line();
 }
 
 void screens_missions(uint8_t selected)
@@ -257,7 +288,7 @@ void screens_missions(uint8_t selected)
   }
 
   centre(PROMPT_ROW, "W S   CHOOSE      SPACE OR FIRE   BRIEF", PANEL_LABEL);
-  music_line();
+  sound_line();
 }
 
 void screens_briefing(uint8_t mission_no)
@@ -266,61 +297,75 @@ void screens_briefing(uint8_t mission_no)
   uint8_t i;
 
   vic4_text_mode();
-  vic4_puts(2, 0, "MISSION", PANEL_LABEL);
-  put_digits(10, 0, (uint16_t)(mission_no + 1), 1, PANEL_LABEL);
-  vic4_puts(13, 0, m->name, PANEL_INK);
+  vic4_puts(2, 2, "MISSION", PANEL_LABEL);
+  put_digits(10, 2, (uint16_t)(mission_no + 1), 1, PANEL_LABEL);
+  vic4_puts(13, 2, m->name, PANEL_INK);
 
-  // **The page starts on row 0**, which no other screen does and which is what
-  // paid for the thermal camera's line. The page was already full -- four
-  // labelled blocks, each with a blank row before it, and the controls list
-  // ending on the row above the prompt -- so the seventeenth key had nowhere
-  // to go but the top margin. The display's own border is the margin now.
-  //
-  // **A control the game does not name is a control nobody has**, and mission
-  // three cannot be finished without this one, so this was not optional.
-  //
-  // The separators are rows 1, 5, 9 and 12, and there are no others.
+  // The controls are a page of their own now (screens_controls), so this is
+  // only the job: what happened, where, with what, and what to do about it.
   for (i = 0; i < BRIEF_LINES; i++)
-    vic4_puts(2, (uint8_t)(2 + i), m->brief[i], PANEL_INK);
+    vic4_puts(2, (uint8_t)(5 + i), m->brief[i], PANEL_INK);
 
-  vic4_puts(2, 6, "LAST KNOWN POSITION", PANEL_LABEL);
-  put_position(22, 6, m, PANEL_INK);
-  vic4_puts(2, 7, "CARGO", PANEL_LABEL);
-  vic4_puts(22, 7, mission_cargo_name(m), PANEL_INK);
-  vic4_puts(2, 8, "WEATHER", PANEL_LABEL);
-  vic4_puts(22, 8, weather_name(m->weather), PANEL_INK);
+  vic4_puts(2, 10, "LAST KNOWN POSITION", PANEL_LABEL);
+  put_position(22, 10, m, PANEL_INK);
+  vic4_puts(2, 11, "CARGO", PANEL_LABEL);
+  vic4_puts(22, 11, mission_cargo_name(m), PANEL_INK);
+  vic4_puts(2, 12, "WEATHER", PANEL_LABEL);
+  vic4_puts(22, 12, weather_name(m->weather), PANEL_INK);
 
-  vic4_puts(2, 10, "OBJECTIVE", PANEL_LABEL);
-  vic4_puts(4, 11, m->objective, PANEL_INK);
-
-  vic4_puts(2, 13, "CONTROLS", PANEL_LABEL);
-  // A third column for the joystick, at 31 where it clears the longest of
-  // the three lines it shares: the stick is W A S D and the button is the
-  // mission's own key, whichever of SPACE and RETURN that is.
-  vic4_puts(4, 14, "W S      FORWARD    BACK", PANEL_INK);
-  vic4_puts(31, 14, "STICK", PANEL_LABEL);
-  vic4_puts(4, 15, "A D      TURN LEFT  RIGHT", PANEL_INK);
-  vic4_puts(31, 15, "STICK", PANEL_LABEL);
-  vic4_puts(4, 16, "R F      CLIMB      DESCEND", PANEL_INK);
-  vic4_puts(4, 17, "Q E      CAMERA UP  DOWN", PANEL_INK);
-  vic4_puts(4, 18, "1 2 3    SPEED  SLOW NORMAL SPORT", PANEL_INK);
-  // Named on every briefing and not only on the mission that needs it: the
-  // camera works over any of them, and a sensor nobody knows about is not a
-  // sensor. The key column is nine wide, as below.
-  vic4_puts(4, 19, "T        THERMAL CAMERA", PANEL_INK);
-  // The one line that differs between the two kinds of mission, and it comes
-  // out of the mission's cargo bay rather than out of a branch here.
-  vic4_puts(4, 20, mission_action_name(m), PANEL_INK);
-  vic4_puts(13, 20, mission_action_verb(m), PANEL_INK);
-  vic4_puts(31, 20, "FIRE", PANEL_LABEL);
-  // Split rather than one string, so the verb lines up with every row above
-  // it. The key column is nine wide because RUN/STOP is eight and would
-  // otherwise touch its verb.
-  vic4_puts(4, 21, "RUN/STOP", PANEL_INK);
-  vic4_puts(13, 21, "ABANDON MISSION", PANEL_INK);
+  vic4_puts(2, 15, "OBJECTIVE", PANEL_LABEL);
+  vic4_puts(4, 16, m->objective, PANEL_INK);
 
   centre(PROMPT_ROW, "SPACE OR FIRE   LAUNCH", PANEL_LABEL);
-  music_line();
+  sound_line_help();
+}
+
+void screens_controls(uint8_t mission_no, uint8_t paused)
+{
+  const mission *m = &missions[mission_no];
+
+  vic4_text_mode();
+  centre(2, paused ? "FLIGHT PAUSED" : "CONTROLS", PANEL_INK);
+
+  // **A control the game does not name is a control nobody has**, and mission
+  // three cannot be finished without T, so every key is here and the page is
+  // reachable from the briefing and from the air.
+  //
+  // A third column for the joystick, at 31 where it clears the longest line
+  // it shares: the stick is W A S D and the button is the mission's own key,
+  // whichever of SPACE and RETURN that is. The key column is nine wide,
+  // because RUN/STOP is eight and would otherwise touch its verb.
+  vic4_puts(4, 5, "W S      FORWARD    BACK", PANEL_INK);
+  vic4_puts(31, 5, "STICK", PANEL_LABEL);
+  vic4_puts(4, 6, "A D      TURN LEFT  RIGHT", PANEL_INK);
+  vic4_puts(31, 6, "STICK", PANEL_LABEL);
+  vic4_puts(4, 7, "R F      CLIMB      DESCEND", PANEL_INK);
+  vic4_puts(4, 8, "Q E      CAMERA UP  DOWN", PANEL_INK);
+  vic4_puts(4, 9, "1 2 3    SPEED  SLOW NORMAL SPORT", PANEL_INK);
+
+  // Named on every mission and not only the one that needs it: the camera
+  // works over any of them, and a sensor nobody knows about is not a sensor.
+  vic4_puts(4, 11, "T        THERMAL CAMERA", PANEL_INK);
+  // The one line that differs between the two kinds of mission, and it comes
+  // out of the mission's cargo bay rather than out of a branch here.
+  vic4_puts(4, 12, mission_action_name(m), PANEL_INK);
+  vic4_puts(13, 12, mission_action_verb(m), PANEL_INK);
+  vic4_puts(31, 12, "FIRE", PANEL_LABEL);
+  vic4_puts(4, 13, "RUN/STOP", PANEL_INK);
+  vic4_puts(13, 13, "ABANDON MISSION", PANEL_INK);
+
+  vic4_puts(4, 15, "M        ENGINE SOUND", PANEL_INK);
+  vic4_puts(4, 16, "HELP/F1  PAUSE AND CONTROLS", PANEL_INK);
+
+  // From the air the page is a pause, and there is nothing for M to mute:
+  // the tune is not playing and the motors are stopped until the flight goes
+  // on. So the line under the prompt is only drawn from the briefing.
+  if (paused) {
+    centre(PROMPT_ROW, "SPACE OR FIRE   RESUME", PANEL_LABEL);
+  } else {
+    centre(PROMPT_ROW, "SPACE OR FIRE   BACK", PANEL_LABEL);
+    sound_line();
+  }
 }
 
 void screens_debrief(uint8_t mission_no, flight_outcome how, uint16_t seconds)
@@ -356,5 +401,5 @@ void screens_debrief(uint8_t mission_no, flight_outcome how, uint16_t seconds)
   put_digits(27, 13, seconds % 60, 2, PANEL_INK);
 
   centre(PROMPT_ROW, "SPACE OR FIRE   CONTINUE", PANEL_LABEL);
-  music_line();
+  sound_line();
 }
