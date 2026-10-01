@@ -138,7 +138,7 @@ Build knobs, all in the Makefile:
 | `HGT_SIZE`, `COL_SIZE` | map resolutions, powers of two from 256 to 1024 |
 | `make release` | not a knob but a target: the `PROFILE=0` disk, into `release/sar-latest.d81` |
 | `make checkmusic` | also a target: both assemblers over the tune, byte for byte. Needs `acme` |
-| `campaign.yaml` | not a knob but the disk: the missions, and through them the maps and sprite sheets that get built |
+| `missions/campaign.yaml` | not a knob but the disk: the missions, and through them the maps and sprite sheets that get built |
 | `make sprtest` | also a target: a standalone PRG that asks whether the VIC-IV's hardware sprites work in this display. They do, on the machine as well -- it is kept because it is how that was settled |
 
 Where a frame goes (the older 160-pixel framebuffer, h256 c512, 64.7 ms; the

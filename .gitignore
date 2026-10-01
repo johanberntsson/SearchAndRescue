@@ -6,3 +6,5 @@ __pycache__/
 out.png
 mem.bin
 *.swp
+# Compiler listings (cc6502 -S) dropped at the top level.
+/*.s

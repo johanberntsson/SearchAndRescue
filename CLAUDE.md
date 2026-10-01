@@ -202,7 +202,7 @@ name and a section and **no `(type …)` at all** — which takes the named sect
 and never becomes a content area. `(type ram)` does not work.
 
 **The game has not been banked yet**, and what it needs first is its big BSS
-marked `HIGH_BSS`; `mega65-game.scm` and `src/bank.s` are waiting for it. 
+marked `HIGH_BSS`; `src/mega65-game.scm` and `src/bank.s` are waiting for it. 
 
 **What the game did get is its stack measured**, which needed no banking at
 all: 144 bytes of the toolchain's 4096, so it builds with 512 and went from
@@ -579,7 +579,7 @@ See Resources for what a map slot is and what switching costs.
 is what mission three adds, and it is the whole of what makes the second
 sensor a thing you need — see The thermal camera.
 
-**Adding a mission is a file in `missions/` and a line in `campaign.yaml`**,
+**Adding a mission is a file in `missions/` and a line in `missions/campaign.yaml`**,
 and nothing else at all — see The campaign below. The palette budget in
 Resources is what actually limits how many *figures* there can be, and bank 1
 holds three; there is a spare attic slot for a third map.
@@ -663,7 +663,7 @@ Everything that wants the view asks for it with `vic4_view_mode`, which
 
 ## The campaign
 
-**Nothing about a mission is compiled in.** `campaign.yaml` names the mission
+**Nothing about a mission is compiled in.** `missions/campaign.yaml` names the mission
 files, each file in `missions/` describes one mission, and each mission names
 the world it is flown over and the figure that stands in it.
 `tools/campaign.py` turns the lot into two things:
@@ -1469,7 +1469,7 @@ sun was measured against and the pyramid copied from.
 seed, its shape and the things built into its terrain. What is flown over it is
 a *mission*, which has a map and is not one: two rescues could be flown over
 the same island, and the map file would not change. The missions live in
-`missions/`, one YAML file each, and `campaign.yaml` lists them -- see The
+`missions/`, one YAML file each, and `missions/campaign.yaml` lists them -- see The
 campaign.
 
 **Several maps fit only because they are generated.** The hand-drawn pair was

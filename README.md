@@ -115,7 +115,7 @@ disk**.
   seen to be alive and the boot is one picture from the first second to the
   menu
 
-**The missions are not in the program.** `campaign.yaml` lists the mission
+**The missions are not in the program.** `missions/campaign.yaml` lists the mission
 files, each file in `missions/` describes one mission in a paragraph of YAML --
 its name, its brief as prose, what is in the cargo bay, the world it is flown
 over, the weather and the fix -- and `tools/campaign.py` turns them into a
@@ -254,8 +254,8 @@ included, so none of this has to be read here first.
 
 ## Layout
 
-    campaign.yaml   what goes on the disk: the missions, in order
-    missions/        one YAML file per mission
+    missions/       one YAML file per mission, and campaign.yaml: what goes
+                    on the disk, in order
     maps/            one YAML file per world, and the shared palette
     music/           the SID player and the tune, in ACME
     src/            engine: display, DMA, resource loading and decrunching,

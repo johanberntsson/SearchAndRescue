@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Turn campaign.yaml and the mission files it names into the disk's campaign.
 
-    python3 tools/campaign.py campaign.yaml build/campaign.bin build/campaign.mk
+    python3 tools/campaign.py missions/campaign.yaml build/campaign.bin build/campaign.mk
 
 Two outputs, because a campaign decides two different things:
 

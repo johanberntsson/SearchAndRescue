@@ -3,7 +3,7 @@
 // press a key. What varies is the cargo bay, and that one field decides the
 // rest -- see `cargo` below.
 //
-// **None of it is compiled in.** `campaign.yaml` and the files in `missions/`
+// **None of it is compiled in.** `missions/campaign.yaml` and the files in `missions/`
 // are the campaign; tools/campaign.py turns them into `campaign.bin`, which
 // the loader reads before anything else because it says how many maps and
 // figures there are to read after it. campaign_load() then points the array

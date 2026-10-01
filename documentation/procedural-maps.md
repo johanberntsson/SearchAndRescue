@@ -8,7 +8,7 @@ attic RAM at once. That is the thing the whole exercise was for: two generated
 maps are 186 KB crunched at the shipping resolution against 661 KB for the one
 hand-drawn pair, so a disk
 that held one world now holds two with room to spare. **The missions are data
-too now** -- `campaign.yaml` lists the files in `missions/`, each names the
+too now** -- `missions/campaign.yaml` lists the files in `missions/`, each names the
 world it is flown over, and `tools/campaign.py` writes both the binary the
 game reads at boot and the map list the Makefile builds from, so what used to
 be called `mission.bin` and `map.bin` is one file doing both jobs. The
@@ -318,7 +318,7 @@ needs to know that missions exist. See `documentation/on-device-maps-experiment.
 
 **Built, 15 Aug 2026**, under the name `campaign.bin` rather than
 `mission.bin`, because one file turned out to carry the whole campaign:
-`campaign.yaml` lists the files in `missions/` and `tools/campaign.py` writes
+`missions/campaign.yaml` lists the files in `missions/` and `tools/campaign.py` writes
 both the binary the game reads at boot and the Makefile fragment that says
 which maps and sprite sheets to build. See "The campaign" in CLAUDE.md. What
 it holds is what this section said it should:
@@ -394,7 +394,7 @@ to the generator from here.
 - ~~Separating world/terrain definition from mission/item definition into
   separate YAML files~~ — **done, and in a second file now.** `maps/*.yaml`
   describe worlds and nothing else; `missions/*.yaml` describe what is flown
-  over them, and `campaign.yaml` lists those. A mission has a map and is not
+  over them, and `missions/campaign.yaml` lists those. A mission has a map and is not
   one; the seam became annoying the moment the disk carried two maps, and it
   is a real seam now rather than a naming convention.
 

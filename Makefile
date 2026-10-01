@@ -72,7 +72,7 @@ ELF      = $(BUILD)/sar.elf
 PRG      = $(BUILD)/autoboot.c65
 D81      = $(BUILD)/sar.d81
 
-# **The campaign is what goes on the disk.** campaign.yaml names the mission
+# **The campaign is what goes on the disk.** missions/campaign.yaml names the mission
 # files, each mission names the world it is flown over and the figure that
 # stands in it, and tools/campaign.py collects the lot: the map list, their
 # ids and slot numbers, the sprite sheets, the disk's name, and the rules that
@@ -83,7 +83,7 @@ D81      = $(BUILD)/sar.d81
 # campaign.bin is the missions themselves, read off the disk at boot. It is
 # first in $(RES) because the loader reads it first: it says how many maps and
 # figures there are to read after it.
-CAMPAIGN = campaign.yaml
+CAMPAIGN = missions/campaign.yaml
 CAMPAIGN_MK = $(BUILD)/campaign.mk
 
 MAP_RES  = $(foreach n,$(MAP_NUMS),$(BUILD)/map$(n).hgt $(BUILD)/map$(n).col \
