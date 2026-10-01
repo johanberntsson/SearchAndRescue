@@ -7,7 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A MEGA65 heightfield voxel flight simulator / drone search-and-rescue game, written in C (Calypsi) with the rendering inner loop in 45GS02 assembly. `documentation/vision.md` holds the full technical and gameplay design; `todo.md` is the authoritative "what's next" and should be updated as work lands.
 
 Currently: three missions, end to end, **each over its own generated world**. A
-title screen with a full-colour logo, a mission list, a briefing, a flight, and a debrief — the lost
+title screen with a full-colour logo and a drone flying about under it, a
+mission list, a briefing, a flight, and a debrief, with every key on a
+controls page behind `HELP`/`F1` that is also the pause in the air — the lost
 hiker on the step pyramid of the island at 46.687N 8.106E to be found and
 reported, an EpiPen to be dropped to a pair of hikers by a lake on the
 plains at 46.658N 8.149E, and a skier buried by an avalanche at 46.584N
@@ -559,7 +561,9 @@ what a further overlay should do too.
 ## The game
 
 `src/main.c` is a state machine over four full-screen pages and a flight:
-title, mission list, briefing, fly, debrief, back to the title. `src/screens.c`
+title, mission list, briefing, fly, debrief, back to the title. The controls
+page is a fifth, reached sideways from the briefing and from the flight and
+returning to whichever it came from; see The controls page. `src/screens.c`
 draws the pages, `src/mission.c` holds what there is to be sent on.
 
 **The three missions are the same flight with different words on it** — and,
@@ -775,8 +779,8 @@ own key in the air; see The joystick below.
 **`P` shows the frame rate, and nothing on any screen says so.** It is off
 when the game starts and kept for the session like the mute. Deliberately
 undocumented in the game: it is a thing to watch while working on the
-renderer, not an instrument on a drone, and the briefing has no spare row for
-a line about it. It is row 5 of the matrix, which is why `input.c` scans six
+renderer, not an instrument on a drone, so the controls page leaves it out on
+purpose. It is row 5 of the matrix, which is why `input.c` scans six
 rows rather than five. **Confirmed on the machine on 17 Aug 2026**: nothing
 headless can press a key, so the emulator could only ever prove the drawing
 half of it, which it did by defaulting the flag on for one build.
@@ -789,9 +793,8 @@ so the fastest mode is the one that will fly you into a hill. The clamp is
 still applied on the crash frame, so the last picture is the hillside rather
 than a view from inside it, and the check is read at the *bottom* of the loop
 with the other exits so that frame reaches the screen first. Arming sport puts
-`SPORT: NO TERRAIN FOLLOWING` on the panel, which is the warning — the briefing
-deliberately does not carry one, because the page has no spare row and the
-panel says it at the moment the pilot chooses.
+`SPORT: NO TERRAIN FOLLOWING` on the panel, which is the warning — said at the
+moment the pilot chooses, which no page before the flight can do.
 
 `src/input.c` scans six matrix rows — row 0 for `RETURN`, row 7 bit 7 for
 `RUN/STOP` — and returns held keys and fresh presses from one scan, because an
@@ -874,6 +877,16 @@ mission, which is `RETURN`. **The faked-stick hack is the way to test any
 page flow headless**: a counter in `read_sticks` returning `JOY_FIRE` or a
 direction on chosen scans walks the menus, and a press at the end that opens
 the list proves which title a screenshot showed. Revert it before committing.
+
+**The same trick works for any key**, and is how the controls page and the
+pause were tested: a scan counter in `scan()` that ORs a `KEY_*` into the
+result on chosen scans -- SPACE through the title and list, HELP, then SPACE
+to resume and RUN/STOP to end it, after which the debrief's flight time says
+whether the pause was counted. Two things it needs: **the counter must stop
+rather than wrap** (65536 scans is about a minute of `-sleepless` wall
+clock, and the presses replay), and **a scan number of 0 never fires**, which
+is the way to switch one off. Pages scan once a frame at 50 a second; the
+flight about twelve times a second.
 
 **Works on a real MEGA65** (1 Oct 2026), menus and flight. Which port it was
 tried in was not said, so **port 1's masking is still unconfirmed** on the
