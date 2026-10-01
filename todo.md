@@ -31,6 +31,13 @@
 
 Open from today:
 
+- **Next: five missions, then a release.** Two more to write. What limits
+  them: all three map slots and all three figure slots are full, and the
+  palette has 4 entries free, which isn't enough for a fourth figure. So a new
+  mission reuses an existing map and figure, or the ceilings come up first.
+  A mission is a file in `missions/` and a line in `missions/campaign.yaml`,
+  with no code, so the 653 bytes left in the 32K are not in the way.
+
 - **Is a full-colour pixel of `$FF` drawn in the cell's ink?** The panel
   artwork has 126 such pixels, drawn with ink 0. If they show black on the
   machine, `convmap.py --panel` should keep off entry 255 as the logo does.
