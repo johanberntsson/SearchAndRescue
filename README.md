@@ -85,7 +85,7 @@ disk**.
   goes **yellow under a quarter and red under a tenth**, with a warning note
   on its own SID voice at each — the only thing in a flight that is not the
   motors
-- **A three voice SID tune** under every page — the loading screen, the title,
+- **A three voice SID tune** under every page — the title,
   the mission list, the briefing and the debrief — played from the ROM's own
   interrupt at 50 Hz and written into both stereo SIDs. The flight is the one
   quiet place

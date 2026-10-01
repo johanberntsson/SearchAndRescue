@@ -1044,7 +1044,7 @@ constants to move.
 
 ### The tune
 
-A three voice SID tune plays under **every page** — the loading screen, the
+A three voice SID tune plays under **every page but the loading screen** — the
 title, the mission list, the briefing and the debrief. `src/music.c` is the
 whole of the game's side of it: `music_set(0|1)` around the flight. Turning it
 on again rewinds rather than resumes — it is a title screen, not a radio — and
@@ -1085,12 +1085,15 @@ else; **ACME is needed only to check it**.
 `printf` reclaim was for. See the 32 KB note under Memory map for where the
 rest of that reclaim went.
 
-**The music is running while the resources load**, which is the one place it
-touches something timing-sensitive. It is fine in the emulator and should be
-fine on the machine — the D81 comes off the SD card through the F011
-controller rather than the serial bus — but if a load ever fails on hardware
-and nothing else explains it, moving `audio_begin()` below `load_resources` is
-the thing to try first.
+**The loading screen is silent, and that was heard rather than reasoned.**
+The tune used to start with the boot screen. In xemu it played cleanly through
+the load; **on a real MEGA65 it came out badly chopped** (1 Oct 2026), because
+the Kernal's disk routines hold interrupts off while they read and the player
+rides the interrupt. Nothing of ours masks them during a load, so the only real
+fix is reading the disk without the Kernal -- the F011 or the SD card
+directly -- which is a project and not a tweak. So `audio_begin()` still
+installs the handler at boot, and `music_set` waits for the title. Another case
+of the emulator's timing not being the machine's.
 
 ### The engine note
 

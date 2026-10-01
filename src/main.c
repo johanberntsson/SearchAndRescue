@@ -573,12 +573,13 @@ int main(void)
   // ROM's screen, dressed up to look like the title screen that follows it.
   screens_boot();
 
-  // The tune comes up with the loading screen and stays up through the title
-  // and the mission list. It rides the ROM's own interrupt, so it goes on
-  // playing through the load, the benchmarks and vic4_init without any of
-  // them knowing about it. The same interrupt carries the engine note later.
+  // The interrupt goes in now and the tune does not start until the title.
+  // **The load is silent on purpose**: the Kernal's disk routines hold
+  // interrupts off while they read, and on a real MEGA65 that chopped the
+  // tune into pieces -- heard on 1 Oct 2026 -- where xemu played it cleanly.
+  // Nothing of ours masks them, so the fix would be reading the disk without
+  // the Kernal. The same interrupt carries the engine note later.
   audio_begin();
-  music_set(music_wanted);
 
   if (load_resources(screens_loading)) {
     screens_load_failed(loader_error(), loader_error_file());
@@ -615,6 +616,7 @@ int main(void)
   // run -- and therefore the way the several-maps-on-one-disk arrangement is
   // checked at all.
 #if !FLYNOW
+  music_set(music_wanted);
   screens_title();
   wait_for_space();
 #endif
