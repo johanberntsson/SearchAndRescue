@@ -1,0 +1,40 @@
+# A delivery that starts with an empty bay. `pickup: yes` says the cargo is
+# waiting at the fix: land on that roof and it is loaded, and the briefing
+# names the fix as where to collect it rather than as a last known position.
+# Then it goes to the figure, at `survivor:`, by RETURN within five cells as
+# in First Aid -- or by landing beside them, which hands it over. Opening the
+# bay before anything is in it costs nothing.
+#
+# The two hospitals are the two houses in maps/island.yaml: the large one on
+# the north road from the pyramid, and the medium one to the south. **Move a
+# house and its fix here moves with it** -- the fix is the house's centre in
+# cells, which is its `x`, `y` divided by four.
+
+name: Transplant Delivery
+
+brief: >
+  A donor heart waits on the north
+  hospital's roof: land to load it.
+  South hospital: 46.584N 8.117E.
+
+objective: Deliver it to the south hospital
+
+cargo: Donor heart
+pickup: yes
+
+# The north hospital, the large house at 427,503: cell 106,125.
+map: maps/island.yaml
+fix:
+  lat: 46.630
+  lon: 8.106
+# The south hospital, the medium house at 470,686: cell 117,171. The figure
+# stands on its roof.
+survivor:
+  lat: 46.584
+  lon: 8.117
+
+figure: resources/medicalemergency-sprite.png
+weather: clear
+
+done: The heart reached theatre in time
+lost: The donor heart is lost

@@ -19,3 +19,4 @@ missions:
   - missions/first-aid.yaml
   - missions/avalanche.yaml
   - missions/shipwreck.yaml
+  - missions/transplant.yaml

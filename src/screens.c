@@ -128,11 +128,11 @@ static uint8_t put_fix(uint8_t col, uint8_t row, uint16_t mdeg, uint8_t width,
   return (uint8_t)(col + width + 5);
 }
 
-static void put_position(uint8_t col, uint8_t row, const mission *m,
+static void put_position(uint8_t col, uint8_t row, uint16_t lat, uint16_t lon,
                          uint8_t colour)
 {
-  col = put_fix(col, row, m->lat, 2, 'N', colour);
-  put_fix((uint8_t)(col + 1), row, m->lon, 3, 'E', colour);
+  col = put_fix(col, row, lat, 2, 'N', colour);
+  put_fix((uint8_t)(col + 1), row, lon, 3, 'E', colour);
 }
 
 // ---------------------------------------------------------------------------
@@ -317,8 +317,9 @@ void screens_briefing(uint8_t mission_no)
   for (i = 0; i < BRIEF_LINES; i++)
     vic4_puts(2, (uint8_t)(5 + i), m->brief[i], PANEL_INK);
 
-  vic4_puts(2, 10, "LAST KNOWN POSITION", PANEL_LABEL);
-  put_position(22, 10, m, PANEL_INK);
+  vic4_puts(2, 10, m->pickup ? "COLLECT FROM" : "LAST KNOWN POSITION",
+            PANEL_LABEL);
+  put_position(22, 10, m->lat, m->lon, PANEL_INK);
   vic4_puts(2, 11, "CARGO", PANEL_LABEL);
   vic4_puts(22, 11, mission_cargo_name(m), PANEL_INK);
   vic4_puts(2, 12, "WEATHER", PANEL_LABEL);
@@ -404,7 +405,9 @@ void screens_debrief(uint8_t mission_no, flight_outcome how, uint16_t seconds)
   vic4_text_mode();
   centre(6, heading, PANEL_INK);
   centre(9, what, PANEL_LABEL);
-  put_position(12, 11, m, PANEL_INK);
+  // Where the figure was, not where the briefing sent you: the raft drifted
+  // off the wreck, and a transplant ends at the hospital it was taken to.
+  put_position(12, 11, m->found_lat, m->found_lon, PANEL_INK);
 
   vic4_puts(12, 13, "FLIGHT TIME", PANEL_LABEL);
   put_digits(24, 13, seconds / 60, 2, PANEL_INK);

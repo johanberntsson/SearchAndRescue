@@ -35,7 +35,7 @@ HIGH_BSS static uint8_t campaign[CAMPAIGN_BYTES];
 //
 //   0 name   2 brief[0..2]   8 objective   10 cargo   12 done   14 lost
 //  16 lat   18 lon           20 figure     21 weather 22 map    23 hidden
-//  24 survivor lat           26 survivor lon          28 lifeboat 29 spare
+//  24 survivor lat           26 survivor lon          28 lifeboat 29 pickup
 #define REC_BYTES     30
 #define REC_NAME      0
 #define REC_BRIEF     2   // and two more, two bytes apart
@@ -52,6 +52,7 @@ HIGH_BSS static uint8_t campaign[CAMPAIGN_BYTES];
 #define REC_FOUND_LAT 24
 #define REC_FOUND_LON 26
 #define REC_LIFEBOAT  28
+#define REC_PICKUP    29
 
 mission missions[MISSION_MAX];
 
@@ -140,6 +141,7 @@ const char *campaign_load(void)
     m->found_lat = word(rec, REC_FOUND_LAT);
     m->found_lon = word(rec, REC_FOUND_LON);
     m->lifeboat = rec[REC_LIFEBOAT];
+    m->pickup = rec[REC_PICKUP];
   }
   return 0;
 }

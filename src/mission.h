@@ -66,16 +66,21 @@ typedef struct {
   uint16_t found_lon;
   // Non-zero to float the figure in a life raft: see src/lifeboat.h.
   uint8_t lifeboat;
+  // Non-zero when the cargo is not aboard at launch: it waits at the fix, the
+  // drone lands there to take it on, and only then is there anything to
+  // deliver to the figure.
+  uint8_t pickup;
 } mission;
 
 // How many the game can hold, which is what tools/campaign.py checks a
 // campaign against. The mission list draws them two rows apart from row 6, so
 // eight is what the page has room for; the buffer is what the whole campaign
-// -- records and every string in it -- has to fit inside, and 455 bytes is
-// what the two shipping missions come to. Both are spelled once more in
+// -- records and every string in it -- has to fit inside. Five missions came
+// to 1134 bytes and outgrew the 1024 it used to be; it is 2048 now that it
+// lives in HIGH_BSS rather than the 32K. Both are spelled once more in
 // tools/campaign.py and a disagreement is caught there.
 #define MISSION_MAX    8
-#define CAMPAIGN_BYTES 1024
+#define CAMPAIGN_BYTES 2048
 
 extern mission missions[MISSION_MAX];
 

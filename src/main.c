@@ -20,6 +20,14 @@
 #define TURN_RATE   2   // angle units per frame
 #define CLIMB_RATE  2   // height units per frame
 #define GROUND_GAP  12  // never fly closer than this to the terrain
+// Landed is sitting on the terrain following's floor, give or take two
+// presses of climb: the drone cannot go lower than GROUND_GAP, so that is
+// where holding F puts it.
+#define LANDED      (GROUND_GAP + 2 * CLIMB_RATE)
+// How near the fix a landing has to be to collect what is waiting there, in
+// 8.8 cells either way. The pickup is a building several cells across, and
+// any of its roof will do.
+#define PICKUP_RANGE 0x300
 
 // The gimbal, in screen rows of horizon. Down means the horizon climbs out of
 // the top of the picture, so tilting down lowers the number.
@@ -422,6 +430,9 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
   uint16_t fps10 = 0;
   uint16_t message_left = 0;
   uint32_t launched;
+  // Whether the cargo is aboard. It always was, until a mission could leave
+  // it waiting at the fix to be collected.
+  uint8_t loaded = !m->pickup;
 
   // The mission's own map: the renderer's plane tables, the palette its
   // climate wants and the panel's overview, all from attic RAM and none of it
@@ -445,7 +456,7 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
   panel_message(STANDBY);
   message_left = MESSAGE_FRAMES;  // it fades to the fix, like any other
   panel_speed(speed_mode);
-  panel_cargo(mission_cargo_name(m));
+  panel_cargo(loaded ? mission_cargo_name(m) : "EMPTY");
   // Seeded before anything asks for a random number, and the weather set
   // before the wind because arming the rain scatters its first drops.
   weather_seed((uint16_t)profile_now32());
@@ -503,6 +514,20 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
     wind_drift();
     flat = battery_step();
     hit = fly(&cam, held);
+    // Down on the roof at the fix, with the bay still empty: take it on.
+    if (!loaded
+        && cam.height <= (int16_t)voxel_ground(cam.x, cam.y) + LANDED) {
+      int16_t dx = (int16_t)(cam.x - FIX_TO_X(m->lon));
+      int16_t dy = (int16_t)(cam.y - FIX_TO_Y(m->lat));
+
+      if (dx < PICKUP_RANGE && dx > -PICKUP_RANGE
+          && dy < PICKUP_RANGE && dy > -PICKUP_RANGE) {
+        loaded = 1;
+        panel_cargo(m->cargo);
+        panel_message("CARGO LOADED");
+        message_left = MESSAGE_FRAMES;
+      }
+    }
     if (set_speed(held)) {
       panel_message("SPORT: NO TERRAIN FOLLOW");
       message_left = MESSAGE_FRAMES;
@@ -583,7 +608,18 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
     // The mission's own button: the camera's shutter, or the cargo release.
     // sprite_reportable answers for the frame just drawn, which is why this
     // comes after the render rather than with the rest of the input.
-    if (pressed & action) {
+    // A collected cargo can be landed with as well as dropped: setting down
+    // beside the figure hands it over. sprite_in_range is the frame's own.
+    if (m->pickup && loaded && sprite_in_range()
+        && cam.height <= (int16_t)voxel_ground(cam.x, cam.y) + LANDED) {
+      *seconds = elapsed(launched);
+      return FLIGHT_DONE;
+    }
+    if ((pressed & action) && !loaded) {
+      // Nothing in the bay to drop yet, and opening it costs nothing.
+      panel_message("COLLECT THE CARGO FIRST");
+      message_left = MESSAGE_FRAMES;
+    } else if (pressed & action) {
       if (m->cargo ? sprite_in_range() : sprite_reportable()) {
         *seconds = elapsed(launched);
         return FLIGHT_DONE;

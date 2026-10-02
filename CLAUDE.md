@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A MEGA65 heightfield voxel flight simulator / drone search-and-rescue game, written in C (Calypsi) with the rendering inner loop in 45GS02 assembly. `documentation/vision.md` holds the full technical and gameplay design; `todo.md` is the authoritative "what's next" and should be updated as work lands.
 
-Currently: four missions, end to end, over three generated worlds. A
+Currently: five missions, end to end, over three generated worlds. A
 title screen with a full-colour logo and a drone flying about under it, a
 mission list, a briefing, a flight, and a debrief, with every key on a
 controls page behind `HELP`/`F1` that is also the pause in the air — the lost
@@ -15,7 +15,9 @@ reported, an EpiPen to be dropped to a pair of hikers by a lake on the
 plains at 46.658N 8.149E, and a skier buried by an avalanche at 46.584N
 8.177E who cannot be seen at all until the **thermal camera** is armed, and
 survivors of a shipwreck off the island's south coast, adrift in a **life
-raft** at 46.544N 8.153E that only the thermal camera can see at all. Keyboard or joystick, either port. A
+raft** at 46.544N 8.153E that only the thermal camera can see at all, and a
+donor heart to be **collected by landing** on one island hospital and taken to
+another. Keyboard or joystick, either port. A
 flight also carries a wind that blows the drone
 about, a battery that runs it out, and per-mission weather; it can end four
 ways, all of them the same debrief page with different words on it.
@@ -222,7 +224,7 @@ and never becomes a content area. `(type ram)` does not work.
 in `__low_level_init`, `src/mega65-game.scm` declares `$A000-$BFFF` as
 `highram` with no `(type …)`, and `HIGH_BSS` in `loader.h` marks what goes
 there: the campaign buffer and `load_staging`, 2052 bytes, which took the 32K
-from 41 bytes free to **2075**. **The Kernal reads the whole disk with BASIC
+from 41 bytes free to **2075** -- 1569 after the pickup mission. **The Kernal reads the whole disk with BASIC
 out** — every map, the campaign straight into the window — which was the one
 thing the mapgen branch had never shown, since it did no disk I/O banked.
 Seen in xemu; **still to boot on the machine**. Six more kilobytes of the
@@ -575,7 +577,7 @@ page is a fifth, reached sideways from the briefing and from the flight and
 returning to whichever it came from; see The controls page. `src/screens.c`
 draws the pages, `src/mission.c` holds what there is to be sent on.
 
-**The four missions are the same flight with different words on it** — and,
+**The five missions are the same flight with different words on it** — and,
 as of the several-map disk, over different country. The shape is deliberate:
 fly to a figure standing at a fix and press a key. The mission table is what
 differs, and the one field the rest hangs off is `cargo`:
@@ -600,8 +602,21 @@ travel together and cannot be edited apart: mission one is flown over
 `maps/island.yaml` and stands its hiker on the step pyramid there; mission two
 over `maps/plains.yaml`, by the largest lake; mission three over
 `maps/avalance.yaml`, on a snow slope three quarters of the way up a mountain;
-mission four back over the island, at sea. See Resources for what a map slot
-is and what switching costs.
+mission four back over the island, at sea; mission five between the island's
+two houses, which `missions/transplant.yaml` calls hospitals. See Resources for
+what a map slot is and what switching costs.
+
+**A delivery can start with the bay empty.** `pickup: yes` says the cargo is
+waiting at the fix: the drone lands there — sits on the terrain following's
+floor, within `PICKUP_RANGE` (three cells) of the fix — and `CARGO LOADED`
+goes up with the cargo's name in the bay. Until then `RETURN` says `COLLECT
+THE CARGO FIRST` and costs nothing. The figure is then at `survivor:`, and
+it is delivered by `RETURN` within five cells as in First Aid **or by landing
+beside it**, which a pickup mission alone allows. The briefing labels the fix
+`COLLECT FROM` instead of `LAST KNOWN POSITION`, and **every debrief now
+gives the figure's position**, not the fix: the raft drifted, and the heart
+ends at the second hospital. Seen headless: loaded on the north roof, refused
+at the south hospital with an empty bay, delivered by landing with a full one.
 
 **The fix and the figure can be in different places.** `survivor:` in a
 mission file is where the figure really stands, and the fix is only what the
@@ -795,8 +810,9 @@ two fields that can disagree is exactly what the game's own design avoids.
 only value beyond `no`: the figure is under the snow and is not drawn until
 the thermal camera is armed. It rides in the record's byte 23, which was spare
 until it existed. See The thermal camera. The record is 30 bytes now:
-`survivor:` is 24-27 and `lifeboat:` 28, with 29 spare; four missions come to
-881 of the campaign's 1024 bytes.
+`survivor:` is 24-27, `lifeboat:` 28 and `pickup:` 29, so it is full. Five
+missions came to 1134 bytes, past the 1024 the buffer used to be, and
+`CAMPAIGN_BYTES` is 2048 now that the buffer is in `HIGH_BSS`.
 
 **Bank 1 is full to the byte now.** `SPRITE_MAX` figures at 1028 bytes each
 from `$1DC00`, then `MAP_SLOTS` overview maps from `$1EC00`, which end exactly
@@ -1921,6 +1937,12 @@ The word came out wrong at the far end of a handover, so three rewrites went
 into the *move* — byte stores, a far store, a DMA — and all three moved the
 same wrong word. **When a value is wrong after a move, print it at the source
 before touching the move.** One run would have done it.
+
+**A constant-false term in an `&&` can be dropped.** `if (f < 40 && ROUTE ==
+1)` with `ROUTE` defined as 2 compiled to `if (f < 40)` -- the listing has the
+`cmp #40` and nothing for the second half. It was in a test hack and cost an
+afternoon's worth of wrong conclusions about the code it was testing, which
+was right all along. Use `#if` for a compile-time condition, never `&&`.
 
 Calypsi 5.18 emits a call to `_FillZPQ` — a runtime helper that is in none of
 its libraries — when a function call appears inside a 32-bit expression. The

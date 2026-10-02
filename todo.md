@@ -44,19 +44,30 @@
   headless**, optical and thermal and sunk; **not yet flown on the machine**,
   where the thing to check is that The Lost Hiker's sea is clean after a
   Shipwreck flight.
-- **The 32K is down to 41 bytes free.** The raft's buffer is in attic RAM
+- **Mission five, Transplant Delivery**, over the island: land on the north
+  hospital's roof (46.630N 8.106E) to load a donor heart, then drop it or land
+  it at the south hospital (46.584N 8.117E), the two houses now in
+  `maps/island.yaml`. New `pickup: yes` field; see The game in CLAUDE.md.
+  **Not yet flown on the machine.**
+- **The 32K is no longer the limit: BASIC is banked out** and `$A000-$BFFF`
+  holds the campaign and the loader's staging buffer, so the program area went
+  from 41 bytes free to 2075 (1569 after mission five). **Boot it on the
+  machine first** -- the Kernal reading the disk with BASIC out has only been
+  seen in xemu.
+- **The checkview reference is retaken**, with the houses and road in the
+  island and the painted panel under the view, and `find_view` learned that
+  the screen colour beside the picture is not black any more.
+- Before banking, **the 32K was down to 41 bytes free.** The raft's buffer is in attic RAM
   because the program area was three bytes short of it. The fifth mission
   needs no code, but anything that does needs the `HIGH_BSS` banking first.
 
 Open from today:
 
-- **Next: five missions, then a release.** One more to write. What limits
-  it: all three map slots and all three figure slots are full, and the
-  palette has 3 entries free, which isn't enough for a fourth figure. So a new
-  mission reuses an existing map and figure, or the ceilings come up first.
-  A mission is a file in `missions/` and a line in `missions/campaign.yaml`,
-  with no code -- which matters, since the 32K has 41 bytes left. The
-  campaign has 143 of its 1024 bytes left, which is about one more.
+- **Next: a release.** Five missions are written. Fly all five on the
+  machine first -- the banking above is the risky part. All three map slots
+  and all three figure slots are full and the palette has 3 entries free, so
+  a sixth mission reuses a map and a figure; the campaign has 914 of its 2048
+  bytes left.
 
 - **Is a full-colour pixel of `$FF` drawn in the cell's ink?** The panel
   artwork has 126 such pixels, drawn with ink 0. If they show black on the

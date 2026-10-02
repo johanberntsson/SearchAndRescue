@@ -40,7 +40,7 @@ MISSION_MAX = 8       # MISSION_MAX in src/mission.h
 MAP_SLOTS = 3         # MAP_SLOTS in src/loader.h: 2 MB of attic RAM each
 SPRITE_MAX = 3        # SPRITE_MAX in src/sprite.h: bank 1 between the
                       # billboards and the overview maps
-CAMPAIGN_BYTES = 1024  # CAMPAIGN_BYTES in src/mission.h: the near buffer
+CAMPAIGN_BYTES = 2048  # CAMPAIGN_BYTES in src/mission.h: in HIGH_BSS
 
 # The panel's background artwork. One picture for the whole game rather than
 # anything a mission chooses, so it is a constant here and not a campaign
@@ -78,7 +78,7 @@ HIDDEN = {"no": 0, "thermal": 1}
 #
 #   0 name   2 brief[0..2]   8 objective   10 cargo   12 done   14 lost
 #  16 lat   18 lon           20 figure     21 weather 22 map    23 hidden
-#  24 survivor lat           26 survivor lon          28 lifeboat 29 spare
+#  24 survivor lat           26 survivor lon          28 lifeboat 29 pickup
 #
 # Every sixteen-bit field from 0 to 14 is an offset into the string pool, and
 # offset 0 means there is none -- nothing can live at 0, which is where the
@@ -209,6 +209,18 @@ def read_mission(path, maps, figures):
     # src/lifeboat.h. YAML reads `yes` as True already.
     m["lifeboat"] = 1 if doc.get("lifeboat") else 0
 
+    # The cargo is not aboard at launch: it is waiting at the fix, and the
+    # drone has to land there to take it on. The figure -- `survivor:` -- is
+    # then where it is going. Only a delivery has anything to pick up.
+    m["pickup"] = 1 if doc.get("pickup") else 0
+    if m["pickup"] and not m["cargo"]:
+        raise Error("%s: `pickup` with no `cargo` -- there is nothing to "
+                    "collect" % who)
+    if m["pickup"] and "survivor" not in doc:
+        raise Error("%s: `pickup` needs `survivor:` too -- the fix is where "
+                    "the cargo is collected, and the figure has to be "
+                    "somewhere else to deliver it to" % who)
+
     weather = str(need("weather")).lower()
     if weather not in WEATHER:
         raise Error("%s: weather `%s` is not one of %s"
@@ -259,7 +271,7 @@ def build_bin(missions):
         records += bytes([m["figure"], m["weather"], m["map"], m["hidden"]])
         for n in (m["found_lat"], m["found_lon"]):
             records += n.to_bytes(2, "little")
-        records += bytes([m["lifeboat"], 0])
+        records += bytes([m["lifeboat"], m["pickup"]])
 
     assert len(records) == len(missions) * RECORD_BYTES, len(records)
     header = MAGIC + bytes([len(missions), 0, 0, 0])   # counts patched below
@@ -396,11 +408,12 @@ def main():
     print("campaign: %d missions, %d maps, %d figures, %d of %d bytes"
           % (len(missions), len(maps), len(figures), len(blob), CAMPAIGN_BYTES))
     for n, m in enumerate(missions):
-        print("  %d %-24s map %d  figure %d  %s%s%s"
+        print("  %d %-24s map %d  figure %d  %s%s%s%s"
               % (n + 1, m["name"], m["map"], m["figure"],
                  "cargo: " + m["cargo"] if m["cargo"] else "camera",
                  "  (thermal only)" if m["hidden"] else "",
-                 "  (in a life raft)" if m["lifeboat"] else ""))
+                 "  (in a life raft)" if m["lifeboat"] else "",
+                 "  (collected first)" if m["pickup"] else ""))
 
 
 if __name__ == "__main__":

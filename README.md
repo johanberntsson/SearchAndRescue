@@ -28,9 +28,10 @@ page of its own behind `HELP` or `F1`, which in the air is also the pause.
 
 **2 Oct 2026:** a fourth mission, **Shipwreck** — a trawler gone down off the
 island in the rain, and its survivors adrift in a life raft that only the
-thermal camera can see.
+thermal camera can see. And a fifth, **Transplant Delivery**: land on one
+island hospital to take a donor heart aboard and fly it to the other.
 
-Four missions exist, end to end: a title screen, a mission list, a briefing, a
+Five missions exist, end to end: a title screen, a mission list, a briefing, a
 flight, and a debrief. They are deliberately the same flight with different
 words on it — fly to somebody and press a key — because that is where the
 engine is: **The Lost Hiker** wants a report filed on a hiker waving from a
@@ -41,7 +42,8 @@ skier found who an avalanche has buried, in falling snow, and who the ordinary
 camera cannot see at all; and **Shipwreck** sends you to where a trawler sank
 off the island, in rain, to find its survivors in a life raft that has
 drifted off the fix and is the colour of the sea until the thermal camera is
-armed. They
+armed; and **Transplant Delivery** has you land on one hospital roof to load a
+donor heart, then deliver it to another. They
 fly over **three different generated worlds, all on the one disk**.
 
 - 320x152 full-colour 3D view, double buffered, over a six-row painted

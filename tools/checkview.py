@@ -75,8 +75,8 @@ def camera_from_name(path):
 def find_view(shot, width, height):
     """Where the 3D view sits in a xemu screenshot, and at what scale.
 
-    Palette 0 is black and so is the border, so the picture is the non-black
-    bounding box -- its top row is sky and spans the whole width, which is what
+    The border is black, so the picture is the non-black bounding box, less
+    any edge column of plain screen colour -- its top row is sky and spans the whole width, which is what
     makes the left and right edges trustworthy. Two traps, both of which cost a
     round of wrong answers before this was written:
 
@@ -93,6 +93,22 @@ def find_view(shot, width, height):
     if not len(rows) or not len(cols):
         sys.exit("the screenshot is entirely black")
     y0, x0, x1 = int(rows[0]), int(cols[0]), int(cols[-1])
+
+    # **The screen colour is not black while the view is up**: the panel
+    # artwork makes its own green the paper (see The panel in CLAUDE.md), and
+    # a strip of it shows beside the picture, which the bounding box took for
+    # a column of picture -- putting the whole crop one pixel out and failing
+    # the colour check with a green no map has. A picture column always runs
+    # down through the sky gradient, so it is never one colour top to bottom;
+    # strip any edge column that is.
+    def flat(x):
+        col = shot[y0:y0 + height * 2, x]
+        return (col == col[0]).all()
+
+    while x0 < x1 and flat(x0):
+        x0 += 1
+    while x1 > x0 and flat(x1):
+        x1 -= 1
 
     scale = max(1, int(round((x1 - x0 + 1) / width)))
     got = min(width, (x1 - x0 + 1) // scale)

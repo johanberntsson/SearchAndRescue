@@ -24,3 +24,15 @@ items:
     x: 426
     y: 274
     size: medium
+  - type: house
+    x: 427
+    y: 503
+    size: large
+  - type: house
+    x: 470
+    y: 686
+    size: medium
+  - type: road
+    size: medium
+    from: 426,274
+    to: 427,503
