@@ -29,6 +29,10 @@
   `$D607` route read it as port 1's stick pushed right. **Still to try on
   the machine**: HELP from the title, list, debrief and win page, which was
   seen headless only.
+- **RUN/STOP on the title or win page quits to BASIC**, by returning through
+  the `SYS` with BASIC's memory and display put back -- a reset would autoboot
+  the game again. READY, `DIR` and arithmetic all work after it in xemu.
+  **Still to try on the machine.**
 
 ## 2 Oct 2026
 

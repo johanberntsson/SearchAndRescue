@@ -200,6 +200,7 @@ Only banks 1, 4 and 5 are free: `$20000-$3FFFF` holds the C65 ROM, and **colour 
 | `$5C000`, `$5D000` | 2000 each | The two screen tables |
 | `$5D800` | 9728 + 96 | The title logo: 38x4 full-colour characters, then its palette |
 | `$8700000` | 768 each | One palette per map slot, until a flight uploads its own |
+| `$8780000` | 64 KB + 8 KB | BASIC's bank 1, then its `$0002-$1FFF`, saved at startup for quitting |
 
 **The 32 KB is `mega65-plain.scm`'s choice, not the machine's.** The stock
 linker script gives `program` `$2001-$9FFF` because that is what is safe with
@@ -244,8 +245,8 @@ was the one thing the mapgen branch had never shown, since it did no disk I/O
 banked. **Confirmed on the machine on 2 Oct 2026**: the whole game played
 through on a real MEGA65. Six more kilobytes of the window are free for
 whatever is marked next -- `HIGH_BSS` it, rebuild, and read `highram` in
-`build/sar.lst`. BASIC never goes back in: the
-game does not hand over to anything.
+`build/sar.lst`. BASIC goes back in only on the way out: see Quitting under
+The game.
 
 **What the game did get is its stack measured**, which needed no banking at
 all: 144 bytes of the toolchain's 4096, so it builds with 512 and went from
@@ -933,6 +934,48 @@ the machine on 2 Oct 2026, where HELP from the title did nothing.
   it from the extra-row read too. An extra-row key is now masked out of the
   stick, though still out of every matrix row, as a stick is. `F1` is row 0 bit 4 and needs
   nothing special, which is why it is there as well.
+
+### Quitting
+
+**RUN/STOP on the title or the win page returns to BASIC and READY** (ESC in
+xemu, which maps it there). The controls page says so on its no-mission
+version, the one the title reaches.
+
+**It is a return through the `SYS`, not a reset, and a reset cannot work.**
+BASIC 65's cold start boots any disk with an `AUTOBOOT.C65` on it, which is
+this game: a reset ran the game again. The way hexgame quits -- the KERNAL's
+reset entry at `$E4B8` -- is also wrong for this ROM: in 920413 that address is
+the middle of another routine and the screen just went black. The reset there
+is `$FA4F`, through `$FFFC`.
+
+What makes the return possible is the MEGA65 board's own startup
+(`contrib/MEGA65-SDK/src/commodore-startup.s`): it never moves the stack, and
+keeps the stack pointer `main` was called with in `_InitialStack`, for
+`exit()`. So the way out is to put back what BASIC owns and `RTS`:
+
+- **`__low_level_init` (`bank.s`) snapshots it first**, before anything has
+  written over it: `$0002-$1FFF` -- zero page, the stack, the vectors, the
+  screen at `$0800`, and the ROM's buffers that `LOW_FREE` takes over -- and
+  all of bank 1, which is BASIC's variables and DOS and whose top 2K is the
+  colour RAM alias. Two DMA jobs to `$8780000`, at the cost of two
+  zero-page bytes (`_Vsp`) the startup has already written.
+- **`main` keeps the display and the timers before touching them**:
+  `vic4_save_rom` reads back the VIC registers that make the screen's
+  geometry and the first sixteen colours, and CIA2's control registers go
+  beside them, since `profile_init` leaves its timers free-running and the
+  Kernal needs them to read a disk.
+- **`quit_to_basic` (`main.c`) puts the hardware back** -- SIDs silent, CIA2
+  stopped, `vic4_leave` writes every saved register back (VIC-II ones first,
+  with the hot registers on; the VIC-IV ones exactly; `$D05D` last) -- and
+  **`basic_return` (`bank.s`) the memory**: two DMA jobs back, `_InitialStack`
+  into SP, `$D030` as it was, `CLI`, `RTS`. The last job rewrites the stack
+  page, so it is triggered inline with no return address waiting on it.
+
+**Seen in xemu**: READY on the normal blue screen, and with `DIR` and `?6*7`
+put into the keyboard queue by a test hack before the `RTS`, both ran -- the
+disk listed through the Kernal and 42 came back. **Not yet tried on the
+machine**, where two things are new: reading the palette registers back, and
+restoring the VIC registers by value rather than by hexgame's fixed list.
 
 ### The joystick
 

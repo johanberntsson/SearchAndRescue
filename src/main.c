@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <calypsi/intrinsics6502.h>
+#include <mega65.h>
 
 #include "audio.h"
 #include "drone.h"
@@ -378,13 +380,45 @@ static void controls_page(uint8_t mission_no)
   wait_for_key(KEY_SPACE | KEY_HELP);
 }
 
-// A page that SPACE dismisses, drawn by `page` -- and drawn again after a
-// visit to the controls page, which wrote over it.
+// RUN/STOP on the title or the win page: back to BASIC and READY. **A return,
+// not a reset** -- a reset reruns the disk's AUTOBOOT.C65, which is this game.
+// So the game leaves the way it came in, back through the SYS that started it:
+// basic_return (bank.s) puts back the memory BASIC owns, which __low_level_init
+// saved before anything touched it, and returns. What is left to C is the
+// hardware -- the display, both SIDs, and CIA2's timers, which profile_init
+// set free-running and the Kernal needs to read a disk.
+void basic_return(void);
+
+static uint8_t cia2_cra, cia2_crb;
+
+static void quit_to_basic(void)
+{
+  uint8_t i;
+
+  __disable_interrupts();
+  for (i = 0; i < 0x19; i++) {
+    ((volatile uint8_t *)SID_BASE)[i] = 0;
+    ((volatile uint8_t *)SID2_BASE)[i] = 0;
+  }
+  CIA2.cra = (uint8_t)(cia2_cra & ~0x10);  // without the force-load bit
+  CIA2.crb = (uint8_t)(cia2_crb & ~0x10);
+  vic4_leave();
+  basic_return();
+}
+
+// A page that SPACE dismisses and RUN/STOP quits the game from -- the title
+// and the win page -- drawn by `page`, and drawn again after a visit to the
+// controls page, which wrote over it.
 static void page_until_space(void (*page)(void), uint8_t mission_no)
 {
   for (;;) {
+    keymask key;
+
     page();
-    if (wait_for_key(KEY_SPACE | KEY_HELP) & KEY_SPACE)
+    key = wait_for_key(KEY_SPACE | KEY_STOP | KEY_HELP);
+    if (key & KEY_STOP)
+      quit_to_basic();
+    if (key & KEY_SPACE)
       return;
     controls_page(mission_no);
   }
@@ -695,6 +729,11 @@ int main(void)
   //
   // So the only place a resource can be read is here, before both -- on the
   // ROM's screen, dressed up to look like the title screen that follows it.
+  // BASIC's display and timers, before the boot screen and the profiler take
+  // them -- quitting hands them back. See quit_to_basic.
+  vic4_save_rom();
+  cia2_cra = CIA2.cra;
+  cia2_crb = CIA2.crb;
   screens_boot();
 
   // The interrupt goes in now and the tune does not start until the title.

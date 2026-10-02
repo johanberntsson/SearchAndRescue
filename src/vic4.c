@@ -259,6 +259,67 @@ void vic4_boot(void)
   vic4_show(0);
 }
 
+// The display as BASIC left it, kept before anything was drawn so that
+// quitting can hand it back: every map's palette is written over all 256
+// entries, and the registers below are the whole of the screen's geometry.
+//
+// The VIC-II and VIC-III registers come first in the list, because with the
+// hot registers on a write to one of those recomputes the VIC-IV side; the
+// VIC-IV ones then go back exactly as they were, and $D05D -- the hot register
+// bit itself -- last. File scope, not a static const in a function: see the
+// miscompile under Performance in CLAUDE.md.
+static const uint8_t rom_regs[] = {
+    0x11, 0x16, 0x18, 0x20, 0x21, 0x31,                    // VIC-II, VIC-III
+    0x15, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x5B,  // VIC-IV
+    0x5E, 0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x68, 0x69,
+    0x6A, 0x6B, 0x6C, 0x6D, 0x6E, 0x70, 0x5D,
+};
+#define ROM_REGS sizeof rom_regs
+#define ROM_REGS_LEGACY 6
+
+static uint8_t rom_values[ROM_REGS];
+static uint8_t rom_palette[3][16];
+
+static void unlock(void)
+{
+  VICIV.key = 0x47;
+  VICIV.key = 0x53;
+}
+
+void vic4_save_rom(void)
+{
+  uint8_t i;
+
+  unlock();
+  for (i = 0; i < ROM_REGS; i++)
+    rom_values[i] = *(volatile uint8_t *)(0xD000u + rom_regs[i]);
+  for (i = 0; i < 16; i++) {
+    rom_palette[0][i] = PALETTE.red[i];
+    rom_palette[1][i] = PALETTE.green[i];
+    rom_palette[2][i] = PALETTE.blue[i];
+  }
+}
+
+// Put the display back the way BASIC had it, ahead of returning to it. Only
+// the first sixteen colours: BASIC draws in nothing else.
+void vic4_leave(void)
+{
+  uint8_t i;
+
+  unlock();
+  for (i = 0; i < 16; i++) {
+    PALETTE.red[i] = rom_palette[0][i];
+    PALETTE.green[i] = rom_palette[1][i];
+    PALETTE.blue[i] = rom_palette[2][i];
+  }
+  VICIV.sdbdrwd_msb |= VIC4_HOTREG_MASK;
+  for (i = 0; i < ROM_REGS; i++) {
+    if (i == ROM_REGS_LEGACY)
+      unlock();  // a VIC-II write can relock the VIC-IV
+    *(volatile uint8_t *)(0xD000u + rom_regs[i]) = rom_values[i];
+  }
+}
+
 void vic4_init(void)
 {
   CPU_PORTDDR = 0x41;  // 40 MHz

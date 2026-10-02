@@ -100,6 +100,11 @@ void vic4_init(void);
 // vic4_init does the rest once the last file is in.
 void vic4_boot(void);
 
+// Quitting: vic4_save_rom keeps BASIC's display before anything is drawn,
+// and vic4_leave puts it back.
+void vic4_save_rom(void);
+void vic4_leave(void);
+
 // Put one character anywhere on the 25-row display. Character numbers below
 // $100 are ordinary 8x8 text -- FCLRHI is set and FCLRLO is not, so only the
 // framebuffer's own character numbers are full colour. Both screen tables get

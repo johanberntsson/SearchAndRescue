@@ -253,7 +253,7 @@ After the title screen and the briefing, `SPACE` (or fire) launches the flight.
 | `SPACE` | file a report, and go on from any screen |
 | `RETURN` | release the cargo |
 | `T` | arm the thermal camera: cold ground, black sky, and anybody alive a flat hot white |
-| `RUN/STOP` | abandon the mission, and back out of the list or a briefing |
+| `RUN/STOP` | abandon the mission, and back out of the list or a briefing; on the title, quit to BASIC |
 | `HELP` / `F1` | every key on one page, from any screen; in the air it is also the pause, and the time paused is not counted |
 | `M` | mute: the engine in the air, the music on every other screen. Two settings, both remembered |
 | joystick | either port: the stick is `W` `A` `S` `D`, in the air and up and down the mission list; fire is `SPACE` on every screen and the mission's own key in the air |
