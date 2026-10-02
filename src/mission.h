@@ -57,8 +57,15 @@ typedef struct {
   // fix below is a cell of *that* map, so the two travel together: change one
   // and the target is in the sea. See MAP_SLOT in loader.h.
   uint8_t map;
-  uint16_t lat;       // millidegrees north of the target's last known fix
+  uint16_t lat;       // millidegrees north of the last known fix
   uint16_t lon;       // millidegrees east
+  // Where the figure actually is, which is the fix unless the mission file
+  // says otherwise. The fix is what the briefing reads out -- where a ship
+  // went down, say -- and the survivor can have drifted off it.
+  uint16_t found_lat;
+  uint16_t found_lon;
+  // Non-zero to float the figure in a life raft: see src/lifeboat.h.
+  uint8_t lifeboat;
 } mission;
 
 // How many the game can hold, which is what tools/campaign.py checks a

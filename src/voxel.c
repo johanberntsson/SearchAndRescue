@@ -295,6 +295,40 @@ uint8_t voxel_ground(uint16_t x, uint16_t y)
 #endif
 }
 
+// One map's sub-cell planes are consecutive banks from `bank` up -- that is
+// what build_planes lays out -- so a cell is the same 16-bit offset into each.
+static uint32_t swap_planes(uint8_t bank, uint8_t planes, uint16_t cell, uint32_t buf)
+{
+  uint8_t p;
+
+  for (p = 0; p < planes; p++) {
+    // Widened straight from int: a byte cast in the middle of this would be
+    // sign-extended (see Performance in CLAUDE.md). Every bank is below $60.
+    uint32_t b = bank + p;
+    uint8_t __far *m =
+        (uint8_t __far *)((ATTIC_BASE & 0xFF000000UL) | b << 16 | cell);
+    uint8_t __far *keep = (uint8_t __far *)buf++;
+    uint8_t was = *m;
+
+    *m = *keep;
+    *keep = was;
+  }
+  return buf;
+}
+
+uint32_t voxel_swap_cell(uint8_t cx, uint8_t cy, uint32_t buf)
+{
+  uint16_t cell = (uint16_t)cy << 8 | cx;
+
+  // The y tables' entry 0 is sub-cell row 0, which is the map's own bank.
+  buf = swap_planes(vx_hplane_y[0], HGT_AXIS * HGT_AXIS, cell, buf);
+#if COL_AXIS > 1
+  return swap_planes(vx_cplane_y[0], COL_AXIS * COL_AXIS, cell, buf);
+#else
+  return swap_planes(vx_cptr[2], 1, cell, buf);
+#endif
+}
+
 int16_t voxel_mul_shift8(int16_t a, int16_t b)
 {
   return mul_shift8(a, b);

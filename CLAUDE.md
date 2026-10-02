@@ -6,14 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A MEGA65 heightfield voxel flight simulator / drone search-and-rescue game, written in C (Calypsi) with the rendering inner loop in 45GS02 assembly. `documentation/vision.md` holds the full technical and gameplay design; `todo.md` is the authoritative "what's next" and should be updated as work lands.
 
-Currently: three missions, end to end, **each over its own generated world**. A
+Currently: four missions, end to end, over three generated worlds. A
 title screen with a full-colour logo and a drone flying about under it, a
 mission list, a briefing, a flight, and a debrief, with every key on a
 controls page behind `HELP`/`F1` that is also the pause in the air — the lost
 hiker on the step pyramid of the island at 46.687N 8.106E to be found and
 reported, an EpiPen to be dropped to a pair of hikers by a lake on the
 plains at 46.658N 8.149E, and a skier buried by an avalanche at 46.584N
-8.177E who cannot be seen at all until the **thermal camera** is armed. Keyboard or joystick, either port. A
+8.177E who cannot be seen at all until the **thermal camera** is armed, and
+survivors of a shipwreck off the island's east coast, adrift in a **life
+raft** at 46.642N 8.219E whom only the thermal camera can see in it. Keyboard or joystick, either port. A
 flight also carries a wind that blows the drone
 about, a battery that runs it out, and per-mission weather; it can end four
 ways, all of them the same debrief page with different words on it.
@@ -179,7 +181,7 @@ Only banks 1, 4 and 5 are free: `$20000-$3FFFF` holds the C65 ROM, and **colour 
 | `$8000000-$81FFFFF` | 2 MB | Map slot 0: colourmap planes, then heightmap |
 | `$8200000-$83FFFFF` | 2 MB | Map slot 1 — mission two's world |
 | `$8400000-$85FFFFF` | 2 MB | Map slot 2, spare |
-| `$8600000-` | | Staging for the crunched stream being unpacked |
+| `$8600000-` | | Staging for the crunched stream being unpacked; after boot, the life raft's exchange buffer |
 | `$5C000`, `$5D000` | 2000 each | The two screen tables |
 | `$5D800` | 9728 + 96 | The title logo: 38x4 full-colour characters, then its palette |
 | `$8700000` | 768 each | One palette per map slot, until a flight uploads its own |
@@ -255,8 +257,10 @@ room came from, in the order it was taken:
 note and 1449 on the campaign buffer, net of the C mission table it replaced.
 That was the point of the reclaim. The thermal camera and its 32-bit key mask
 then took about 820 more, snow about 295, the controls page about 880 and
-the title's drone about 700, so a default build is **98.0% used with 653
-bytes free**.
+the title's drone about 700, and the shipwreck's two new mission fields
+and life raft about 600, so a default build is **99.8% used with 56 bytes
+free**. The raft's own buffer went to attic RAM for exactly that reason —
+the 32K was three bytes short of it.
 **That is the tightest this has been**, and the next thing of any size wants
 the `HIGH_BSS` banking above before it wants anything else.
 
@@ -566,7 +570,7 @@ page is a fifth, reached sideways from the briefing and from the flight and
 returning to whichever it came from; see The controls page. `src/screens.c`
 draws the pages, `src/mission.c` holds what there is to be sent on.
 
-**The three missions are the same flight with different words on it** — and,
+**The four missions are the same flight with different words on it** — and,
 as of the several-map disk, over different country. The shape is deliberate:
 fly to a figure standing at a fix and press a key. The mission table is what
 differs, and the one field the rest hangs off is `cargo`:
@@ -590,8 +594,29 @@ strings, for the same reason.
 travel together and cannot be edited apart: mission one is flown over
 `maps/island.yaml` and stands its hiker on the step pyramid there; mission two
 over `maps/plains.yaml`, by the largest lake; mission three over
-`maps/avalance.yaml`, on a snow slope three quarters of the way up a mountain.
-See Resources for what a map slot is and what switching costs.
+`maps/avalance.yaml`, on a snow slope three quarters of the way up a mountain;
+mission four back over the island, at sea. See Resources for what a map slot
+is and what switching costs.
+
+**The fix and the figure can be in different places.** `survivor:` in a
+mission file is where the figure really stands, and the fix is only what the
+briefing reads out; absent, the two are the same, as they are for the first
+three. The shipwreck sends you to where the ship went down and the raft has
+drifted seven cells south and seven east of it.
+
+**And a mission can float the figure in a life raft** (`lifeboat: yes`,
+`src/lifeboat.c`). It is not in the map, because the island is mission one's
+too: at launch `voxel_swap_cell` *exchanges* three by two cells of the
+resident maps — every sub-cell plane of both — with a buffer in attic RAM
+holding a deck two height units above the water in one orange entry, and after
+the flight `main.c` calls `lifeboat_sink`, which exchanges them back. Doing it
+twice is the identity, so nothing remembers what the sea was. The renderer
+never learns, the figure stands on it because `voxel_ground` reads it, and it
+goes cold under the thermal camera because its colour (174, the `lifeboat`
+band in `maps/palette.yaml`, unshaded) is inside the sweep. **Seen headless**:
+the raft empty on the optical camera, the pair standing in it on the thermal,
+and the sea flat and uniform again after a sink fifty frames in. Two cells
+across is the least that reads, for the terrace reason under Resources.
 
 **And a mission can say the figure is not visible at all.** `hidden: thermal`
 is what mission three adds, and it is the whole of what makes the second
@@ -719,7 +744,7 @@ the world it is flown over and the figure that stands in it.
 
 - **`campaign.bin`**, which goes on the disk and is read *first* at boot,
   because it says how many maps and how many figures there are to read after
-  it. A header, one 24-byte record per mission, and a pool of strings the
+  it. A header, one 30-byte record per mission, and a pool of strings the
   records point into by offset. `campaign_load()` turns those offsets into
   pointers once, into the `missions[]` array the rest of the game already
   used, so `screens.c` and `main.c` did not change at all.
@@ -755,7 +780,9 @@ two fields that can disagree is exactly what the game's own design avoids.
 **`hidden:` is the one other field a mission can carry**, and `thermal` is the
 only value beyond `no`: the figure is under the snow and is not drawn until
 the thermal camera is armed. It rides in the record's byte 23, which was spare
-until it existed. See The thermal camera.
+until it existed. See The thermal camera. The record is 30 bytes now:
+`survivor:` is 24-27 and `lifeboat:` 28, with 29 spare; four missions come to
+881 of the campaign's 1024 bytes.
 
 **Bank 1 is full to the byte now.** `SPRITE_MAX` figures at 1028 bytes each
 from `$1DC00`, then `MAP_SLOTS` overview maps from `$1EC00`, which end exactly
@@ -1027,7 +1054,7 @@ What changes is what the palette entries *behind* those bytes are. It costs
 `vic4_set_entry` at the toggle and **not one cycle a frame**.
 
 That is only affordable because the shared ramp gave terrain and figures
-separate indices (see Resources). A map's colours are 16..173 and every
+separate indices (see Resources). A map's colours are 16..174 and every
 figure's fifteen are above them, so the two recolour apart without the
 renderer learning there is a second mode at all.
 
@@ -1423,8 +1450,8 @@ the maps loosened it. Each figure claims fifteen entries, and what is left
 over depends on the colourmap: the hand-drawn one uses about 170 of the 224
 indices below the sky and left **12 free** after two figures, while a
 generated map under `--shared` reserves the ramp's 150 and the system's low
-sixteen. Three figures and the thermal camera's one reserved hot entry leave
-**4 free**, which `convmap.py` prints at the end of every run; it refuses
+sixteen. Three figures, the thermal camera's one reserved hot entry and the
+life raft's one orange leave **3 free**, which `convmap.py` prints at the end of every run; it refuses
 rather than quietly painting terrain in a sprite colour. A fourth figure needs
 eleven entries that are not there.
 

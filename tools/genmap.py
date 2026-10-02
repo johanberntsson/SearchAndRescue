@@ -210,7 +210,7 @@ SUN_MOTTLE = 0.55
 # The bands the code asks the palette file for by name: the land ramp in
 # ascending order, then the two that are not elevation at all.
 LAND_BANDS = ("shore", "lowland", "highland", "peak")
-BANDS = LAND_BANDS + ("water", "masonry", "roof", "road")
+BANDS = LAND_BANDS + ("water", "masonry", "roof", "road", "lifeboat")
 
 # The land ramp is walked with a gamma, so its top bands are the top few per
 # cent of the relief rather than an even slice of it. Linear put snow on a
@@ -1193,6 +1193,11 @@ def colourise(h, bed, water, level, built, spec, pal, stream):
             material.append(e)
             for l, m in enumerate(shades):
                 rgb[e + l] = lit(c, m)
+
+    # And the life raft, which no map holds a pixel of: src/lifeboat.c paints
+    # it on at launch. Its colour is still the climate's, so it is here.
+    for e, c in zip(*band_colours(pal, spec["climate"], "lifeboat")):
+        rgb[e] = c
 
     sea = int(spec["sea"] * ONE)
     land = h[~water & (built < 0)]

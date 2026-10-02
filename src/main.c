@@ -4,6 +4,7 @@
 #include "drone.h"
 #include "engine.h"
 #include "input.h"
+#include "lifeboat.h"
 #include "loader.h"
 #include "mission.h"
 #include "music.h"
@@ -429,7 +430,15 @@ static flight_outcome flight(uint8_t mission_no, uint16_t *seconds)
   map_use(m->map);
 
   sprite_select(m->figure);
-  sprite_place(FIX_TO_X(m->lon), FIX_TO_Y(m->lat));
+  {
+    uint16_t x = FIX_TO_X(m->found_lon), y = FIX_TO_Y(m->found_lat);
+
+    // Into the map before the figure is stood on it, which reads the ground.
+    // The flight's caller sinks it again, whichever way the flight ends.
+    if (m->lifeboat)
+      lifeboat_launch(&x, &y);
+    sprite_place(x, y);
+  }
 
   vic4_view_mode();
   panel_init();
@@ -709,6 +718,7 @@ int main(void)
     music_set(0);
     engine_start(engine_wanted);
     how = flight(mission_no, &seconds);
+    lifeboat_sink();  // the island is The Lost Hiker's too
     engine_set(0);
     music_set(music_wanted);
 

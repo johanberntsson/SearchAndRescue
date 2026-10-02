@@ -42,6 +42,11 @@
 #define ATTIC_HEIGHTMAP MAP_HEIGHTMAP(0)
 #define ATTIC_STAGE     0x8600000UL  // the crunched stream being unpacked
 #define ATTIC_PALETTE   0x8700000UL  // one 768-byte palette per map slot
+// What a flight's life raft has exchanged with the map (src/lifeboat.c). In
+// the staging area, which is only ever written while the boot is unpacking a
+// map and is idle for the rest of the session -- and in attic RAM rather than
+// the 32K, which had three bytes too few for it.
+#define ATTIC_LIFEBOAT  ATTIC_STAGE
 
 #define COLOURMAP ATTIC_COLOURMAP
 

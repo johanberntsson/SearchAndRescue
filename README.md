@@ -26,7 +26,11 @@ fire is `SPACE` on the pages and the mission's own key in the air), a silent
 loading screen, the debrief now returns to the title, and every key on a
 page of its own behind `HELP` or `F1`, which in the air is also the pause.
 
-Three missions exist, end to end: a title screen, a mission list, a briefing, a
+**2 Oct 2026:** a fourth mission, **Shipwreck** — a trawler gone down off the
+island in the rain, and its survivors adrift in a life raft that looks empty
+until the thermal camera is armed.
+
+Four missions exist, end to end: a title screen, a mission list, a briefing, a
 flight, and a debrief. They are deliberately the same flight with different
 words on it — fly to somebody and press a key — because that is where the
 engine is: **The Lost Hiker** wants a report filed on a hiker waving from a
@@ -34,8 +38,10 @@ pyramid on an island; **First Aid** wants an EpiPen dropped to a pair of
 hikers by a lake out on the plains, with only one EpiPen aboard and a failed
 mission if it goes down in the wrong place; and **Under The Snow** wants a
 skier found who an avalanche has buried, in falling snow, and who the ordinary
-camera cannot see at all. The three fly over **different generated worlds, all on the one
-disk**.
+camera cannot see at all; and **Shipwreck** sends you to where a trawler sank
+off the island, in rain, to find its survivors in a life raft that has
+drifted off the fix and looks empty until the thermal camera is armed. They
+fly over **three different generated worlds, all on the one disk**.
 
 - 320x152 full-colour 3D view, double buffered, over a six-row painted
   instrument panel

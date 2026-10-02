@@ -1,0 +1,39 @@
+# A camera mission over the island, in rain, that is two missions' mechanics
+# at once: the survivors are not where the briefing sends you, and they cannot
+# be seen when you get there.
+#
+# The fix is where the ship went down, and there is nothing at it. Whoever got
+# off is in a life raft that has drifted south-east, ten cells or so, and
+# under its canopy -- so the raft is plain to see and looks empty, and only
+# the thermal camera shows anybody in it. `survivor:` is where they really are
+# and `lifeboat: yes` floats them; see src/lifeboat.h.
+
+name: Shipwreck
+
+brief: >
+  A trawler went down off the east coast. The ship is gone. Survivors may
+  be in a raft under its canopy.
+
+objective: Find the survivors and report
+
+# 46.649N 008.212E is open sea nine cells off the island's east coast, at
+# sea level and in the deepest water colour; the raft is seven cells east and
+# seven south of it, with clear water all round. Both are cells of
+# island.yaml, so **they move when the island is re-rolled** -- check them
+# against maps/cmap03.png after anything that changes the generator.
+map: maps/island.yaml
+fix:
+  lat: 46.649
+  lon: 8.212
+survivor:
+  lat: 46.642
+  lon: 8.219
+lifeboat: yes
+
+# The figure is the pair from First Aid: there is no room for a fourth sheet
+# in bank 1 or in the palette, and two people in a raft is what it is anyway.
+figure: resources/medicalemergency-sprite.png
+weather: rain
+hidden: thermal
+
+done: Survivors located in the life raft

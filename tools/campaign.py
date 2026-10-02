@@ -78,11 +78,12 @@ HIDDEN = {"no": 0, "thermal": 1}
 #
 #   0 name   2 brief[0..2]   8 objective   10 cargo   12 done   14 lost
 #  16 lat   18 lon           20 figure     21 weather 22 map    23 hidden
+#  24 survivor lat           26 survivor lon          28 lifeboat 29 spare
 #
-# Every sixteen-bit field but the last two is an offset into the string pool,
-# and offset 0 means there is none -- nothing can live at 0, which is where
-# the magic is.
-RECORD_BYTES = 24
+# Every sixteen-bit field from 0 to 14 is an offset into the string pool, and
+# offset 0 means there is none -- nothing can live at 0, which is where the
+# magic is. The four from 16 are millidegrees.
+RECORD_BYTES = 30
 HEADER_BYTES = 8
 MAGIC = b"SAR\x01"
 
@@ -195,6 +196,19 @@ def read_mission(path, maps, figures):
     m["lon"] = millidegrees("%s fix lon" % who, fix.get("lon"),
                             MAP_LON_WEST, MAP_LON_WEST + MAP_CELLS)
 
+    # Where the figure really is, when that is not where the briefing sends
+    # you: a ship goes down at the fix, and whoever got off it has drifted.
+    # Absent is the fix itself, which is every mission before this one.
+    found = doc.get("survivor") or fix
+    m["found_lat"] = millidegrees("%s survivor lat" % who, found.get("lat"),
+                                  MAP_LAT_SOUTH, MAP_LAT_SOUTH + MAP_CELLS)
+    m["found_lon"] = millidegrees("%s survivor lon" % who, found.get("lon"),
+                                  MAP_LON_WEST, MAP_LON_WEST + MAP_CELLS)
+
+    # A life raft under the figure, put into the map for the one flight. See
+    # src/lifeboat.h. YAML reads `yes` as True already.
+    m["lifeboat"] = 1 if doc.get("lifeboat") else 0
+
     weather = str(need("weather")).lower()
     if weather not in WEATHER:
         raise Error("%s: weather `%s` is not one of %s"
@@ -243,6 +257,9 @@ def build_bin(missions):
         for n in offs:
             records += n.to_bytes(2, "little")
         records += bytes([m["figure"], m["weather"], m["map"], m["hidden"]])
+        for n in (m["found_lat"], m["found_lon"]):
+            records += n.to_bytes(2, "little")
+        records += bytes([m["lifeboat"], 0])
 
     assert len(records) == len(missions) * RECORD_BYTES, len(records)
     header = MAGIC + bytes([len(missions), 0, 0, 0])   # counts patched below
@@ -379,10 +396,11 @@ def main():
     print("campaign: %d missions, %d maps, %d figures, %d of %d bytes"
           % (len(missions), len(maps), len(figures), len(blob), CAMPAIGN_BYTES))
     for n, m in enumerate(missions):
-        print("  %d %-24s map %d  figure %d  %s%s"
+        print("  %d %-24s map %d  figure %d  %s%s%s"
               % (n + 1, m["name"], m["map"], m["figure"],
                  "cargo: " + m["cargo"] if m["cargo"] else "camera",
-                 "  (thermal only)" if m["hidden"] else ""))
+                 "  (thermal only)" if m["hidden"] else "",
+                 "  (in a life raft)" if m["lifeboat"] else ""))
 
 
 if __name__ == "__main__":

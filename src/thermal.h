@@ -8,7 +8,7 @@
 // flat hot white. `vic4_set_entry` at the toggle, and not one cycle a frame.
 //
 // That is only affordable because the shared ramp gave terrain and figures
-// separate indices (see Resources in CLAUDE.md). A map's colours are 16..173
+// separate indices (see Resources in CLAUDE.md). A map's colours are 16..174
 // and every figure's fifteen are above them, so the two can be recoloured
 // apart without the renderer ever learning there is a second mode.
 #ifndef THERMAL_H

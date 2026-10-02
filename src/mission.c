@@ -34,8 +34,9 @@ static uint8_t campaign[CAMPAIGN_BYTES];
 // Keep them beside the writer's own list in tools/campaign.py.
 //
 //   0 name   2 brief[0..2]   8 objective   10 cargo   12 done   14 lost
-//  16 lat   18 lon           20 figure     21 weather 22 map    23 spare
-#define REC_BYTES     24
+//  16 lat   18 lon           20 figure     21 weather 22 map    23 hidden
+//  24 survivor lat           26 survivor lon          28 lifeboat 29 spare
+#define REC_BYTES     30
 #define REC_NAME      0
 #define REC_BRIEF     2   // and two more, two bytes apart
 #define REC_OBJECTIVE 8
@@ -48,6 +49,9 @@ static uint8_t campaign[CAMPAIGN_BYTES];
 #define REC_WEATHER   21
 #define REC_MAP       22
 #define REC_HIDDEN    23
+#define REC_FOUND_LAT 24
+#define REC_FOUND_LON 26
+#define REC_LIFEBOAT  28
 
 mission missions[MISSION_MAX];
 
@@ -133,6 +137,9 @@ const char *campaign_load(void)
     m->weather = rec[REC_WEATHER];
     m->map = rec[REC_MAP];
     m->hidden = rec[REC_HIDDEN];
+    m->found_lat = word(rec, REC_FOUND_LAT);
+    m->found_lon = word(rec, REC_FOUND_LON);
+    m->lifeboat = rec[REC_LIFEBOAT];
   }
   return 0;
 }

@@ -29,14 +29,32 @@
   `$D607`/`$D608` and was worked out from xemu's source; `F1` is the ordinary
   matrix and safe either way.
 
+## 2 Oct 2026
+
+- **Mission four, Shipwreck**: over the island, in rain. The briefing sends
+  you to where a trawler went down, 46.649N 8.212E, and there is nothing
+  there; the survivors are in a life raft that has drifted to 46.642N
+  8.219E, and the raft looks empty until `T` arms the thermal camera. Two new
+  mission fields carry it -- `survivor:`, where the figure really is, and
+  `lifeboat: yes` -- and the raft is put into the island's maps at launch and
+  taken out again after the flight, so The Lost Hiker never sees it. The
+  figure is First Aid's pair, since there is no room for a fourth. **Seen
+  headless**, optical and thermal and sunk; **not yet flown on the machine**,
+  where the thing to check is that The Lost Hiker's sea is clean after a
+  Shipwreck flight.
+- **The 32K is down to 56 bytes free.** The raft's buffer is in attic RAM
+  because the program area was three bytes short of it. The fifth mission
+  needs no code, but anything that does needs the `HIGH_BSS` banking first.
+
 Open from today:
 
-- **Next: five missions, then a release.** Two more to write. What limits
-  them: all three map slots and all three figure slots are full, and the
-  palette has 4 entries free, which isn't enough for a fourth figure. So a new
+- **Next: five missions, then a release.** One more to write. What limits
+  it: all three map slots and all three figure slots are full, and the
+  palette has 3 entries free, which isn't enough for a fourth figure. So a new
   mission reuses an existing map and figure, or the ceilings come up first.
   A mission is a file in `missions/` and a line in `missions/campaign.yaml`,
-  with no code, so the 653 bytes left in the 32K are not in the way.
+  with no code -- which matters, since the 32K has 56 bytes left. The
+  campaign has 143 of its 1024 bytes left, which is about one more.
 
 - **Is a full-colour pixel of `$FF` drawn in the cell's ink?** The panel
   artwork has 126 such pixels, drawn with ink 0. If they show black on the
@@ -98,7 +116,7 @@ rain costs 0.68 ms of that on mission two, and the snow about the same). The
 march is 160 rays; each fills the two pixels it owns. **The thermal camera
 costs nothing per frame at all**, being a palette swap.
 
-**The 32K is down to 653 bytes free** in a default build, which is the tightest it has been. The next thing of any size
+**The 32K is down to 56 bytes free** in a default build, which is the tightest it has been. The next thing of any size
 wants the `HIGH_BSS` banking first -- see the Memory map notes in CLAUDE.md.
 **The disk is down to 1246 blocks free**, nearly all of it the avalanche map's
 268 KB.

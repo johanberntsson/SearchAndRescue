@@ -48,6 +48,14 @@ void voxel_render(uint32_t base, const camera *cam);
 // and for standing world objects on it.
 uint8_t voxel_ground(uint16_t x, uint16_t y);
 
+// Exchange one cell of the current map -- every sub-cell of the heightmap,
+// then every sub-cell of the colourmap -- with the bytes at attic address
+// `buf`, and return the address after them. An exchange rather than a write,
+// so that doing it twice puts the map back exactly as it was and nothing has
+// to remember what the ground used to be: see src/lifeboat.c, which is what
+// it is for.
+uint32_t voxel_swap_cell(uint8_t cx, uint8_t cy, uint32_t buf);
+
 // sin(angle) * 256, for moving the camera along its heading.
 int16_t voxel_sin(uint8_t angle);
 
