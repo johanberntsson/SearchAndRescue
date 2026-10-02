@@ -613,8 +613,9 @@ or the panel's green (`PANEL_TEXT`) once cleared; `DONE` after a cleared name
 is what still says so on the selected line. A cleared one can still be chosen.
 When the debrief of the last one is dismissed, `screens_won` shows the
 title's logo and drone with an `ALL MISSIONS COMPLETE` banner, the record goes
-back to nothing, and the game carries on from the title, so it goes round for
-ever. Nothing is saved to disk. Not in a `FLYNOW` build, which has no title to
+back to nothing, and the game carries on from the mission list, so it goes
+round for ever. Not from the title: the win page *is* the title, logo and drone
+and all, and showing it again would be the same page twice. Nothing is saved to disk. Not in a `FLYNOW` build, which has no title to
 go back to. **Tested headless by faking SPACE in `scan()`** with a preset
 record and a flight that returns `FLIGHT_DONE` at once: the list's colours,
 the win page after the last debrief, and a clean list after it.

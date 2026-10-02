@@ -57,7 +57,7 @@
 - **Cleared missions are kept for the session**: green on the mission list
   unless selected, with `DONE` after the name, and once all five are cleared a win page (logo, drone, `ALL
   MISSIONS COMPLETE`) comes after the debrief, then the record resets and the
-  game goes back to the title. Not saved to disk.
+  game goes straight back to the mission list. Not saved to disk.
 - **The checkview reference is retaken**, with the houses and road in the
   island and the painted panel under the view, and `find_view` learned that
   the screen colour beside the picture is not black any more.

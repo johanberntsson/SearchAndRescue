@@ -767,11 +767,15 @@ int main(void)
 #if !FLYNOW
     // The last one cleared: the win page, then the whole campaign again from
     // nothing -- the game goes round for ever, and the record goes with it.
+    // Straight on to the list from there: the win page already is the title,
+    // logo and drone and all, and showing the title after it is the same
+    // page twice.
     if (missions_cleared == MISSIONS_ALL) {
       screens_won();
       wait_for_space();
       missions_cleared = 0;
       mission_no = 0;
+      continue;
     }
     // Back by way of the title rather than straight to the list: a flight is
     // over, and the game goes round again from its front page. The list still
