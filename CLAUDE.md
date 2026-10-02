@@ -859,7 +859,7 @@ Controls, which follow a real drone's (see `documentation/real-drones/`):
 `W`/`S` forward and back, `A`/`D` yaw, `R`/`F` climb and descend, `Q`/`E`
 gimbal up and down, `1`/`2`/`3` the speed limiter (cinematic, normal, sport),
 `SPACE` to file a report, `RETURN` to release the cargo, `T` to arm the
-thermal camera, `RUN/STOP` to abandon
+thermal camera, `RUN/STOP` or `ESC` to abandon
 the mission, `M` to mute the engine — see Sound, where the same key mutes
 the tune on every screen that is not a flight — and `HELP` or `F1` for the
 controls page, which in the air is also the pause. See The controls page. **A joystick in either port**
@@ -937,9 +937,14 @@ the machine on 2 Oct 2026, where HELP from the title did nothing.
 
 ### Quitting
 
-**RUN/STOP on the title or the win page returns to BASIC and READY** (ESC in
-xemu, which maps it there). The controls page says so on its no-mission
-version, the one the title reaches.
+**RUN/STOP on the title or the win page returns to BASIC and READY.** The
+controls page says so on its no-mission version, the one the title reaches.
+
+**ESC is RUN/STOP everywhere**, read off the extra row beside HELP (bit 7).
+A PC keyboard has no RUN/STOP, and xemu's MEGA65 keymap gives the PC's ESC to
+the MEGA65's ESC and puts RUN/STOP on **END** -- which works and which nobody
+would guess. On the machine ESC is a key of its own and means the same thing.
+Confirmed in xemu by faking bit 7 of the extra row: READY.
 
 **It is a return through the `SYS`, not a reset, and a reset cannot work.**
 BASIC 65's cold start boots any disk with an `AUTOBOOT.C65` on it, which is

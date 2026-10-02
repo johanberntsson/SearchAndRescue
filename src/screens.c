@@ -405,6 +405,7 @@ void screens_controls(uint8_t mission_no, uint8_t paused)
   }
   vic4_puts(4, row, "RUN/STOP", PANEL_INK);
   vic4_puts(13, row, "ABANDON MISSION", PANEL_INK);
+  vic4_puts(31, row, "ESC", PANEL_LABEL);
   if (general)  // and only off the ground is there a game to leave
     vic4_puts(13, ++row, "QUIT GAME FROM TITLE", PANEL_INK);
 

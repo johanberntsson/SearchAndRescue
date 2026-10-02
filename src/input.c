@@ -49,7 +49,7 @@ static uint8_t scan_row(uint8_t row)
 // The C65's extra row, read through the MEGA65's own window on the keyboard
 // matrix rather than through the CIA: write a row to $D614 and $D613 reads it
 // back, active low, whatever $DC00 and the joysticks are doing. Row 8 is the
-// extra row and HELP is bit 3.
+// extra row: HELP is bit 3 and ESC bit 7.
 //
 // **Not through $D607.** That was the C65's way -- deselect every CIA row,
 // pull port E bit 1 low and read $DC01 -- and xemu agrees with it, but on a
@@ -171,7 +171,10 @@ static keymask scan(void)
     keys |= KEY_2;
   if (r7 & 0x10)
     keys |= KEY_SPACE;
-  if (r7 & 0x80)
+  // ESC as well, from the extra row: a PC keyboard has no RUN/STOP, and xemu
+  // gives the MEGA65's ESC to the PC's ESC and RUN/STOP to END, which nobody
+  // would guess. On the machine ESC reads as the same "take me back".
+  if ((r7 & 0x80) || (extra & 0x80))
     keys |= KEY_STOP;
   if (r0 & 0x02)
     keys |= KEY_RETURN;

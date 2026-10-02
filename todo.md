@@ -31,8 +31,9 @@
   seen headless only.
 - **RUN/STOP on the title or win page quits to BASIC**, by returning through
   the `SYS` with BASIC's memory and display put back -- a reset would autoboot
-  the game again. READY, `DIR` and arithmetic all work after it in xemu.
-  **Still to try on the machine.**
+  the game again. READY, `DIR` and arithmetic all work after it in xemu,
+  and it **works on the machine** (2 Oct 2026). `ESC` is RUN/STOP too, since
+  xemu puts RUN/STOP on the PC's END.
 
 ## 2 Oct 2026
 
