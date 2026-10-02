@@ -126,13 +126,26 @@ temporary block in `flight()` that is not for committing:
 - hold the battery at `BATTERY_FULL` and force `flat` to 0, so the loop runs
   for ever and any exit lands mid-flight;
 - pin `cam.x` / `cam.y` / `cam.height` / `cam.angle` at the top of the loop
-  and skip `wind_drift`, so the picture is the same one however late the
-  screenshot is taken. `FIX_TO_X` / `FIX_TO_Y` are the way to write a camera
+  **and set `wind_speed = 0` there too**, so the picture is the same one
+  however late the screenshot is taken. Skipping `wind_drift` is not enough:
+  that only stops the wind veering, and `fly()` still adds the wind vector
+  *after* the pin and before the render. It moved the checkview reference
+  camera into the next cell west, which failed 8.7% of the comparison and
+  looked like a renderer fault. `FIX_TO_X` / `FIX_TO_Y` are the way to write a camera
   position — **`(cell << 8)` overflows a 16-bit `int`** and silently parks the
   drone somewhere else, which is the trap under Performance and it was walked
   into writing exactly this;
 - default any key-driven state on, since nothing headless can press one. That
   is how `P`, the thermal camera and the snow were each first seen.
+- to walk the *pages* -- the mission list, the win page -- fake SPACE in
+  `scan()` on chosen scan numbers (see The joystick), preset
+  `missions_cleared`, and make `flight()` return `FLIGHT_DONE` on entry. Five
+  presses go title, list, briefing, debrief, win page, and the page the
+  emulator is left waiting on is the one the screenshot shows, however late it
+  is taken. That is how the whole cleared-mission flow was tested.
+- **use `#if` for a test's compile-time switch, never `&& CONSTANT`** -- see
+  Performance: Calypsi dropped a constant-false term and the test silently
+  did something other than what it said.
 
 **And a still cannot show motion.** The snow's wind drift is invisible in one
 frame, because a flake's column is its spawn column plus a shift that grows
@@ -224,11 +237,14 @@ and never becomes a content area. `(type ram)` does not work.
 in `__low_level_init`, `src/mega65-game.scm` declares `$A000-$BFFF` as
 `highram` with no `(type …)`, and `HIGH_BSS` in `loader.h` marks what goes
 there: the campaign buffer and `load_staging`, 2052 bytes, which took the 32K
-from 41 bytes free to **2075** -- 1569 after the pickup mission. **The Kernal reads the whole disk with BASIC
-out** — every map, the campaign straight into the window — which was the one
-thing the mapgen branch had never shown, since it did no disk I/O banked.
-Seen in xemu; **still to boot on the machine**. Six more kilobytes of the
-window are free for whatever is marked next. BASIC never goes back in: the
+from 41 bytes free to **2075**; after the pickup mission, the cleared-mission
+record and the thermal drain it is **1278**. **The Kernal reads the whole disk
+with BASIC out** — every map, the campaign straight into the window — which
+was the one thing the mapgen branch had never shown, since it did no disk I/O
+banked. **Confirmed on the machine on 2 Oct 2026**: the whole game played
+through on a real MEGA65. Six more kilobytes of the window are free for
+whatever is marked next -- `HIGH_BSS` it, rebuild, and read `highram` in
+`build/sar.lst`. BASIC never goes back in: the
 game does not hand over to anything.
 
 **What the game did get is its stack measured**, which needed no banking at
@@ -629,7 +645,8 @@ it is delivered by `RETURN` within five cells as in First Aid **or by landing
 beside it**, which a pickup mission alone allows. The briefing labels the fix
 `COLLECT FROM` instead of `LAST KNOWN POSITION`, and **every debrief now
 gives the figure's position**, not the fix: the raft drifted, and the heart
-ends at the second hospital. Seen headless: loaded on the north roof, refused
+ends at the second hospital. Played on the machine on 2 Oct 2026; before that,
+seen headless: loaded on the north roof, refused
 at the south hospital with an empty bay, delivered by landing with a full one.
 
 **The fix and the figure can be in different places.** `survivor:` in a
@@ -655,7 +672,8 @@ deepest water exactly, so it must float on water of that depth, and its flat
 deck has no shading to give it an edge. It only has an entry of its own so
 that `thermal_set` can warm it -- a lukewarm grey, well short of the
 figures' white -- after the cold sweep. The orange first version could be
-spotted from the launch. **Seen headless**: nothing on the optical camera from
+spotted from the launch. **Played on the machine on 2 Oct 2026**, and before
+that seen headless: nothing on the optical camera from
 twelve cells, the raft faint and the pair bright on the thermal, nothing hot
 in the launch view, and the sea flat and uniform again after a sink fifty
 frames in. Two cells

@@ -50,19 +50,16 @@
   `lifeboat: yes` -- and the raft is put into the island's maps at launch and
   taken out again after the flight, so The Lost Hiker never sees it. The
   figure is First Aid's pair, since there is no room for a fourth. **Seen
-  headless**, optical and thermal and sunk; **not yet flown on the machine**,
-  where the thing to check is that The Lost Hiker's sea is clean after a
-  Shipwreck flight.
+  headless**, optical and thermal and sunk, and **played on the machine**.
 - **Mission five, Transplant Delivery**, over the island: land on the north
   hospital's roof (46.630N 8.106E) to load a donor heart, then drop it or land
   it at the south hospital (46.584N 8.117E), the two houses now in
   `maps/island.yaml`. New `pickup: yes` field; see The game in CLAUDE.md.
-  **Not yet flown on the machine.**
+  **Played on the machine.**
 - **The 32K is no longer the limit: BASIC is banked out** and `$A000-$BFFF`
   holds the campaign and the loader's staging buffer, so the program area went
-  from 41 bytes free to 2075 (1569 after mission five). **Boot it on the
-  machine first** -- the Kernal reading the disk with BASIC out has only been
-  seen in xemu.
+  from 41 bytes free to 2075 (1278 now). **Works on the machine**: the
+  Kernal reads the whole disk with BASIC out.
 - **Cleared missions are kept for the session**: green on the mission list
   unless selected, with `DONE` after the name, and once all five are cleared a win page (logo, drone, `ALL
   MISSIONS COMPLETE`) comes after the debrief, then the record resets and the
@@ -76,8 +73,11 @@
 
 Open from today:
 
-- **Next: a release.** Five missions are written. Fly all five on the
-  machine first -- the banking above is the risky part. All three map slots
+- **Next: the public release, planned for the weekend of 3-4 Oct 2026**,
+  once a friend has tested it. **Run `make release` first**: the disk in
+  `release/` is the 2 Oct build and does not have the thermal camera's double
+  drain. Check `git status` is clean before building it -- the first 2 Oct
+  disk picked up an uncommitted test change. After that, all three map slots
   and all three figure slots are full and the palette has 3 entries free, so
   a sixth mission reuses a map and a figure; the campaign has 914 of its 2048
   bytes left.
@@ -96,9 +96,9 @@ Open from today:
 **Released 2 Oct 2026** -- `release/searchandrescue.d81`, `PROFILE=0`, booted to
 the title in xemu before it was committed. Five missions, cleared missions
 marked on the list and a win page when all five are done, and the first disk
-with BASIC banked out. **Not yet booted on the machine**: that, and flying
-all five there, is the first thing to do with it -- the Kernal reading the
-disk with BASIC out has only been seen in xemu.
+with BASIC banked out. **Played through on the real MEGA65 on 2 Oct and it
+all works.** It does not have the thermal camera's double drain, which came
+after; `make release` before handing it out.
 
 The 18 Aug work -- the **thermal camera** on `T`, the **third mission** over
 a third generated world, and **snow** -- never had a disk of its own and

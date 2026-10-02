@@ -15,9 +15,9 @@ aftershocks that reshape the landscape mid-flight. `documentation/vision.md` has
 ## Status
 
 `release/searchandrescue.d81` is a disk you can boot -- **released 2 Oct 2026**,
-with all five missions and everything below on it. It has been booted in the
-emulator and **not yet on a real MEGA65**: it is the first disk that banks the
-BASIC ROM out for more memory, which is the thing to watch on the machine.
+with all five missions and everything below on it, and **played through on a
+real MEGA65**. The thermal camera's double battery drain came after it and
+goes on the next build of the disk.
 
 **1 Oct 2026:** a full-colour logo on the loading and title
 screens, with a drone hovering under it while the disk loads and flying about
