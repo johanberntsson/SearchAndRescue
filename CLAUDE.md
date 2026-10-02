@@ -14,8 +14,8 @@ hiker on the step pyramid of the island at 46.687N 8.106E to be found and
 reported, an EpiPen to be dropped to a pair of hikers by a lake on the
 plains at 46.658N 8.149E, and a skier buried by an avalanche at 46.584N
 8.177E who cannot be seen at all until the **thermal camera** is armed, and
-survivors of a shipwreck off the island's east coast, adrift in a **life
-raft** at 46.642N 8.219E whom only the thermal camera can see in it. Keyboard or joystick, either port. A
+survivors of a shipwreck off the island's south coast, adrift in a **life
+raft** at 46.544N 8.153E that only the thermal camera can see at all. Keyboard or joystick, either port. A
 flight also carries a wind that blows the drone
 about, a battery that runs it out, and per-mission weather; it can end four
 ways, all of them the same debrief page with different words on it.
@@ -259,7 +259,7 @@ That was the point of the reclaim. The thermal camera and its 32-bit key mask
 then took about 820 more, snow about 295, the controls page about 880 and
 the title's drone about 700, and the shipwreck's two new mission fields
 and life raft about 600, so a default build is **99.8% used with 56 bytes
-free**. The raft's own buffer went to attic RAM for exactly that reason —
+free** -- 41 since the raft learned to warm under the thermal camera. The raft's own buffer went to attic RAM for exactly that reason —
 the 32K was three bytes short of it.
 **That is the tightest this has been**, and the next thing of any size wants
 the `HIGH_BSS` banking above before it wants anything else.
@@ -602,20 +602,29 @@ is and what switching costs.
 mission file is where the figure really stands, and the fix is only what the
 briefing reads out; absent, the two are the same, as they are for the first
 three. The shipwreck sends you to where the ship went down and the raft has
-drifted seven cells south and seven east of it.
+drifted seven cells south and seven east of it. **Keep a hidden figure out of
+the launch view**: the drone starts at the middle of the map facing east,
+thirty degrees either side, and the raft's first position was nine degrees
+off that and in sight from the first frame. It is 73 degrees round now.
 
 **And a mission can float the figure in a life raft** (`lifeboat: yes`,
 `src/lifeboat.c`). It is not in the map, because the island is mission one's
 too: at launch `voxel_swap_cell` *exchanges* three by two cells of the
 resident maps — every sub-cell plane of both — with a buffer in attic RAM
-holding a deck two height units above the water in one orange entry, and after
+holding a deck two height units above the water in one entry of its own, and after
 the flight `main.c` calls `lifeboat_sink`, which exchanges them back. Doing it
 twice is the identity, so nothing remembers what the sea was. The renderer
-never learns, the figure stands on it because `voxel_ground` reads it, and it
-goes cold under the thermal camera because its colour (174, the `lifeboat`
-band in `maps/palette.yaml`, unshaded) is inside the sweep. **Seen headless**:
-the raft empty on the optical camera, the pair standing in it on the thermal,
-and the sea flat and uniform again after a sink fifty frames in. Two cells
+never learns, and the figure stands on it because `voxel_ground` reads it.
+**The raft is invisible to the optical camera on purpose**: its entry (174,
+the `lifeboat` band in `maps/palette.yaml`, unshaded) is each climate's
+deepest water exactly, so it must float on water of that depth, and its flat
+deck has no shading to give it an edge. It only has an entry of its own so
+that `thermal_set` can warm it -- a lukewarm grey, well short of the
+figures' white -- after the cold sweep. The orange first version could be
+spotted from the launch. **Seen headless**: nothing on the optical camera from
+twelve cells, the raft faint and the pair bright on the thermal, nothing hot
+in the launch view, and the sea flat and uniform again after a sink fifty
+frames in. Two cells
 across is the least that reads, for the terrace reason under Resources.
 
 **And a mission can say the figure is not visible at all.** `hidden: thermal`

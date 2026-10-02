@@ -1,5 +1,7 @@
 #include "thermal.h"
 
+#include "lifeboat.h"
+
 #include "loader.h"
 #include "sprite.h"
 #include "vic4.h"
@@ -97,6 +99,10 @@ void thermal_set(uint8_t on)
 
   if (on) {
     terrain_cold();
+    // The life raft is the one patch of ground that is not cold: there are
+    // people in it. Lukewarm, well short of THERMAL_HOT, so the figures still
+    // stand out of it. On the optical camera it is the deep sea exactly.
+    vic4_set_entry(LIFEBOAT_COLOUR, 72, 72, 112);
     sky_cold();
   } else {
     // Straight back out of the loaded palette, the whole run in one go. This

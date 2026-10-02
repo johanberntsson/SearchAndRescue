@@ -57,6 +57,13 @@ bands:
   # it onto the sea at launch and takes them out again afterwards, and this is
   # only the colour it paints with. One entry, unshaded -- a raft is flat --
   # and taken from the figures' pool, which it leaves three entries.
+  #
+  # **Each climate's raft is its deepest water, exactly**, so it cannot be
+  # seen at all on the optical camera -- the mission is that it is found by
+  # its heat. It has an entry of its own only so that src/thermal.c can warm
+  # it: under the thermal camera it is the one terrain colour that is not a
+  # cold copy of itself. It has to float on the deepest water for the same
+  # reason, which the shipwreck's comments say.
   lifeboat: {base: 174, count: 1, shaded: false}
 
 # What the sun does to a band's colour, darkest face to brightest.  A multiplier
@@ -87,7 +94,7 @@ climates:
     masonry:  [[96, 98, 94], [136, 138, 132]]
     roof:     [[52, 44, 44]]
     road:     [[62, 58, 54]]
-    lifeboat: [[236, 100, 28]]
+    lifeboat: [[8, 24, 52]]
 
   hot:
     water:    [[10, 40, 60], [70, 150, 170]]
@@ -98,7 +105,7 @@ climates:
     masonry:  [[140, 122, 92], [186, 170, 134]]
     roof:     [[104, 66, 48]]
     road:     [[92, 82, 68]]
-    lifeboat: [[236, 100, 28]]
+    lifeboat: [[10, 40, 60]]
 
   cold:
     water:    [[12, 28, 44], [72, 104, 124]]
@@ -109,4 +116,4 @@ climates:
     masonry:  [[92, 94, 100], [132, 134, 140]]
     roof:     [[54, 56, 64]]
     road:     [[70, 72, 78]]
-    lifeboat: [[236, 100, 28]]
+    lifeboat: [[12, 28, 44]]

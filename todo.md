@@ -32,9 +32,11 @@
 ## 2 Oct 2026
 
 - **Mission four, Shipwreck**: over the island, in rain. The briefing sends
-  you to where a trawler went down, 46.649N 8.212E, and there is nothing
-  there; the survivors are in a life raft that has drifted to 46.642N
-  8.219E, and the raft looks empty until `T` arms the thermal camera. Two new
+  you to where a trawler went down off the south coast, 46.551N 8.146E, and
+  there is nothing there; the survivors are in a life raft that has drifted
+  to 46.544N 8.153E, out of the launch view, painted the deep sea's own
+  colour so that only `T`'s thermal camera shows it -- the raft faintly
+  warm, the people in it hot. Two new
   mission fields carry it -- `survivor:`, where the figure really is, and
   `lifeboat: yes` -- and the raft is put into the island's maps at launch and
   taken out again after the flight, so The Lost Hiker never sees it. The
@@ -42,7 +44,7 @@
   headless**, optical and thermal and sunk; **not yet flown on the machine**,
   where the thing to check is that The Lost Hiker's sea is clean after a
   Shipwreck flight.
-- **The 32K is down to 56 bytes free.** The raft's buffer is in attic RAM
+- **The 32K is down to 41 bytes free.** The raft's buffer is in attic RAM
   because the program area was three bytes short of it. The fifth mission
   needs no code, but anything that does needs the `HIGH_BSS` banking first.
 
@@ -53,7 +55,7 @@ Open from today:
   palette has 3 entries free, which isn't enough for a fourth figure. So a new
   mission reuses an existing map and figure, or the ceilings come up first.
   A mission is a file in `missions/` and a line in `missions/campaign.yaml`,
-  with no code -- which matters, since the 32K has 56 bytes left. The
+  with no code -- which matters, since the 32K has 41 bytes left. The
   campaign has 143 of its 1024 bytes left, which is about one more.
 
 - **Is a full-colour pixel of `$FF` drawn in the cell's ink?** The panel
@@ -116,7 +118,7 @@ rain costs 0.68 ms of that on mission two, and the snow about the same). The
 march is 160 rays; each fills the two pixels it owns. **The thermal camera
 costs nothing per frame at all**, being a palette swap.
 
-**The 32K is down to 56 bytes free** in a default build, which is the tightest it has been. The next thing of any size
+**The 32K is down to 41 bytes free** in a default build, which is the tightest it has been. The next thing of any size
 wants the `HIGH_BSS` banking first -- see the Memory map notes in CLAUDE.md.
 **The disk is down to 1246 blocks free**, nearly all of it the avalanche map's
 268 KB.

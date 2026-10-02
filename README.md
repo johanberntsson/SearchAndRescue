@@ -27,8 +27,8 @@ loading screen, the debrief now returns to the title, and every key on a
 page of its own behind `HELP` or `F1`, which in the air is also the pause.
 
 **2 Oct 2026:** a fourth mission, **Shipwreck** — a trawler gone down off the
-island in the rain, and its survivors adrift in a life raft that looks empty
-until the thermal camera is armed.
+island in the rain, and its survivors adrift in a life raft that only the
+thermal camera can see.
 
 Four missions exist, end to end: a title screen, a mission list, a briefing, a
 flight, and a debrief. They are deliberately the same flight with different
@@ -40,7 +40,8 @@ mission if it goes down in the wrong place; and **Under The Snow** wants a
 skier found who an avalanche has buried, in falling snow, and who the ordinary
 camera cannot see at all; and **Shipwreck** sends you to where a trawler sank
 off the island, in rain, to find its survivors in a life raft that has
-drifted off the fix and looks empty until the thermal camera is armed. They
+drifted off the fix and is the colour of the sea until the thermal camera is
+armed. They
 fly over **three different generated worlds, all on the one disk**.
 
 - 320x152 full-colour 3D view, double buffered, over a six-row painted

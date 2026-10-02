@@ -4,30 +4,37 @@
 #
 # The fix is where the ship went down, and there is nothing at it. Whoever got
 # off is in a life raft that has drifted south-east, ten cells or so, and
-# under its canopy -- so the raft is plain to see and looks empty, and only
-# the thermal camera shows anybody in it. `survivor:` is where they really are
+# under its canopy. The raft is painted the colour of the sea it floats on, so
+# the optical camera shows nothing at all; the thermal camera shows the raft
+# faintly and the people in it plainly. `survivor:` is where they really are
 # and `lifeboat: yes` floats them; see src/lifeboat.h.
 
 name: Shipwreck
 
 brief: >
-  A trawler went down off the east coast. The ship is gone. Survivors may
+  A trawler went down off the south coast. The ship is gone. Survivors may
   be in a raft under its canopy.
 
 objective: Find the survivors and report
 
-# 46.649N 008.212E is open sea nine cells off the island's east coast, at
-# sea level and in the deepest water colour; the raft is seven cells east and
-# seven south of it, with clear water all round. Both are cells of
+# 46.551N 008.146E is open sea five cells off the island's south coast; the
+# raft is seven cells east and seven south of it, fourteen from land, in the
+# deepest water colour all round -- which it has to be, since that is the
+# colour the raft is painted (see `lifeboat` in maps/palette.yaml).
+#
+# **Both are well out of the launch view.** The drone starts in the middle of
+# the map facing east with thirty degrees either side of it, and the first
+# version of this put the raft at nine degrees off that, in sight from the
+# first frame. It is 73 degrees round to the south now. Both are cells of
 # island.yaml, so **they move when the island is re-rolled** -- check them
 # against maps/cmap03.png after anything that changes the generator.
 map: maps/island.yaml
 fix:
-  lat: 46.649
-  lon: 8.212
+  lat: 46.551
+  lon: 8.146
 survivor:
-  lat: 46.642
-  lon: 8.219
+  lat: 46.544
+  lon: 8.153
 lifeboat: yes
 
 # The figure is the pair from First Aid: there is no room for a fourth sheet
