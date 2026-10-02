@@ -18,8 +18,8 @@
 //
 // HELP is not in that matrix at all. It is one of the C65's extra keys --
 // NO SCROLL, TAB, ALT, HELP, F9, F11, F13, ESC -- which sit on a ninth row
-// selected by bit 1 of $D607 (port E of the C65's UART, with its direction
-// register at $D608) rather than by $DC00. See scan_extra().
+// read here through the MEGA65's $D613/$D614 rather than through $DC00. See
+// scan_extra().
 //
 // **The joysticks are on the same two registers**, which is the whole of what
 // makes reading them awkward. Port 2 pulls the *row select* lines low, $DC00,
@@ -46,31 +46,23 @@ static uint8_t scan_row(uint8_t row)
   return (uint8_t)(~columns & ~port1_lines);
 }
 
-// The C65's extra row, read with every ordinary row deselected so that
-// nothing but it can pull a column low. HELP is bit 3. Both port E registers
-// are put back as they were found: the ROM's own keyboard scan drives them too.
-#define D607 (*(volatile uint8_t *)0xD607)
-#define D608 (*(volatile uint8_t *)0xD608)
+// The C65's extra row, read through the MEGA65's own window on the keyboard
+// matrix rather than through the CIA: write a row to $D614 and $D613 reads it
+// back, active low, whatever $DC00 and the joysticks are doing. Row 8 is the
+// extra row and HELP is bit 3.
+//
+// **Not through $D607.** That was the C65's way -- deselect every CIA row,
+// pull port E bit 1 low and read $DC01 -- and xemu agrees with it, but on a
+// real MEGA65 the extra row reaches $DC01 with port E left alone, so HELP read
+// as port 1's stick pushed right (bit 3 is JOY_RIGHT) and turned the drone,
+// and port1_lines then masked it out of the extra row as well.
+#define KEYROW_SEL  (*(volatile uint8_t *)0xD614)
+#define KEYROW_READ (*(volatile uint8_t *)0xD613)
 
 static uint8_t scan_extra(void)
 {
-  uint8_t columns, data, ddr, save;
-  __interrupt_state_t state = __get_interrupt_state();
-
-  __disable_interrupts();
-  save = CIA1.pra;
-  data = D607;
-  ddr = D608;
-  CIA1.pra = 0xFF;
-  D607 = (uint8_t)(data & ~0x02);
-  D608 = (uint8_t)(ddr | 0x02);
-  columns = CIA1.prb;
-  D608 = ddr;
-  D607 = data;
-  CIA1.pra = save;
-  __restore_interrupt_state(state);
-
-  return (uint8_t)(~columns & ~port1_lines);
+  KEYROW_SEL = 8;
+  return (uint8_t)~KEYROW_READ;
 }
 
 // Both ports, active high: bit 0 up, 1 down, 2 left, 3 right, 4 fire.
@@ -87,7 +79,7 @@ static uint8_t scan_extra(void)
 #define JOY_FIRE  0x10
 #define JOY_LINES 0x1F
 
-static uint8_t read_sticks(void)
+static uint8_t read_sticks(uint8_t extra)
 {
   uint8_t p1, p2, save;
   __interrupt_state_t state = __get_interrupt_state();
@@ -100,8 +92,11 @@ static uint8_t read_sticks(void)
   CIA1.pra = save;
   __restore_interrupt_state(state);
 
+  // A key held on the C65's extra row pulls the same lines on a real MEGA65
+  // (see scan_extra), so it is masked out of every row like a stick is -- but
+  // it is a key, not a stick, and never reported as one.
   port1_lines = p1;
-  return (uint8_t)(p1 | p2);
+  return (uint8_t)((p1 & ~extra) | p2);
 }
 
 // **A stick is debounced and a key is not.** The keyboard has never been
@@ -119,9 +114,9 @@ static uint8_t read_sticks(void)
 static uint8_t joy_held;
 static uint8_t joy_idle[5];
 
-static uint8_t sticks(void)
+static uint8_t sticks(uint8_t extra)
 {
-  uint8_t now = read_sticks();
+  uint8_t now = read_sticks(extra);
   uint8_t i, bit;
 
   for (i = 0, bit = 1; i < 5; i++, bit <<= 1) {
@@ -140,15 +135,16 @@ static keymask was_held;
 
 static keymask scan(void)
 {
-  // First, because it is what tells scan_row which columns are a stick.
-  uint8_t joy = sticks();
+  // The extra row first, because it says which column lines are a key rather
+  // than a stick; then the sticks, which tell scan_row which lines to ignore.
+  uint8_t extra = scan_extra();
+  uint8_t joy = sticks(extra);
   uint8_t r0 = scan_row(0xFE);
   uint8_t r1 = scan_row(0xFD);
   uint8_t r2 = scan_row(0xFB);
   uint8_t r4 = scan_row(0xEF);
   uint8_t r5 = scan_row(0xDF);
   uint8_t r7 = scan_row(0x7F);
-  uint8_t extra = scan_extra();
   keymask keys = 0;
 
   if (r1 & 0x02)

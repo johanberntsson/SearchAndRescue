@@ -918,13 +918,15 @@ reach it because the page names the mission's own button, `SPACE` or
   readout on it, the battery's colour, and a message still counting down were
   never touched.
 - **`HELP` is not on the C64 matrix.** It is one of the C65's extra keys --
-  NO SCROLL, TAB, ALT, HELP, F9, F11, F13, ESC -- on a ninth row selected by
-  bit 1 of `$D607`, with its direction register at `$D608`, and read on
-  `$DC01` with every ordinary row deselected; HELP is bit 3. `scan_extra` in
-  `input.c` puts both registers back as it found them, since the ROM's own scan
-  drives them too. Worked out from xemu's source (`port_d607` in
-  `targets/mega65/`), which has no direction register, so the `$D608` half is
-  **still to be confirmed on a real MEGA65**. `F1` is row 0 bit 4 and needs
+  NO SCROLL, TAB, ALT, HELP, F9, F11, F13, ESC -- on a ninth row, and
+  `scan_extra` in `input.c` reads it through the MEGA65's direct matrix
+  window: row 8 written to `$D614`, read back active low on `$D613`, HELP is
+  bit 3. **The C65's own route, port E bit 1 at `$D607`, worked in xemu and
+  not on the machine** (2 Oct 2026): there the extra row reaches `$DC01` with
+  every CIA row deselected, which is where port 1's stick is read, so HELP
+  turned the drone right (bit 3 is `JOY_RIGHT`) and the port-1 mask then hid
+  it from the extra-row read too. An extra-row key is now masked out of the
+  stick, though still out of every matrix row, as a stick is. `F1` is row 0 bit 4 and needs
   nothing special, which is why it is there as well.
 
 ### The joystick
