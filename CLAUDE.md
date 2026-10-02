@@ -589,7 +589,7 @@ what a further overlay should do too.
 
 `src/main.c` is a state machine over four full-screen pages and a flight:
 title, mission list, briefing, fly, debrief, back to the title. The controls
-page is a fifth, reached sideways from the briefing and from the flight and
+page is a fifth, reached sideways from every page and from the flight and
 returning to whichever it came from; see The controls page. `src/screens.c`
 draws the pages, `src/mission.c` holds what there is to be sent on.
 
@@ -897,12 +897,17 @@ in the air: this is not the job, take me back.
 
 ### The controls page
 
-**Every key is on a page of its own, reached with `HELP` or `F1`** from the
-briefing and from the air (`screens_controls`). The briefing used to carry
-the list and was full to the last row with it; now it is only the job, and its
-bottom line says `M MUSIC ON` beside `HELP/F1 CONTROLS`. Only those two places
-reach it because the page names the mission's own button, `SPACE` or
-`RETURN`, and only they know which mission that is.
+**Every key is on a page of its own, reached with `HELP` or `F1`** from every
+page -- title, mission list, briefing, debrief, win page -- and from the air
+(`screens_controls`). The briefing used to carry the list and was full to the
+last row with it; now it is only the job, and every page's bottom line says
+`M MUSIC ON` beside `HELP/F1 CONTROLS`. The page names the mission's own
+button, `SPACE` or `RETURN`, from the briefing, the debrief and the air; from
+the title, the list and the win page no mission has been chosen, so
+`main.c` passes `mission_count()` and the page names both, one row longer.
+Coming back redraws the page it was called from (`page_until_space`, and the
+list and debrief by hand, since they take arguments). Added after playing on
+the machine on 2 Oct 2026, where HELP from the title did nothing.
 
 - **In the air it is the pause.** `pause_flight` stops the motors, shows the
   page and waits on its own scan rather than `page_scan`, which would take `M`

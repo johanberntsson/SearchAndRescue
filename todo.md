@@ -21,13 +21,14 @@
   (drawn here, and meant to be replaced by something better if anybody has
   it). **Still to see on the machine**: 16-colour sprites have not been tried
   on it. About 700 bytes; **the 32K is down to 653 free**.
-- **The controls have a page of their own**, on `HELP` or `F1` from the
-  briefing and from the air, where it pauses the flight and the pause is left
-  out of the flight time. The briefing is only the job now, with
-  `M MUSIC ON` and `HELP/F1 CONTROLS` under it. **Still to try on the
-  machine**: `HELP` itself, which is on the C65's extra keyboard row through
-  `$D607`/`$D608` and was worked out from xemu's source; `F1` is the ordinary
-  matrix and safe either way.
+- **The controls have a page of their own**, on `HELP` or `F1` from every
+  page and from the air, where it pauses the flight and the pause is left
+  out of the flight time. The briefing is only the job now, and every page
+  has `M MUSIC ON` and `HELP/F1 CONTROLS` under it. `HELP` is read through
+  `$D614`/`$D613` and **works on the machine** (2 Oct 2026); the C65's
+  `$D607` route read it as port 1's stick pushed right. **Still to try on
+  the machine**: HELP from the title, list, debrief and win page, which was
+  seen headless only.
 
 ## 2 Oct 2026
 

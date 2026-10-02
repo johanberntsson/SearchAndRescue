@@ -369,9 +369,30 @@ static keymask wait_for_key(keymask keys)
   return pressed & keys;
 }
 
-static void wait_for_space(void)
+// HELP or F1 from any page is the controls page, and either key or SPACE
+// comes back. `mission_no` is the mission whose button the page names, or
+// mission_count() before one has been chosen, when it names both.
+static void controls_page(uint8_t mission_no)
 {
-  wait_for_key(KEY_SPACE);
+  screens_controls(mission_no, 0);
+  wait_for_key(KEY_SPACE | KEY_HELP);
+}
+
+// A page that SPACE dismisses, drawn by `page` -- and drawn again after a
+// visit to the controls page, which wrote over it.
+static void page_until_space(void (*page)(void), uint8_t mission_no)
+{
+  for (;;) {
+    page();
+    if (wait_for_key(KEY_SPACE | KEY_HELP) & KEY_SPACE)
+      return;
+    controls_page(mission_no);
+  }
+}
+
+static void title_page(void)
+{
+  page_until_space(screens_title, mission_count());
 }
 
 // The controls page over a flight, which is the pause. Nothing in the flight
@@ -415,6 +436,12 @@ static uint8_t choose_mission(uint8_t selected)
       return selected;
     if (pressed & KEY_STOP)
       return mission_count();
+    if (pressed & KEY_HELP) {
+      controls_page(mission_count());
+      screens_missions(selected);
+      input_flush();
+      continue;
+    }
     if ((pressed & KEY_W) && selected)
       moved = (uint8_t)(selected - 1);
     if ((pressed & KEY_S) && selected + 1 < mission_count())
@@ -714,8 +741,7 @@ int main(void)
   // checked at all.
 #if !FLYNOW
   music_set(music_wanted);
-  screens_title();
-  wait_for_space();
+  title_page();
 #endif
 
   for (;;) {
@@ -729,8 +755,7 @@ int main(void)
     music_set(music_wanted);
     mission_no = choose_mission(mission_no);
     if (mission_no >= mission_count()) {  // backed out of the list
-      screens_title();
-      wait_for_space();
+      title_page();
       mission_no = 0;
       continue;
     }
@@ -743,10 +768,8 @@ int main(void)
       do {
         screens_briefing(mission_no);
         key = wait_for_key(KEY_SPACE | KEY_STOP | KEY_HELP);
-        if (key & KEY_HELP) {
-          screens_controls(mission_no, 0);
-          wait_for_key(KEY_SPACE | KEY_HELP);
-        }
+        if (key & KEY_HELP)
+          controls_page(mission_no);
       } while (key & KEY_HELP);
       if (key & KEY_STOP)
         continue;
@@ -771,8 +794,13 @@ int main(void)
     if (how == FLIGHT_DONE)
       missions_cleared |= (uint8_t)(1 << mission_no);
 
-    screens_debrief(mission_no, how, seconds);
-    wait_for_space();
+    // Not through page_until_space, whose pages take no arguments.
+    for (;;) {
+      screens_debrief(mission_no, how, seconds);
+      if (wait_for_key(KEY_SPACE | KEY_HELP) & KEY_SPACE)
+        break;
+      controls_page(mission_no);
+    }
 #if !FLYNOW
     // The last one cleared: the win page, then the whole campaign again from
     // nothing -- the game goes round for ever, and the record goes with it.
@@ -780,8 +808,7 @@ int main(void)
     // logo and drone and all, and showing the title after it is the same
     // page twice.
     if (missions_cleared == MISSIONS_ALL) {
-      screens_won();
-      wait_for_space();
+      page_until_space(screens_won, mission_count());
       missions_cleared = 0;
       mission_no = 0;
       continue;
@@ -789,8 +816,7 @@ int main(void)
     // Back by way of the title rather than straight to the list: a flight is
     // over, and the game goes round again from its front page. The list still
     // opens on the mission just flown.
-    screens_title();
-    wait_for_space();
+    title_page();
 #endif
   }
 }

@@ -65,17 +65,16 @@ void screens_music(uint8_t on)
   music_line();
 }
 
-// The line as every page but the briefing draws it.
+// The line as the controls page draws it, which is the one page without the
+// key for itself beside it.
 static void sound_line(void)
 {
   music_col = MUSIC_COL;
   music_line();
 }
 
-// And as the briefing does: the mute, then the key for the controls page,
-// which is reachable from here and from the air and nowhere else -- the
-// mission's own button is one of its lines, and only those two places know
-// which mission that is.
+// And as every other page does: the mute, then the key for the controls page,
+// which is reachable from every page and from the air.
 #define HELP_TEXT   "HELP/F1   CONTROLS"
 #define SOUND_GAP   4
 #define HELP_COL    (MUSIC_COL_HELP + MUSIC_TEXT_W + SOUND_GAP)
@@ -279,7 +278,7 @@ void screens_title(void)
   title_lines();
   drone_show();
   centre(PROMPT_ROW, "PRESS SPACE OR FIRE", PANEL_INK);
-  sound_line();
+  sound_line_help();
 }
 
 // The selected line is white whatever its state; the others are grey, or the
@@ -305,7 +304,7 @@ void screens_won(void)
   centre(17, "WELL DONE, PILOT", PANEL_INK);
   centre(19, "* * * * * * * * * * * * * *", PANEL_TEXT);
   centre(PROMPT_ROW, "PRESS SPACE OR FIRE", PANEL_INK);
-  sound_line();
+  sound_line_help();
 }
 
 void screens_missions(uint8_t selected)
@@ -329,7 +328,7 @@ void screens_missions(uint8_t selected)
   }
 
   centre(PROMPT_ROW, "W S   CHOOSE      SPACE OR FIRE   BRIEF", PANEL_LABEL);
-  sound_line();
+  sound_line_help();
 }
 
 void screens_briefing(uint8_t mission_no)
@@ -365,13 +364,17 @@ void screens_briefing(uint8_t mission_no)
 void screens_controls(uint8_t mission_no, uint8_t paused)
 {
   const mission *m = &missions[mission_no];
+  // Below the list and the briefing there is no mission yet, so no one
+  // button: both are named, and RUN/STOP and the rest move down a row.
+  uint8_t general = mission_no >= mission_count();
+  uint8_t row = (uint8_t)(13 + general);
 
   vic4_text_mode();
   centre(2, paused ? "FLIGHT PAUSED" : "CONTROLS", PANEL_INK);
 
   // **A control the game does not name is a control nobody has**, and mission
   // three cannot be finished without T, so every key is here and the page is
-  // reachable from the briefing and from the air.
+  // reachable from every page and from the air.
   //
   // A third column for the joystick, at 31 where it clears the longest line
   // it shares: the stick is W A S D and the button is the mission's own key,
@@ -390,18 +393,25 @@ void screens_controls(uint8_t mission_no, uint8_t paused)
   vic4_puts(4, 11, "T        THERMAL CAMERA", PANEL_INK);
   // The one line that differs between the two kinds of mission, and it comes
   // out of the mission's cargo bay rather than out of a branch here.
-  vic4_puts(4, 12, mission_action_name(m), PANEL_INK);
-  vic4_puts(13, 12, mission_action_verb(m), PANEL_INK);
-  vic4_puts(31, 12, "FIRE", PANEL_LABEL);
-  vic4_puts(4, 13, "RUN/STOP", PANEL_INK);
-  vic4_puts(13, 13, "ABANDON MISSION", PANEL_INK);
+  if (general) {
+    vic4_puts(4, 12, "SPACE    FILE REPORT", PANEL_INK);
+    vic4_puts(4, 13, "RETURN   RELEASE CARGO", PANEL_INK);
+    vic4_puts(31, 12, "FIRE", PANEL_LABEL);
+    vic4_puts(31, 13, "FIRE", PANEL_LABEL);
+  } else {
+    vic4_puts(4, 12, mission_action_name(m), PANEL_INK);
+    vic4_puts(13, 12, mission_action_verb(m), PANEL_INK);
+    vic4_puts(31, 12, "FIRE", PANEL_LABEL);
+  }
+  vic4_puts(4, row, "RUN/STOP", PANEL_INK);
+  vic4_puts(13, row, "ABANDON MISSION", PANEL_INK);
 
-  vic4_puts(4, 15, "M        ENGINE SOUND", PANEL_INK);
-  vic4_puts(4, 16, "HELP/F1  PAUSE AND CONTROLS", PANEL_INK);
+  vic4_puts(4, (uint8_t)(row + 2), "M        ENGINE SOUND", PANEL_INK);
+  vic4_puts(4, (uint8_t)(row + 3), "HELP/F1  PAUSE AND CONTROLS", PANEL_INK);
 
   // From the air the page is a pause, and there is nothing for M to mute:
   // the tune is not playing and the motors are stopped until the flight goes
-  // on. So the line under the prompt is only drawn from the briefing.
+  // on. So the line under the prompt is only drawn off the ground.
   if (paused) {
     centre(PROMPT_ROW, "SPACE OR FIRE   RESUME", PANEL_LABEL);
   } else {
@@ -445,5 +455,5 @@ void screens_debrief(uint8_t mission_no, flight_outcome how, uint16_t seconds)
   put_digits(27, 13, seconds % 60, 2, PANEL_INK);
 
   centre(PROMPT_ROW, "SPACE OR FIRE   CONTINUE", PANEL_LABEL);
-  sound_line();
+  sound_line_help();
 }
