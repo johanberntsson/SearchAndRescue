@@ -282,9 +282,10 @@ void screens_title(void)
   sound_line();
 }
 
-// A cleared mission is drawn in the panel's own green and says DONE after
-// its name, and can still be chosen: flying one again is allowed, and only
-// the record of it is fixed. The columns leave room for the longest name
+// The selected line is white whatever its state; the others are grey, or the
+// panel's own green once cleared. DONE after the name is what still says so
+// on the selected line. A cleared mission can still be chosen: flying one
+// again is allowed, and only the record of it is fixed. The columns leave room for the longest name
 // tools/campaign.py allows, 24, between the number and the tag.
 #define LIST_ARROW 3
 #define LIST_NUM   5
@@ -309,7 +310,7 @@ void screens_won(void)
 
 void screens_missions(uint8_t selected)
 {
-  uint8_t i, done = 0;
+  uint8_t i;
 
   vic4_text_mode();
   centre(2, "SELECT MISSION", PANEL_INK);
@@ -317,23 +318,15 @@ void screens_missions(uint8_t selected)
   for (i = 0; i < mission_count(); i++) {
     uint8_t row = (uint8_t)(6 + i * 2);
     uint8_t cleared = (uint8_t)(missions_cleared >> i & 1);
-    uint8_t ink = cleared ? LIST_DONE
-                          : (i == selected ? PANEL_INK : PANEL_LABEL);
+    uint8_t ink = i == selected ? PANEL_INK
+                                : (cleared ? LIST_DONE : PANEL_LABEL);
 
     vic4_text_char(LIST_ARROW, row, i == selected ? '>' : ' ', PANEL_INK);
     put_digits(LIST_NUM, row, (uint16_t)(i + 1), 1, ink);
     vic4_puts(LIST_NAME, row, missions[i].name, ink);
-    if (cleared) {
+    if (cleared)
       vic4_puts(LIST_TAG, row, "DONE", LIST_DONE);
-      done++;
-    }
   }
-
-  // How far through the campaign, under the heading: "3 OF 5 CLEARED".
-  put_digits(13, 4, done, 1, LIST_DONE);
-  vic4_puts(15, 4, "OF", PANEL_LABEL);
-  put_digits(18, 4, mission_count(), 1, PANEL_LABEL);
-  vic4_puts(20, 4, "CLEARED", PANEL_LABEL);
 
   centre(PROMPT_ROW, "W S   CHOOSE      SPACE OR FIRE   BRIEF", PANEL_LABEL);
   sound_line();

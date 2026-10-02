@@ -54,8 +54,8 @@
   from 41 bytes free to 2075 (1569 after mission five). **Boot it on the
   machine first** -- the Kernal reading the disk with BASIC out has only been
   seen in xemu.
-- **Cleared missions are kept for the session**: green with `DONE` on the
-  mission list, and once all five are cleared a win page (logo, drone, `ALL
+- **Cleared missions are kept for the session**: green on the mission list
+  unless selected, with `DONE` after the name, and once all five are cleared a win page (logo, drone, `ALL
   MISSIONS COMPLETE`) comes after the debrief, then the record resets and the
   game goes back to the title. Not saved to disk.
 - **The checkview reference is retaken**, with the houses and road in the
