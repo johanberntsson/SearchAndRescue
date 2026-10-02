@@ -208,6 +208,13 @@ HGT_SIZE, or find the artwork 15 KB somewhere else the VIC-IV can read."
 // code for it; reviving it means finding another kilobyte first.
 #define LOW_FREE __attribute__((section("zpsave")))
 
+// **The RAM under the BASIC ROM, $A000-$BFFF**, which src/bank.s banks in
+// before main and src/mega65-game.scm hands to this section: 8 KB that the
+// 32K at $2001 does not have to find. Uninitialised data only -- the linker
+// script is what keeps anything that has to arrive in the PRG out of it --
+// and chosen per object, so what moves is what is marked.
+#define HIGH_BSS __attribute__((section("highbss")))
+
 #if WIDE
 #error "WIDE=1 is retired: the plane tables now live in the low free RAM at \
 $1600, which only has room for them when the per-ray tables are half size. \

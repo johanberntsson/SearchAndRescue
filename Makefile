@@ -46,7 +46,7 @@ SIZEFLAGS = -DWIDE=$(WIDE) -DHGT_SIZE=$(HGT_SIZE) -DCOL_SIZE=$(COL_SIZE) \
 CFLAGS   = $(TARGET) -O2 --speed -DPROFILE_DETAIL=$(PROFILE) $(SIZEFLAGS)
 ASFLAGS  = $(TARGET) -DPROFILE_DETAIL=$(PROFILE) $(SIZEFLAGS)
 LDFLAGS  = $(TARGET) --output-format=prg
-LINKFILE = mega65-plain.scm
+LINKFILE = src/mega65-game.scm
 
 BUILD    = build
 # src/sprtest.c is a standalone program with a main of its own -- see the

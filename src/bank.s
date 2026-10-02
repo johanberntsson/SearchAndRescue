@@ -36,9 +36,13 @@ ROM_BASIC:  .equ 0x10
             .public __low_level_init, cstack_measure
 
 __low_level_init:
-            ; The ROM stays mapped for now -- see the note at the top of the
-            ; file. Banking is groundwork; the measurement below is the thing
-            ; that pays immediately.
+            ; BASIC out, and $A000-$BFFF is RAM for the rest of the run: the
+            ; HIGH_BSS window in src/mega65-game.scm. Here rather than in main
+            ; because nothing may read the window before it is RAM -- and
+            ; after the startup has set the C stack, which is below it.
+            lda     ROMMAP
+            and     #~ROM_BASIC & 0xff
+            sta     ROMMAP
             lda     #.byte0 (.sectionStart cstack)
             sta     zp:_Zp
             lda     #.byte1 (.sectionStart cstack)

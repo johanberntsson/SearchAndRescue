@@ -17,7 +17,7 @@
 // cannot name is not a search area. A fix is a cell of one particular map and
 // moves when that map is re-rolled -- the mission files say so where a pilot
 // will read it.
-static uint8_t campaign[CAMPAIGN_BYTES];
+HIGH_BSS static uint8_t campaign[CAMPAIGN_BYTES];
 
 // The header. Four bytes of magic, so a stale disk is caught rather than
 // flown, and then the three counts that say what else is on the disk.

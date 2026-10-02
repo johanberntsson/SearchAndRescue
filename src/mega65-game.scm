@@ -1,34 +1,29 @@
-;;; The game's memory map: the stock mega65-plain.scm with its BSS and its C
-;;; stack moved into the RAM under the BASIC ROM.
+;;; The game's memory map: the stock mega65-plain.scm, plus the 8 KB of RAM
+;;; under the BASIC ROM for whatever BSS is marked HIGH_BSS (src/loader.h).
 ;;;
-;;; **The 32 KB at $2001 was the tightest thing in this project** -- 44 bytes
-;;; free before this -- and it was never the machine's limit, only what is safe
-;;; with every ROM mapped in. The game banks BASIC out for its whole run (see
-;;; src/bank.s) and gets $A000-$BFFF back, which is where `zdata` and `cstack`
-;;; go: 1.6 KB and 4 KB, so about 5.7 KB of the 32 comes free.
+;;; **The 32 KB at $2001 was this file's doing, not the machine's.** The
+;;; stock script gives `program` $2001-$9FFF because that is what is safe with
+;;; every ROM mapped in. src/bank.s banks BASIC out ($D030 bit 4) before main
+;;; runs, and $A000-$BFFF is ordinary RAM from then on.
 ;;;
-;;; **Named, not wholesale.** `zdata` and `cstack` are sections the linker
-;;; rules already know, and putting either in a second `any` memory makes a
-;;; second *content* area, which a PRG cannot have -- "multiple program areas
-;;; not allowed in prg output". A section of our own is only ever BSS, so it
-;;; places without creating one. HIGH_BSS in src/vic4.h marks what moves.
+;;; **No `(type ...)` on it, and that is the whole trick.** Declared `any`, or
+;;; even `ram`, the linker may put `zdata`'s initialised half or `cstack` up
+;;; here, and either makes a second *content* area, which a PRG cannot have --
+;;; "multiple program areas not allowed in prg output". Declared the way the
+;;; stock script declares freeSpace -- a name and a section and nothing else
+;;; -- it takes the named section and never becomes one. Only BSS goes up
+;;; here, so nothing in the window has to arrive from the disk with the ROM
+;;; still mapped over it.
 ;;;
-;;; **Only BSS and the stack.** Neither is in the PRG, so neither has to be
-;;; written above $9FFF by a loader running with the ROM still mapped. Code and
-;;; initialised data stay where they were.
-;;;
-;;; The KERNAL at $E000 stays mapped, which is what makes this safe: the game
-;;; reads its resources through it at startup, its interrupt vectors are the
-;;; ROM's, and it never needs an SEI. $C000-$CFFF is left alone too -- stage
-;;; one banks it out, but stage one does no disk I/O, and the C65 keeps parts
-;;; of its kernel there.
+;;; The KERNAL at $E000 and $C000-$CFFF are left alone: the game reads its
+;;; resources through the KERNAL and its interrupt vectors are the ROM's.
 
 (define memories
   '((memory program
             (address (#x2001 . #x9fff)) (type any)
             (section (programStart #x2001) (startup #x200e)))
     (memory highram
-            (address (#xa000 . #xbfff)) (type any)
+            (address (#xa000 . #xbfff))
             (section highbss))
     (memory zeroPage (address (#x2 . #x7f)) (type ram) (qualifier zpage)
             (section (registers #x2)))

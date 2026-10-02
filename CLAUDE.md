@@ -218,8 +218,16 @@ is to declare the window the way the stock script declares `freeSpace` — a
 name and a section and **no `(type …)` at all** — which takes the named section
 and never becomes a content area. `(type ram)` does not work.
 
-**The game has not been banked yet**, and what it needs first is its big BSS
-marked `HIGH_BSS`; `src/mega65-game.scm` and `src/bank.s` are waiting for it. 
+**The game is banked now** (2 Oct 2026). `src/bank.s` clears `$D030` bit 4
+in `__low_level_init`, `src/mega65-game.scm` declares `$A000-$BFFF` as
+`highram` with no `(type …)`, and `HIGH_BSS` in `loader.h` marks what goes
+there: the campaign buffer and `load_staging`, 2052 bytes, which took the 32K
+from 41 bytes free to **2075**. **The Kernal reads the whole disk with BASIC
+out** — every map, the campaign straight into the window — which was the one
+thing the mapgen branch had never shown, since it did no disk I/O banked.
+Seen in xemu; **still to boot on the machine**. Six more kilobytes of the
+window are free for whatever is marked next. BASIC never goes back in: the
+game does not hand over to anything.
 
 **What the game did get is its stack measured**, which needed no banking at
 all: 144 bytes of the toolchain's 4096, so it builds with 512 and went from
@@ -261,11 +269,8 @@ the title's drone about 700, and the shipwreck's two new mission fields
 and life raft about 600, so a default build is **99.8% used with 56 bytes
 free** -- 41 since the raft learned to warm under the thermal camera. The raft's own buffer went to attic RAM for exactly that reason —
 the 32K was three bytes short of it.
-**That is the tightest this has been**, and the next thing of any size wants
-the `HIGH_BSS` banking above before it wants anything else.
-
-Next after that would be the 512-byte bounce buffer itself, or the sprite's
-1028.
+That was the tightest it ever got, and the `HIGH_BSS` banking above is what
+undid it.
 
 **`$1600-$1EFF` is 2304 bytes of ordinary chip RAM the linker rules hand to a
 section called `zpsave`, which nothing in this program uses** — the map said

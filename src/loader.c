@@ -22,7 +22,7 @@
 // through here and DMAd up into the banks above. Shared with src/sprite.c,
 // which draws the flight's figure straight out of it -- see LOAD_STAGING in
 // loader.h for why the two can never collide.
-uint8_t load_staging[LOAD_STAGING];
+HIGH_BSS uint8_t load_staging[LOAD_STAGING];
 
 // What went wrong, for the screen to show. Loading happens with the game's
 // own display up, so a printf goes somewhere nobody can see -- and worse,
