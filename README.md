@@ -14,9 +14,10 @@ aftershocks that reshape the landscape mid-flight. `documentation/vision.md` has
 
 ## Status
 
-`release/searchandrescue.d81` is a disk you can boot -- **released 2 Oct 2026**,
-with all five missions and everything below on it, and **played through on a
-real MEGA65**.
+`release/searchandrescue.d81` is a disk you can boot -- the **release
+candidate of 2 Oct 2026**, out to testers ahead of a public release, with all
+five missions and everything below on it, and **played through on a real
+MEGA65**.
 
 **1 Oct 2026:** a full-colour logo on the loading and title
 screens, with a drone hovering under it while the disk loads and flying about
@@ -34,6 +35,11 @@ brings up a win page, after which the record starts again from nothing.
 Underneath, **the game broke out of its 32 KB**: the BASIC ROM is banked out
 at startup and the 8 KB of RAM under it holds the campaign and the loader's
 buffer, which took the program area from 41 bytes free to over a kilobyte.
+
+**Later on 2 Oct:** `HELP` now works on a real MEGA65 as well as `F1`, and
+either brings up the controls from any screen. `RUN/STOP` -- or `ESC`, which
+is what a PC keyboard has in the emulator -- on the title screen quits the
+game back to BASIC's READY prompt.
 
 Five missions exist, end to end: a title screen, a mission list, a briefing, a
 flight, and a debrief. They are deliberately the same flight with different

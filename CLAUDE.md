@@ -239,7 +239,8 @@ in `__low_level_init`, `src/mega65-game.scm` declares `$A000-$BFFF` as
 `highram` with no `(type …)`, and `HIGH_BSS` in `loader.h` marks what goes
 there: the campaign buffer and `load_staging`, 2052 bytes, which took the 32K
 from 41 bytes free to **2075**; after the pickup mission, the cleared-mission
-record and the thermal drain it is **1278**. **The Kernal reads the whole disk
+record and the thermal drain it was **1278**, and after HELP on every page and
+quitting to BASIC it is **495** -- 872 in a `PROFILE=0` release build. **The Kernal reads the whole disk
 with BASIC out** — every map, the campaign straight into the window — which
 was the one thing the mapgen branch had never shown, since it did no disk I/O
 banked. **Confirmed on the machine on 2 Oct 2026**: the whole game played

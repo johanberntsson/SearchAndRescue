@@ -63,7 +63,7 @@
   **Played on the machine.**
 - **The 32K is no longer the limit: BASIC is banked out** and `$A000-$BFFF`
   holds the campaign and the loader's staging buffer, so the program area went
-  from 41 bytes free to 2075 (1278 now). **Works on the machine**: the
+  from 41 bytes free to 2075 (495 now, 872 in a release build). **Works on the machine**: the
   Kernal reads the whole disk with BASIC out.
 - **Cleared missions are kept for the session**: green on the mission list
   unless selected, with `DONE` after the name, and once all five are cleared a win page (logo, drone, `ALL
@@ -79,8 +79,9 @@
 Open from today:
 
 - **Next: the public release, planned for the weekend of 3-4 Oct 2026**,
-  once a friend has tested it. The disk in `release/` is ready: built from a
-  clean tree with the thermal camera's double drain on it. After that, all three map slots
+  once testers have been through the release candidate in `release/` --
+  built from a clean tree on the afternoon of 2 Oct with everything below on
+  it. If they find nothing, that disk is the release. After that, all three map slots
   and all three figure slots are full and the palette has 3 entries free, so
   a sixth mission reuses a map and a figure; the campaign has 914 of its 2048
   bytes left.
@@ -95,6 +96,19 @@ Open from today:
   direction could carry some of them if the joystick is to fly alone.
 
 ## Where it is
+
+**Release candidate, 2 Oct 2026 (afternoon)** -- `release/searchandrescue.d81`,
+`PROFILE=0`, built after `make clean` from a clean tree at `c6743b4`, and
+booted to the title in xemu. Handed to testers ahead of the public release.
+Since the morning's disk:
+
+- **`HELP` works on the real MEGA65** -- read through `$D614`/`$D613`; the
+  C65's `$D607` route turned the drone right instead. Confirmed on the machine.
+- **`HELP`/`F1` reach the controls page from every page**, not only the
+  briefing and the air, and every page says so on its bottom line.
+- **`RUN/STOP` on the title or win page quits to BASIC** and READY, by
+  returning through the `SYS` rather than resetting. Confirmed on the machine.
+- **`ESC` is `RUN/STOP`**, since a PC keyboard has none and xemu puts it on END.
 
 **Released 2 Oct 2026** -- `release/searchandrescue.d81`, `PROFILE=0`, booted to
 the title in xemu before it was committed. Five missions, cleared missions
