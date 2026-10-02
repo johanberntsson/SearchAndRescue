@@ -252,7 +252,7 @@ $(D81): $(PRG) $(RES)
 # A sub-make, because these flags belong to the config stamp: the release
 # build and an interactive one share $(BUILD) and each forces a rebuild of the
 # other. That is the stamp doing its job, not waste to work around.
-RELEASE = release/sar-latest.d81
+RELEASE = release/searchandrescue.d81
 
 release:
 	$(MAKE) PROFILE=0 FLYNOW=0 $(D81)

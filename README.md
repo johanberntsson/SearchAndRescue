@@ -14,7 +14,7 @@ aftershocks that reshape the landscape mid-flight. `documentation/vision.md` has
 
 ## Status
 
-`release/sar-latest.d81` is a disk you can boot -- **released 2 Oct 2026**,
+`release/searchandrescue.d81` is a disk you can boot -- **released 2 Oct 2026**,
 with all five missions and everything below on it. It has been booted in the
 emulator and **not yet on a real MEGA65**: it is the first disk that banks the
 BASIC ROM out for more memory, which is the thing to watch on the machine.
@@ -107,7 +107,9 @@ fly over **three different generated worlds, all on the one disk**.
   drone about whatever it is doing — including a hover. The panel names it the
   way a weather report does, by the direction it comes from
 - A battery that runs down as you fly, four minutes or so at normal speed and
-  a quarter of that in sport. Run it flat and the mission is over. The readout
+  a quarter of that in sport, and **twice as fast with the thermal camera
+  on**, so it is a thing to switch on when you need it rather than leave on.
+  Run it flat and the mission is over. The readout
   goes **yellow under a quarter and red under a tenth**, with a warning note
   on its own SID voice at each — the only thing in a flight that is not the
   motors
@@ -226,7 +228,7 @@ make PROFILE=0                   # without the instrumentation; use this for tim
 make FLYNOW=1                    # skip the menus and fly mission 1, or any n
 make COL_SIZE=1024               # the finer colourmap: better, and 40 s more to load
 make REPORT=120                  # hold the startup benchmark report, to read it
-make release                     # the disk to hand out, into release/sar-latest.d81
+make release                     # the disk to hand out, into release/searchandrescue.d81
 make checkmusic                  # both assemblers over the tune, byte for byte
 make clean
 ```

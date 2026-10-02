@@ -43,7 +43,7 @@ make FLYNOW=1     # skip the title and menus, launch straight into mission 1
 make FLYNOW=n     # ... or mission n, the only headless way to reach its map
 make REPORT=n     # hold the startup benchmark report n seconds; 0 by default
 make COL_SIZE=1024                  # the finer colourmap; sizes are 256..1024
-make release      # PROFILE=0 disk, copied to release/sar-latest.d81
+make release      # PROFILE=0 disk, copied to release/searchandrescue.d81
 make checkmusic   # both assemblers over the tune, byte for byte; needs acme
 make clean
 ```
@@ -1004,10 +1004,14 @@ frame's worth of table and nothing per pixel.
 and there is no divide in the drain. `battery_drain` is indexed by speed mode
 — 7, 10 and 28 a frame, roughly five minutes, four, and a minute and a quarter
 at 11.6 fps — because a real drone's sport mode works the props harder
-whatever the sticks are doing, not only when you are moving. Flat is
+whatever the sticks are doing, not only when you are moving. **The thermal
+camera doubles it** (`THERMAL_DRAIN_SHIFT`), whatever the speed: played
+through on the machine on 2 Oct 2026 it was too easy simply to leave it on
+for the whole flight. Measured headless, hovering at normal speed until flat:
+3:35 without it, 1:48 with. Flat is
 `FLIGHT_FLAT`, tested at the bottom of the loop with the other exits, and the
-readout is rewritten only when the figure moves, which at the fastest drain is
-every ninth frame.
+readout is rewritten only when the figure moves, which at the fastest drain --
+sport with the camera on -- is every fifth frame.
 
 ## The weather
 

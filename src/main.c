@@ -105,6 +105,12 @@ static void music_key(keymask pressed)
 // quarter -- an unhurried search, or a fast one you have to finish.
 static const uint16_t battery_drain[SPEED_MODES] = {7, 10, 28};
 
+// And the thermal camera doubles it, whatever the speed: a second sensor is
+// a second load on the pack. Without a cost it was simply left on for the
+// whole of every flight, which made the optical camera pointless -- played on
+// the machine, 2 Oct 2026. A shift, so it costs nothing to apply.
+#define THERMAL_DRAIN_SHIFT 1
+
 static uint16_t battery;
 static uint8_t battery_warned;
 
@@ -118,14 +124,17 @@ static uint8_t battery_step(void)
   uint16_t drain = battery_drain[speed_mode];
   uint8_t was = (uint8_t)(battery >> 8);
 
+  if (thermal_on())
+    drain <<= THERMAL_DRAIN_SHIFT;
   if (battery <= drain) {
     battery = 0;
     panel_battery(0);
     return 1;
   }
   battery -= drain;
-  // Only when the figure actually moves: at the fastest drain that is every
-  // ninth frame, and at the slowest every thirty-seventh.
+  // Only when the figure actually moves: at the fastest drain -- sport, with
+  // the thermal camera on -- that is every fifth frame, and at the slowest
+  // every thirty-seventh.
   if ((uint8_t)(battery >> 8) != was) {
     uint8_t level = panel_battery((uint8_t)(battery >> 8));
 

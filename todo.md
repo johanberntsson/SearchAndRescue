@@ -31,6 +31,15 @@
 
 ## 2 Oct 2026
 
+- **The whole game was played through on the real MEGA65 and works** --
+  five missions, the BASIC banking, the win page.
+- **The thermal camera drains the battery twice as fast**, because played on
+  the machine it was too easy to leave on for the whole flight. Measured
+  headless: 3:35 hovering without it, 1:48 with. **Still to play on the
+  machine** to see whether double is the right price.
+- **The release disk is `release/searchandrescue.d81`** now, renamed from
+  `sar-latest.d81`. The disk in it is the 2 Oct release, without the battery
+  change.
 - **Mission four, Shipwreck**: over the island, in rain. The briefing sends
   you to where a trawler went down off the south coast, 46.551N 8.146E, and
   there is nothing there; the survivors are in a life raft that has drifted
@@ -84,7 +93,7 @@ Open from today:
 
 ## Where it is
 
-**Released 2 Oct 2026** -- `release/sar-latest.d81`, `PROFILE=0`, booted to
+**Released 2 Oct 2026** -- `release/searchandrescue.d81`, `PROFILE=0`, booted to
 the title in xemu before it was committed. Five missions, cleared missions
 marked on the list and a win page when all five are done, and the first disk
 with BASIC banked out. **Not yet booted on the machine**: that, and flying
@@ -195,7 +204,7 @@ Build knobs, all in the Makefile:
 | `FLYNOW=n` | skip the menus and fly mission n; a headless run needs it to render anything at all, since it cannot press a key, and `FLYNOW=2` is the only way one reaches the second map |
 | `REPORT=n` | print the startup benchmark report and hold it n seconds. 0 by default, which no longer prints it at all — see the Done entry on the boot screen |
 | `HGT_SIZE`, `COL_SIZE` | map resolutions, powers of two from 256 to 1024 |
-| `make release` | not a knob but a target: the `PROFILE=0` disk, into `release/sar-latest.d81` |
+| `make release` | not a knob but a target: the `PROFILE=0` disk, into `release/searchandrescue.d81` |
 | `make checkmusic` | also a target: both assemblers over the tune, byte for byte. Needs `acme` |
 | `missions/campaign.yaml` | not a knob but the disk: the missions, and through them the maps and sprite sheets that get built |
 | `make sprtest` | also a target: a standalone PRG that asks whether the VIC-IV's hardware sprites work in this display. They do, on the machine as well -- it is kept because it is how that was settled |
