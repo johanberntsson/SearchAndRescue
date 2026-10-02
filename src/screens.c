@@ -14,7 +14,8 @@
 
 // The two lines the title screen and the boot screen both carry, written once
 // so the boot screen cannot say something the title screen does not.
-#define TITLE_TEXT  "SEARCH AND RESCUE"
+#define TITLE_TEXT   "SEARCH AND RESCUE"
+#define TITLE_AUTHOR "BY JOHAN BERNTSSON"
 #define TITLE_SUB   "A MEGA65 DRONE SIMULATOR"
 
 static uint8_t width_of(const char *s)
@@ -169,8 +170,10 @@ static void title_lines(void)
                   (uint16_t)(LOGO_CHAR + row * LOGO_COLS + col));
   } else {
     centre(TITLE_ROW, TITLE_TEXT, PANEL_INK);
+    centre(TITLE_ROW + 1, TITLE_AUTHOR, PANEL_INK);
   }
   centre(TITLE_ROW + 2, TITLE_SUB, PANEL_LABEL);
+  centre(TITLE_ROW + 3, TITLE_AUTHOR, PANEL_LABEL);
 }
 
 // ---------------------------------------------------------------------------
