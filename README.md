@@ -15,7 +15,9 @@ aftershocks that reshape the landscape mid-flight. `documentation/vision.md` has
 ## Status
 
 `release/sar-latest.d81` is a disk you can boot -- **released 2 Oct 2026**,
-with all five missions and everything below on it.
+with all five missions and everything below on it. It has been booted in the
+emulator and **not yet on a real MEGA65**: it is the first disk that banks the
+BASIC ROM out for more memory, which is the thing to watch on the machine.
 
 **1 Oct 2026:** a full-colour logo on the loading and title
 screens, with a drone hovering under it while the disk loads and flying about
@@ -28,8 +30,11 @@ page of its own behind `HELP` or `F1`, which in the air is also the pause.
 island in the rain, and its survivors adrift in a life raft that only the
 thermal camera can see. And a fifth, **Transplant Delivery**: land on one
 island hospital to take a donor heart aboard and fly it to the other. The
-mission list marks the missions cleared so far, and clearing all five brings
-up a win page before the game goes round again.
+mission list shows the missions cleared so far in green, and clearing all five
+brings up a win page, after which the record starts again from nothing.
+Underneath, **the game broke out of its 32 KB**: the BASIC ROM is banked out
+at startup and the 8 KB of RAM under it holds the campaign and the loader's
+buffer, which took the program area from 41 bytes free to over a kilobyte.
 
 Five missions exist, end to end: a title screen, a mission list, a briefing, a
 flight, and a debrief. They are deliberately the same flight with different
@@ -78,17 +83,22 @@ fly over **three different generated worlds, all on the one disk**.
   frame: the ground goes to a cold monochrome of its own shading, the sky to
   nearly black, and a person to one flat hot white. It is the whole point of
   the third mission — a skier under the snow is not drawn at all until it is
-  armed, and no report can be filed on somebody you have not been shown
-- **Three missions over three different worlds, all on the one disk** — a
-  temperate island, hot plains in the rain, and a cold rugged mountain range in
-  snow.
+  armed, and no report can be filed on somebody you have not been shown.
+  Shipwreck's life raft is the colour of the sea until it is armed, too
+- **A life raft that is there for one flight only**: a few cells of the
+  island's sea are raised and repainted when Shipwreck launches and put back
+  exactly when it lands, so the same island serves The Lost Hiker without one
+- **Five missions over three different worlds, all on the one disk** — a
+  temperate island (three of the missions), hot plains in the rain, and a cold
+  rugged mountain range in snow.
   All three are generated from a paragraph of YAML and resident in attic RAM
   at once, which hand-drawn map pairs could never be: one drawn pair is 661 KB
   crunched on its own, and all three of these come to 446 KB
 - Three software billboards — a lost hiker waving from the step pyramid on the
   island's northern headland at 46.687N 8.106E, a casualty and their
   friend on the lake shore at 46.658N 8.149E, and a fallen skier on a snow
-  slope at 46.584N 8.177E — drawn over the finished terrain: scaled by distance, and clipped
+  slope at 46.584N 8.177E; the pair stand in again in a life raft off the
+  island and on a hospital roof — drawn over the finished terrain: scaled by distance, and clipped
   against the heightfield with the same y-buffer the ray march already keeps, so
   a ridge in front of them hides their feet
 - Drone controls modelled on a real one: yaw, climb, camera gimbal and a
@@ -113,9 +123,9 @@ fly over **three different generated worlds, all on the one disk**.
   at the same frame rate
 - **`M` mutes whatever you are listening to** — the tune on a page, the motors
   in the air. Two settings rather than one, both remembered for the session
-- Weather per mission: mission two flies under an overcast sky with rain drawn
-  over the finished picture, leaning as it falls, and mission three in snow
-  that the wind carries sideways. Rain costs 0.68 ms a frame and snow is the
+- Weather per mission: First Aid and Shipwreck fly under an overcast sky with
+  rain drawn over the finished picture, leaning as it falls, and Under The
+  Snow in snow that the wind carries sideways. Rain costs 0.68 ms a frame and snow is the
   same loop, because the sky is sixteen palette entries rather than any pixels
   at all
 - **Boots in about twenty-five seconds** in the emulator, nearly all of it
@@ -136,8 +146,8 @@ so the campaign is the single description of what goes on the D81. Adding a
 mission is a file and a line; the tool wraps the text to the briefing, checks
 the fix is on the map and refuses anything that will not fit.
 
-**The maps are generated rather than drawn, and that is what puts two of them
-on the disk.** `tools/genmap.py` turns a short YAML description — island or mountains
+**The maps are generated rather than drawn, and that is what puts three of
+them on the disk.** `tools/genmap.py` turns a short YAML description — island or mountains
 or flatlands, a climate, how many rivers and lakes and hills, how rugged, at
 what scale — into the same height/colour PNG pair the converter already reads,
 reproducibly from a seed. The terrain is **lit by a sun in the west**, the way
@@ -167,14 +177,15 @@ four times the work at every pass: about 255 seconds a map, against 66 to load
 both maps off a floppy and 31 off SD. The code is on the `mega65-mapgen` branch
 and `documentation/on-device-maps-experiment.md` is the write-up, with the
 arithmetic at the top. The maps are generated on the PC, which is where they
-were always generated — and the boot is about ten seconds in the emulator, 14
-off SD and 27 off a floppy.
+were always generated — and the boot is about twenty-five seconds in the
+emulator, most of it the mountain map.
 
 `tools/preview.py` flies one on the PC **with the game's own
 renderer** — the same march, projection, map sampling and flight model, at the
 same 12.5 frames a second, with the constants read out of `src/` rather than
 copied — so terrain can be judged from the air and item coordinates noted down
-by flying to them. At the same camera it draws the machine's picture exactly,
+by flying to them. It regenerates the map first whenever its YAML has
+changed, so what it flies is always what the file says. At the same camera it draws the machine's picture exactly,
 and `tools/checkview.py` is that comparison as a four-second command to run
 after touching the renderer. `maps/` holds the shared palette and the missions' own map files;
 `documentation/procedural-maps.md` has the design and what is built so far.
@@ -212,7 +223,7 @@ You will need:
 ```sh
 make run                         # build build/sar.d81 and boot it in the emulator
 make PROFILE=0                   # without the instrumentation; use this for timing
-make FLYNOW=1                    # skip the menus and fly mission 1 (or FLYNOW=2)
+make FLYNOW=1                    # skip the menus and fly mission 1, or any n
 make COL_SIZE=1024               # the finer colourmap: better, and 40 s more to load
 make REPORT=120                  # hold the startup benchmark report, to read it
 make release                     # the disk to hand out, into release/sar-latest.d81
@@ -221,7 +232,7 @@ make clean
 ```
 
 The build produces a D81 with the game as `autoboot.c65`, which the MEGA65 ROM
-runs at boot, and both missions' maps alongside it as separate files —
+runs at boot, and the three worlds' maps alongside it as separate files —
 generated from `maps/*.yaml` by `tools/genmap.py` and converted by
 `tools/convmap.py`. The hand-drawn pair in `resources/` is no longer built
 into anything; it stays as the reference the terrain's lighting was measured
@@ -253,16 +264,26 @@ it does not, and touching the hillside destroys it. Real drones turn their
 obstacle sensors off in sport too, so the fastest mode is the one that will fly
 you into a mountain.
 
-A report only counts with the lost hiker on screen and within about ten map
+A report only counts with the person on screen and within about ten map
 cells — near enough to have actually seen them. A cargo drop does not care
 where the camera is pointing but wants you within five, and there is only one
 of whatever is in the bay: release it anywhere else and the mission is lost.
 
+**Landing is a control too.** Hold `F` and the drone settles onto whatever is
+under it. On Transplant Delivery the bay starts empty: land on the first
+hospital's roof to take the heart aboard, then either release it near the
+second hospital or land beside it.
+
 **And on Under The Snow there is nothing on screen to report until the thermal
 camera is armed.** The skier is under the avalanche: the ordinary camera shows
 an empty snow slope however close you fly, and `SPACE` is refused, because a
-report means you have seen somebody. Every briefing lists the keys, `T`
-included, so none of this has to be read here first.
+report means you have seen somebody. Shipwreck is the same at sea. Every key,
+`T` included, is on the controls page behind `HELP` or `F1`, so none of this
+has to be read here first.
+
+**The mission list keeps score for the session**: a cleared mission is drawn
+in green with `DONE` after it, and can be flown again. Clear all five and a win
+page follows the last debrief; then the record starts again from nothing.
 
 ## Layout
 
