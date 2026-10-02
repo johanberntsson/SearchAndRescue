@@ -84,10 +84,16 @@ Open from today:
 
 ## Where it is
 
-**Unreleased, 18 Aug 2026.** `release/sar-latest.d81` is still the 17th's disk
-and does not have any of the day's work on it: a **thermal camera** on `T`, a
-**third mission** over a third generated world, and **snow**. Build a fresh
-disk to see them.
+**Released 2 Oct 2026** -- `release/sar-latest.d81`, `PROFILE=0`, booted to
+the title in xemu before it was committed. Five missions, cleared missions
+marked on the list and a win page when all five are done, and the first disk
+with BASIC banked out. **Not yet booted on the machine**: that, and flying
+all five there, is the first thing to do with it -- the Kernal reading the
+disk with BASIC out has only been seen in xemu.
+
+The 18 Aug work -- the **thermal camera** on `T`, the **third mission** over
+a third generated world, and **snow** -- never had a disk of its own and
+reaches one with this release.
 
 **Released 17 Aug 2026** -- `release/sar-latest.d81`. What went in since the
 15th: the panel became a painted instrument panel with its readouts on a plane

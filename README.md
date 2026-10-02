@@ -14,12 +14,10 @@ aftershocks that reshape the landscape mid-flight. `documentation/vision.md` has
 
 ## Status
 
-`release/sar-latest.d81` is a disk you can boot -- built 17 Aug 2026, with
-the instrument panel, the battery warning and the two new kinds of thing a
-map can be built out of. **The thermal camera, the third mission and the snow
-below all landed after it**, so `make release` is what it takes to see them.
+`release/sar-latest.d81` is a disk you can boot -- **released 2 Oct 2026**,
+with all five missions and everything below on it.
 
-**Since then (1 Oct 2026):** a full-colour logo on the loading and title
+**1 Oct 2026:** a full-colour logo on the loading and title
 screens, with a drone hovering under it while the disk loads and flying about
 the title once it has, **joystick support in either port** (the stick is `W` `A` `S` `D`,
 fire is `SPACE` on the pages and the mission's own key in the air), a silent
