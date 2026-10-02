@@ -29,6 +29,7 @@ tkinter (`python3-tkinter` on Fedora, `python3-tk` on Debian).
 import argparse
 import os
 import re
+import subprocess
 import sys
 import time
 
@@ -461,12 +462,32 @@ def read_map(path):
 
 
 def map_files(path, spec):
+    """The map pair genmap.py writes from `path`, regenerated if it is stale.
+
+    **A map file that has been edited is the map that gets flown.** Flying the
+    old PNGs after changing the YAML looks exactly like an item that was never
+    built -- a house nobody can find -- so this runs genmap.py whenever either
+    PNG is missing or older than anything it is made from. Those are the same
+    inputs the Makefile's rule names (see MAP_RULE in tools/campaign.py), so
+    the two agree about when a map is out of date. checkview.py and the `L`
+    reload come through here too.
+    """
     folder = os.path.dirname(os.path.abspath(path))
     hgt = os.path.join(folder, f"hmap{spec['id']:02d}.png")
     col = os.path.join(folder, f"cmap{spec['id']:02d}.png")
-    for f in (hgt, col):
-        if not os.path.isfile(f):
-            sys.exit(f"{f}: not there. Run tools/genmap.py {path} first.")
+    tools = os.path.dirname(os.path.abspath(__file__))
+    sources = [path, os.path.join(folder, "palette.yaml"),
+               os.path.join(tools, "genmap.py"), os.path.join(tools, "fixed.py")]
+
+    newest = max(os.path.getmtime(f) for f in sources if os.path.isfile(f))
+    if any(not os.path.isfile(f) or os.path.getmtime(f) < newest
+           for f in (hgt, col)):
+        print(f"{os.path.basename(path)} has changed: regenerating the map",
+              flush=True)
+        done = subprocess.run([sys.executable, os.path.join(tools, "genmap.py"),
+                               path])
+        if done.returncode:
+            sys.exit(f"tools/genmap.py {path} failed; see above")
     return hgt, col
 
 
@@ -593,9 +614,20 @@ class Preview:
         self.note = f"marked {entry['x']},{entry['y']} -> {os.path.basename(path)}"
 
     def reload(self):
-        """Pick up a rerun of genmap.py without losing where you are."""
-        self.spec, self.items = read_map(self.args.mapfile)
-        self.load_maps()
+        """Pick up an edit to the map file without losing where you are.
+
+        load_maps regenerates the map first if the YAML is newer than it, so
+        editing an item and pressing `L` is the whole loop. A map file the
+        generator refuses -- a house in the water -- keeps the window open on
+        the old map with the reason printed, rather than closing it.
+        """
+        try:
+            self.spec, self.items = read_map(self.args.mapfile)
+            self.load_maps()
+        except SystemExit as why:
+            print(why, file=sys.stderr)
+            self.note = "map file refused: see the terminal"
+            return
         self.march = March(self.c, self.maps, self.sine)
         self.thumb = self.maps.overview(self.c.FB_HEIGHT)
         self.note = "reloaded"

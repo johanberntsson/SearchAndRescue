@@ -1686,6 +1686,12 @@ it:
   either `preview.py` has not caught up, or the change was deliberate and the
   reference screenshot is stale. Proved to catch both kinds of drift by
   breaking each on purpose.
+- **it regenerates the map when the map file is newer** than its PNGs — or
+  `palette.yaml`, `genmap.py` or `fixed.py` is, the same inputs the
+  Makefile's rule names — so an edited map file is the map that gets flown.
+  Flying stale PNGs after adding a house looks exactly like a house that was
+  never built, which is how this was found. `L` in the window does the same
+  without losing your place, and `checkview.py` shares the check.
 - it runs at **12.5 fps on purpose** — every rate in the flight model is per
   frame, so a faster preview is a faster drone. No wind and no crash: it is an
   inspection tool, and `M` marks a position in the form the map file wants.
