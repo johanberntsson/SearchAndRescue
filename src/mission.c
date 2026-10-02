@@ -55,6 +55,7 @@ HIGH_BSS static uint8_t campaign[CAMPAIGN_BYTES];
 #define REC_PICKUP    29
 
 mission missions[MISSION_MAX];
+uint8_t missions_cleared;
 
 static uint8_t count, maps, figures;
 

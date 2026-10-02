@@ -29,7 +29,9 @@ page of its own behind `HELP` or `F1`, which in the air is also the pause.
 **2 Oct 2026:** a fourth mission, **Shipwreck** — a trawler gone down off the
 island in the rain, and its survivors adrift in a life raft that only the
 thermal camera can see. And a fifth, **Transplant Delivery**: land on one
-island hospital to take a donor heart aboard and fly it to the other.
+island hospital to take a donor heart aboard and fly it to the other. The
+mission list marks the missions cleared so far, and clearing all five brings
+up a win page before the game goes round again.
 
 Five missions exist, end to end: a title screen, a mission list, a briefing, a
 flight, and a debrief. They are deliberately the same flight with different

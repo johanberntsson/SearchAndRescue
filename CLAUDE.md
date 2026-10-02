@@ -606,6 +606,18 @@ mission four back over the island, at sea; mission five between the island's
 two houses, which `missions/transplant.yaml` calls hospitals. See Resources for
 what a map slot is and what switching costs.
 
+**The game keeps score for the session.** `missions_cleared` (`mission.c`)
+is a bit per mission, set whenever a flight ends `FLIGHT_DONE`. The mission
+list draws a cleared one in the panel's green (`PANEL_TEXT`) with `DONE` after
+the name and `n OF m CLEARED` under the heading, and it can still be chosen.
+When the debrief of the last one is dismissed, `screens_won` shows the
+title's logo and drone with an `ALL MISSIONS COMPLETE` banner, the record goes
+back to nothing, and the game carries on from the title, so it goes round for
+ever. Nothing is saved to disk. Not in a `FLYNOW` build, which has no title to
+go back to. **Tested headless by faking SPACE in `scan()`** with a preset
+record and a flight that returns `FLIGHT_DONE` at once: the list's marks, the
+win page after the last debrief, and `0 OF 5` on the list after it.
+
 **A delivery can start with the bay empty.** `pickup: yes` says the cargo is
 waiting at the fix: the drone lands there — sits on the terrain following's
 floor, within `PICKUP_RANGE` (three cells) of the fix — and `CARGO LOADED`

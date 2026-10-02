@@ -44,8 +44,13 @@ void screens_title(void);
 // its own on the panel.
 void screens_music(uint8_t on);
 
-// The mission list, with `selected` highlighted.
+// The mission list, with `selected` highlighted and every mission in
+// missions_cleared marked as done.
 void screens_missions(uint8_t selected);
+
+// The end of the campaign: the title's logo and drone, and a banner saying
+// every mission has been flown. Shown once, when the last one is cleared.
+void screens_won(void);
 
 // What the pilot is being sent to do. It comes out of the mission rather than
 // being spelled out here, so the missions read differently without being

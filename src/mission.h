@@ -84,6 +84,15 @@ typedef struct {
 
 extern mission missions[MISSION_MAX];
 
+// Which missions have been flown to a successful end this session, a bit per
+// mission -- MISSION_MAX is eight, so a byte holds them all. Set by the
+// flight's caller, shown on the mission list, and cleared again by the win
+// page once every bit is set. Nothing is saved: a session is the campaign.
+extern uint8_t missions_cleared;
+
+// The bits a fully cleared campaign has set.
+#define MISSIONS_ALL ((uint8_t)((1 << mission_count()) - 1))
+
 // Read campaign.bin and point the array at it. Returns null, or what went
 // wrong -- there is no display worth the name at this point, so the string
 // goes to the boot screen's error line. Call it before anything else is

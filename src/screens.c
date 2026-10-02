@@ -282,21 +282,58 @@ void screens_title(void)
   sound_line();
 }
 
+// A cleared mission is drawn in the panel's own green and says DONE after
+// its name, and can still be chosen: flying one again is allowed, and only
+// the record of it is fixed. The columns leave room for the longest name
+// tools/campaign.py allows, 24, between the number and the tag.
+#define LIST_ARROW 3
+#define LIST_NUM   5
+#define LIST_NAME  8
+#define LIST_TAG   34
+#define LIST_DONE  PANEL_TEXT
+
+void screens_won(void)
+{
+  vic4_text_mode();
+  title_lines();
+  drone_show();
+  // The drone flies over the banner as well as under it, which is what it
+  // does on the title too.
+  centre(13, "* * * * * * * * * * * * * *", PANEL_TEXT);
+  centre(15, "ALL MISSIONS COMPLETE", PANEL_WARN);
+  centre(17, "WELL DONE, PILOT", PANEL_INK);
+  centre(19, "* * * * * * * * * * * * * *", PANEL_TEXT);
+  centre(PROMPT_ROW, "PRESS SPACE OR FIRE", PANEL_INK);
+  sound_line();
+}
+
 void screens_missions(uint8_t selected)
 {
-  uint8_t i;
+  uint8_t i, done = 0;
 
   vic4_text_mode();
   centre(2, "SELECT MISSION", PANEL_INK);
 
   for (i = 0; i < mission_count(); i++) {
     uint8_t row = (uint8_t)(6 + i * 2);
-    uint8_t ink = i == selected ? PANEL_INK : PANEL_LABEL;
+    uint8_t cleared = (uint8_t)(missions_cleared >> i & 1);
+    uint8_t ink = cleared ? LIST_DONE
+                          : (i == selected ? PANEL_INK : PANEL_LABEL);
 
-    vic4_text_char(6, row, i == selected ? '>' : ' ', PANEL_INK);
-    put_digits(8, row, (uint16_t)(i + 1), 1, ink);
-    vic4_puts(11, row, missions[i].name, ink);
+    vic4_text_char(LIST_ARROW, row, i == selected ? '>' : ' ', PANEL_INK);
+    put_digits(LIST_NUM, row, (uint16_t)(i + 1), 1, ink);
+    vic4_puts(LIST_NAME, row, missions[i].name, ink);
+    if (cleared) {
+      vic4_puts(LIST_TAG, row, "DONE", LIST_DONE);
+      done++;
+    }
   }
+
+  // How far through the campaign, under the heading: "3 OF 5 CLEARED".
+  put_digits(13, 4, done, 1, LIST_DONE);
+  vic4_puts(15, 4, "OF", PANEL_LABEL);
+  put_digits(18, 4, mission_count(), 1, PANEL_LABEL);
+  vic4_puts(20, 4, "CLEARED", PANEL_LABEL);
 
   centre(PROMPT_ROW, "W S   CHOOSE      SPACE OR FIRE   BRIEF", PANEL_LABEL);
   sound_line();
