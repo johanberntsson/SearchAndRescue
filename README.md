@@ -16,8 +16,7 @@ aftershocks that reshape the landscape mid-flight. `documentation/vision.md` has
 
 `release/searchandrescue.d81` is a disk you can boot -- **released 2 Oct 2026**,
 with all five missions and everything below on it, and **played through on a
-real MEGA65**. The thermal camera's double battery drain came after it and
-goes on the next build of the disk.
+real MEGA65**.
 
 **1 Oct 2026:** a full-colour logo on the loading and title
 screens, with a drone hovering under it while the disk loads and flying about

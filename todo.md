@@ -38,8 +38,7 @@
   headless: 3:35 hovering without it, 1:48 with. **Still to play on the
   machine** to see whether double is the right price.
 - **The release disk is `release/searchandrescue.d81`** now, renamed from
-  `sar-latest.d81`. The disk in it is the 2 Oct release, without the battery
-  change.
+  `sar-latest.d81`, and rebuilt with the battery change on it.
 - **Mission four, Shipwreck**: over the island, in rain. The briefing sends
   you to where a trawler went down off the south coast, 46.551N 8.146E, and
   there is nothing there; the survivors are in a life raft that has drifted
@@ -74,10 +73,8 @@
 Open from today:
 
 - **Next: the public release, planned for the weekend of 3-4 Oct 2026**,
-  once a friend has tested it. **Run `make release` first**: the disk in
-  `release/` is the 2 Oct build and does not have the thermal camera's double
-  drain. Check `git status` is clean before building it -- the first 2 Oct
-  disk picked up an uncommitted test change. After that, all three map slots
+  once a friend has tested it. The disk in `release/` is ready: built from a
+  clean tree with the thermal camera's double drain on it. After that, all three map slots
   and all three figure slots are full and the palette has 3 entries free, so
   a sixth mission reuses a map and a figure; the campaign has 914 of its 2048
   bytes left.
@@ -97,8 +94,9 @@ Open from today:
 the title in xemu before it was committed. Five missions, cleared missions
 marked on the list and a win page when all five are done, and the first disk
 with BASIC banked out. **Played through on the real MEGA65 on 2 Oct and it
-all works.** It does not have the thermal camera's double drain, which came
-after; `make release` before handing it out.
+all works.** Rebuilt the same day with the thermal camera's double drain on
+it, from a clean tree, and booted to the title in xemu: this is the disk to
+hand out.
 
 The 18 Aug work -- the **thermal camera** on `T`, the **third mission** over
 a third generated world, and **snow** -- never had a disk of its own and
